@@ -1,8 +1,8 @@
 # Event Ticketing API — Requirements Document
 
-**Version:** 1.4 (Draft)
+**Version:** 1.4 (Approved)
 **Date:** 2026-08-25
-**Status:** For review
+**Status:** Approved — approved 2026-08-25
 
 **Revision history:**
 - v1.1 adds API support for organizer-defined ticket layouts (physical and digital), clarifies digital ticket delivery via email/screenshot, and adds a validation API for mobile QR check-in — while making explicit that this project's scope is the **API only**; the ticket-layout web UI and the mobile scanning app are separate client applications outside this project.
