@@ -1,10 +1,15 @@
 # Event Ticketing API — API Contract (Core)
 
-**Version:** 1.0 (Draft)
+**Version:** 1.2 (Draft)
 **Date:** 2026-08-25
 **Status:** For review
-**Based on:** `requirements.md` v1.6, `resources.md` v1.4
+**Based on:** `requirements.md` v1.6, `resources.md` v1.5
 **Spec format:** OpenAPI 3.1 (`openapi.yaml`, companion to this document)
+
+**Revision history:**
+- v1.0 initial core contract: auth, organizations, events/ticket types, cart/checkout, orders/tickets, check-in/scanning.
+- v1.1 adds the missing `Venue` resource (schema + `POST`/`GET`/`PATCH` endpoints, new section 3.3) — `EventCreate.venue_id` referenced a resource that had no way to be created until now.
+- v1.2 adds `created_by`/`updated_by` audit fields (in `openapi.yaml`) to every schema that already had `created_at`/`updated_at`: `User` and `Organization` and `Venue` and `Order` get `created_by`; `Event` — the only schema with both timestamps — gets both `created_by` and `updated_by`. Scoped strictly to entities that already tracked timestamps; not a general "add audit trails everywhere" pass.
 
 ## 1. Scope
 
@@ -100,15 +105,30 @@ Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimi
 | `GET /v1/organizations/{orgId}` | Members of that org, or admin | Returns `Organization`. |
 | `PATCH /v1/organizations/{orgId}` | Owner/co-organizer of that org | Update name, payout account ref, etc. |
 
-### 3.3 Events & Catalog
+### 3.3 Venues
+
+*(`Venue`, requirements 4.3 — a gap fixed in this revision: `EventCreate.venue_id` referenced a resource that had no schema or endpoints until now)*
+
+A `Venue` is owned by the `Organization` that adds it and is reusable across that organization's events — an organizer defines "Madison Square Garden" once and points multiple events at it, rather than re-entering the address every time. It's deliberately org-scoped rather than a shared platform-wide directory in this pass; a shared/curated venue directory (so two different organizers booking the same physical venue could reuse one record) is a reasonable future enhancement, not a v1 requirement.
+
+| Method & Path | Who | Description |
+|---|---|---|
+| `POST /v1/organizations/{orgId}/venues` | Owner/co-organizer of that org | Creates a `Venue`. Body: `{ name, address?, latitude?, longitude? }` — `address`/coordinates are optional so a purely virtual venue can be registered too. |
+| `GET /v1/organizations/{orgId}/venues` | Members of that org, or admin | Lists the organization's venues, for the organizer to pick from when creating an event. |
+| `GET /v1/venues/{venueId}` | Public | Returns one `Venue` — public because a buyer viewing an event needs its address/location. |
+| `PATCH /v1/venues/{venueId}` | Owning org's owner/co-organizer | Update name/address/coordinates. |
+
+`Event.venue_id` (3.4 below) references this resource; `GET /v1/events`'s `lat`/`lng`/`radius_km` search params filter on the coordinates stored here.
+
+### 3.4 Events & Catalog
 
 *(`Event`, `TicketType`, `SeatMap`/`Seat`, requirements 4.2–4.4)*
 
 | Method & Path | Who | Description |
 |---|---|---|
 | `GET /v1/events` | Public | Search/list **published** events. Query: `q`, `category`, `lat`/`lng`/`radius_km`, `date_from`, `date_to`, `price_min`, `price_max`, `sort` (`date`\|`popularity`\|`price`), `cursor`, `limit`. |
-| `POST /v1/events` | Organizer (verified org) | Creates an `Event` in `draft` status. On creation the API also generates and reserves `Event.ticket_number_prefix` (a random, collision-checked 3-letter code — requirements 4.10). |
-| `GET /v1/events/{eventId}` | Public if `published`+; organizer/admin otherwise | Returns `Event`. |
+| `POST /v1/events` | Organizer (verified org) | Creates an `Event` in `draft` status. Body includes an optional `venue_id` (from 3.3 — omit for a fully virtual event). On creation the API also generates and reserves `Event.ticket_number_prefix` (a random, collision-checked 3-letter code — requirements 4.10). |
+| `GET /v1/events/{eventId}` | Public if `published`+; organizer/admin otherwise | Returns `Event`, with an embedded `venue` snapshot (name/address/coordinates) alongside `venue_id`. |
 | `PATCH /v1/events/{eventId}` | Owning organizer | Update event fields. Some fields (e.g. venue) may be locked once tickets are on sale — enforced server-side. |
 | `POST /v1/events/{eventId}/publish` | Owning organizer | Transitions `draft` → `published`. Requires the org to be verified (4.2). |
 | `POST /v1/events/{eventId}/cancel` | Owning organizer or admin | Transitions to `cancelled`; asynchronously triggers the refund workflow (4.6, designed in a later pass) for every issued `Ticket`. |
@@ -118,7 +138,7 @@ Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimi
 | `GET /v1/ticket-types/{ticketTypeId}` | Public if parent event is published | Returns one `TicketType`. |
 | `PATCH /v1/ticket-types/{ticketTypeId}` | Owning organizer | Update price, quantity, sale window, per-order limit. |
 
-### 3.4 Cart & Checkout
+### 3.5 Cart & Checkout
 
 *(`Cart`, `Hold`, requirements 4.3, 4.5)*
 
@@ -130,7 +150,7 @@ Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimi
 | `DELETE /v1/carts/{cartId}/items/{itemId}` | Owning buyer | Removes the item and releases its `Hold`. |
 | `POST /v1/carts/{cartId}/checkout` | Owning buyer — **requires `Idempotency-Key`** | Body: `{ payment_method_token }` (from the payment gateway's client-side tokenization — the API never sees raw card data, 5.3). On success: charges via `Payment`, creates the `Order`, issues one `Ticket` per item, and converts each `Hold` into a sale. `201` → `Order` (with nested `Ticket`s). `402` on payment failure; the cart and its holds are left intact so the buyer can retry. `410` if a hold expired before checkout completed. |
 
-### 3.5 Orders & Tickets
+### 3.6 Orders & Tickets
 
 *(`Order`, `Payment`, `Ticket`, `TicketArtifact`, requirements 4.5, 4.6, 4.10)*
 
@@ -143,7 +163,7 @@ Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimi
 | `GET /v1/orders/{orderId}/tickets` | Owning buyer, the event's organizer, or admin | Lists all tickets on an order. |
 | `GET /v1/tickets/{ticketId}/artifact?format=digital\|physical` | Owning buyer | Returns (or redirects to) the rendered `TicketArtifact` — the actual PDF/image carrying the QR/barcode and the visible `ticket_number`, generated from the event's `TicketTemplate` (4.10). Regenerated on demand if the template changed since last render. |
 
-### 3.6 Check-in & Scanning
+### 3.7 Check-in & Scanning
 
 *(`CheckInConfig`, `ScannerDevice`, `FallbackScanRecord`, `CheckInRecord`, requirements 4.11)*
 
@@ -160,10 +180,11 @@ Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimi
 
 ## 4. Deferred to a later pass
 
-These resources exist in `resources.md` but don't have endpoints yet — designed once the core flow above is settled: `PromoCode`, `WaitlistEntry`, `ResalePolicy`/`ResaleListing`, `RefundPolicy`/`Refund`/`Payout` (beyond the cancellation trigger noted in 3.3), `TicketTransfer`, `TicketTemplate` authoring (organizer-side template CRUD — this pass only *consumes* a template via the artifact endpoint), `Notification`, `Dispute`, `AuditLogEntry`, `OrganizationMember` invites, and analytics/reporting endpoints.
+These resources exist in `resources.md` but don't have endpoints yet — designed once the core flow above is settled: `PromoCode`, `WaitlistEntry`, `ResalePolicy`/`ResaleListing`, `RefundPolicy`/`Refund`/`Payout` (beyond the cancellation trigger noted in 3.4), `TicketTransfer`, `TicketTemplate` authoring (organizer-side template CRUD — this pass only *consumes* a template via the artifact endpoint), `Notification`, `Dispute`, `AuditLogEntry`, `OrganizationMember` invites, and analytics/reporting endpoints.
 
 ## 5. Open items for the next pass
 
-- Exact seat-map authoring endpoints (how an organizer defines sections/rows/seats) weren't designed here — 3.3 only covers reading a seat map, since GA and reads were the priority for "core."
+- Exact seat-map authoring endpoints (how an organizer defines sections/rows/seats) weren't designed here — 3.4 only covers reading a seat map, since GA and reads were the priority for "core."
+- Whether `Venue` should eventually become a shared, platform-curated directory (so two organizers booking the same physical venue reuse one record) instead of each organization maintaining its own copy — deferred, not a v1 requirement (see 3.3).
 - `POST /v1/check-in/fallback-scans`'s reconciliation result format is sketched, not finalized — depends on how duplicate-flagging is meant to surface to the organizer (an open question already flagged in `requirements.md`).
 - Webhook/callback endpoints for the payment gateway (e.g. async payment confirmation, disputes) aren't modeled yet — `POST /v1/carts/{cartId}/checkout` currently assumes a synchronous gateway response, which may not hold for every payment method.

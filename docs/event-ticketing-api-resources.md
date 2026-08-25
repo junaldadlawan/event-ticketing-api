@@ -1,6 +1,6 @@
 # Event Ticketing API — Resource Identification
 
-**Version:** 1.4 (Draft)
+**Version:** 1.5 (Draft)
 **Date:** 2026-08-25
 **Status:** For review
 **Based on:** `requirements.md` v1.6
@@ -11,6 +11,7 @@
 - v1.2 confirms `ResaleListing` as a first-class resource with its own lifecycle (listed/sold/cancelled/expired), and models a sale as running through a real `Order`/`Payment`/`TicketTransfer` rather than a direct handoff between buyer and seller.
 - v1.3 pins down the ticket-number prefix mechanism: `Event` gets a new `ticket_number_prefix` attribute — a random 3-letter code reserved once at event creation, unique across all events, used only to seed `Ticket.ticket_number` (not a general-purpose event code).
 - v1.4 confirms resale purchases reuse `Order`/`Payment` rather than getting their own shape: `Order` gains `payee_type`/`payee_id` so the payee is the `Organization` on a primary purchase or the reselling `User` on a resale purchase.
+- v1.5 fleshes out `Venue`, caught by a gap in `api-contract.md` v1.0 (its `venue_id` referenced a resource with no attributes defined): adds `organization_id` (ownership) and `latitude`/`longitude` (needed by the events endpoint's location search).
 
 ## 1. Purpose
 
@@ -32,7 +33,7 @@ This document identifies the API's core resources (entities) derived from the ap
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
 | **Event** | A single event listing. | id, title, description, category, start/end datetime, timezone, images, status, ticket_number_prefix (random 3 letters, assigned once at creation, reserved unique across all events — used only to seed `Ticket.ticket_number`, not a general-purpose event code) | Belongs to Organization; has a Venue | 4.2, 4.10 |
-| **Venue** | A physical (or virtual) location, reusable across events, that a SeatMap is defined against. | id, name, address | Referenced by Event | 4.3 |
+| **Venue** | A physical (or virtual) location, owned by an Organization and reusable across that org's events, that a SeatMap is defined against. | id, organization_id, name, address (nullable, virtual venues), latitude (nullable), longitude (nullable) | Belongs to Organization; referenced by Event | 4.3 |
 | **SeatMap** | The section/row/seat layout for reserved-seating events. | id, sections[] | Belongs to Venue (reusable) or Event | 4.3 |
 | **Seat** | A single addressable seat within a SeatMap. | id, section, row, seat_number, status (available/held/sold) | Belongs to SeatMap | 4.3 |
 | **TicketType** | A purchasable category for an event: GA or reserved-seating tier. | id, name, price, currency, quantity, sale window, per-order limit | Belongs to Event | 4.2, 4.3 |

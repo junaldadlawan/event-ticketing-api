@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Event Ticketing API
-  version: "1.0.0-draft"
+  version: "1.2.0-draft"
   description: >
     Core purchase and check-in flow for a multi-organizer event ticketing
     marketplace. This is a first-pass contract covering identity/auth,
@@ -17,6 +17,7 @@ security:
 tags:
   - name: Auth
   - name: Organizations
+  - name: Venues
   - name: Events
   - name: TicketTypes
   - name: SeatMaps
@@ -180,6 +181,69 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Organization" }
+
+  /organizations/{orgId}/venues:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: listOrganizationVenues
+      tags: [Venues]
+      summary: List an organization's venues (members or admin only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Venue" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createVenue
+      tags: [Venues]
+      summary: Add a reusable Venue to the organization (owner/co-organizer only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VenueCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Venue" }
+
+  /venues/{venueId}:
+    parameters:
+      - $ref: "#/components/parameters/VenueId"
+    get:
+      operationId: getVenue
+      tags: [Venues]
+      security: []
+      summary: Get a Venue (public — needed to render event location/address for buyers)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Venue" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateVenue
+      tags: [Venues]
+      summary: Update a Venue (owning organization's owner/co-organizer only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VenueUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Venue" }
 
   /events:
     get:
@@ -780,6 +844,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    VenueId:
+      name: venueId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     EventId:
       name: eventId
       in: path
@@ -880,6 +949,10 @@ components:
               organization_id: { type: string, format: uuid }
               role: { type: string, enum: [owner, co_organizer, check_in_staff] }
         created_at: { type: string, format: date-time }
+        created_by:
+          type: [string, "null"]
+          format: uuid
+          description: User who created this account (e.g. an inviting admin); null for ordinary self-registration.
 
     Organization:
       type: object
@@ -888,11 +961,42 @@ components:
         name: { type: string }
         verification_status: { type: string, enum: [pending, verified, rejected] }
         created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid, description: User who created the organization (its initial owner). }
 
     OrganizationUpdate:
       type: object
       properties:
         name: { type: string }
+
+    Venue:
+      type: object
+      description: A reusable physical (or virtual) location, owned by the Organization that added it, referenced by Event via venue_id.
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        name: { type: string }
+        address: { type: [string, "null"], description: "Null for a purely virtual venue." }
+        latitude: { type: [number, "null"] }
+        longitude: { type: [number, "null"] }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid, description: User (organizer) who added this venue. }
+
+    VenueCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        address: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+
+    VenueUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        address: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
 
     Event:
       type: object
@@ -903,11 +1007,14 @@ components:
         description: { type: string }
         category: { type: string }
         venue:
-          type: object
+          type: [object, "null"]
+          description: Snapshot of the referenced Venue at read time, for convenience; null for a fully virtual event with no venue_id.
           properties:
             id: { type: string, format: uuid }
             name: { type: string }
             address: { type: string }
+            latitude: { type: [number, "null"] }
+            longitude: { type: [number, "null"] }
         start_at: { type: string, format: date-time }
         end_at: { type: string, format: date-time }
         timezone: { type: string, example: Asia/Manila }
@@ -922,6 +1029,8 @@ components:
           description: Random 3-letter (A-Z) code, reserved unique platform-wide at creation; seeds Ticket.ticket_number only.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid, description: User (organization member) who created the event. }
+        updated_by: { type: string, format: uuid, description: User who last modified the event. }
 
     EventCreate:
       type: object
@@ -1051,6 +1160,10 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Ticket" }
         created_at: { type: string, format: date-time }
+        created_by:
+          type: string
+          format: uuid
+          description: User who initiated the purchase — normally equal to buyer_id, but may differ for an organizer/admin-initiated order (e.g. a comp ticket) placed on a buyer's behalf.
 
     OrderList:
       type: object
