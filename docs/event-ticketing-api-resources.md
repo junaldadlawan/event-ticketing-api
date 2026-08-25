@@ -1,9 +1,16 @@
 # Event Ticketing API — Resource Identification
 
-**Version:** 1.0 (Draft)
+**Version:** 1.4 (Draft)
 **Date:** 2026-08-25
 **Status:** For review
-**Based on:** `requirements.md` v1.4 (Approved)
+**Based on:** `requirements.md` v1.6
+
+**Revision history:**
+- v1.0 initial resource map derived from requirements v1.4.
+- v1.1 resolves two of v1.0's open questions: `ScannerDevice`'s fallback role is now a distinct resource (`FallbackScanRecord`, not a role flag on the same shape), and `Ticket.ticket_number` uniqueness is confirmed global — achieved via an event-derived prefix rather than a platform-wide index.
+- v1.2 confirms `ResaleListing` as a first-class resource with its own lifecycle (listed/sold/cancelled/expired), and models a sale as running through a real `Order`/`Payment`/`TicketTransfer` rather than a direct handoff between buyer and seller.
+- v1.3 pins down the ticket-number prefix mechanism: `Event` gets a new `ticket_number_prefix` attribute — a random 3-letter code reserved once at event creation, unique across all events, used only to seed `Ticket.ticket_number` (not a general-purpose event code).
+- v1.4 confirms resale purchases reuse `Order`/`Payment` rather than getting their own shape: `Order` gains `payee_type`/`payee_id` so the payee is the `Organization` on a primary purchase or the reselling `User` on a resale purchase.
 
 ## 1. Purpose
 
@@ -24,7 +31,7 @@ This document identifies the API's core resources (entities) derived from the ap
 
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
-| **Event** | A single event listing. | id, title, description, category, start/end datetime, timezone, images, status | Belongs to Organization; has a Venue | 4.2 |
+| **Event** | A single event listing. | id, title, description, category, start/end datetime, timezone, images, status, ticket_number_prefix (random 3 letters, assigned once at creation, reserved unique across all events — used only to seed `Ticket.ticket_number`, not a general-purpose event code) | Belongs to Organization; has a Venue | 4.2, 4.10 |
 | **Venue** | A physical (or virtual) location, reusable across events, that a SeatMap is defined against. | id, name, address | Referenced by Event | 4.3 |
 | **SeatMap** | The section/row/seat layout for reserved-seating events. | id, sections[] | Belongs to Venue (reusable) or Event | 4.3 |
 | **Seat** | A single addressable seat within a SeatMap. | id, section, row, seat_number, status (available/held/sold) | Belongs to SeatMap | 4.3 |
@@ -41,8 +48,8 @@ This document identifies the API's core resources (entities) derived from the ap
 
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
-| **Order** | The record of a completed (or attempted) purchase. | id, buyer_id, status (pending/paid/cancelled/refunded/partially refunded), total, created_at | Belongs to User (buyer); has many Tickets | 4.5 |
-| **Payment** | A payment-gateway transaction tied to an Order. | id, order_id, gateway_ref, amount, status | Belongs to Order | 4.6 |
+| **Order** | The record of a completed (or attempted) purchase — reused for both a primary purchase from the organizer and a resale purchase from another attendee. `payee_type`/`payee_id` say who gets paid: the `Organization` on a primary purchase, or the reselling `User` on a resale purchase (see `ResaleListing`, 2.5). | id, buyer_id, payee_type (organization / user), payee_id, status (pending/paid/cancelled/refunded/partially refunded), total, created_at | Belongs to User (buyer); has many Tickets | 4.5, 4.9 |
+| **Payment** | A payment-gateway transaction tied to an Order — same shape regardless of whether the order's payee is the organizer or a reselling attendee. | id, order_id, gateway_ref, amount, status | Belongs to Order | 4.6, 4.9 |
 | **RefundPolicy** | Organizer-defined refund rules for an event. | id, event_id, window/rule definition | Belongs to Event | 4.6 |
 | **Refund** | A full or partial refund against an Order/Ticket. | id, order_id, amount, reason, initiated_by, status | Belongs to Order | 4.6 |
 | **Payout** | Scheduled transfer of net sales to an Organization. | id, organization_id, gross, fees, net, period, status | Belongs to Organization | 4.6 |
@@ -52,12 +59,12 @@ This document identifies the API's core resources (entities) derived from the ap
 
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
-| **Ticket** | A single issued ticket — the unit that gets checked in. | id, order_id, ticket_type_id, seat_id (nullable), owner_id, ticket_number (`PREFIX-XXXXXX`), credential (signed QR/barcode), status (valid/used/transferred/refunded/cancelled) | Belongs to Order and TicketType; optionally a Seat | 4.5, 4.9, 4.10 |
+| **Ticket** | A single issued ticket — the unit that gets checked in. | id, order_id, ticket_type_id, seat_id (nullable), owner_id, ticket_number (`PREFIX-XXXXXX`, globally unique — prefix copied from the event's reserved `ticket_number_prefix`, suffix random and unique within the event), credential (signed QR/barcode), status (valid/used/transferred/refunded/cancelled) | Belongs to Order and TicketType; optionally a Seat | 4.5, 4.9, 4.10 |
 | **TicketTemplate** | An organizer-defined layout for rendering physical/digital tickets. | id, event_id (or ticket_type_id), format (physical/digital), branding fields, field layout | Belongs to Event or TicketType | 4.10 |
 | **TicketArtifact** | A generated, deliverable instance of a ticket (the actual PDF/image), rendered from a Ticket + TicketTemplate. | id, ticket_id, format (physical/digital), file ref | Belongs to Ticket | 4.10 |
-| **TicketTransfer** | A record of ownership change between Users. | id, ticket_id, from_user_id, to_user_id, transferred_at | Belongs to Ticket | 4.9 |
-| **ResalePolicy** | Organizer-controlled resale setting for an event. | id, event_id, enabled, price_cap_rule | Belongs to Event | 4.9 |
-| **ResaleListing** | A ticket a current owner has listed for resale. | id, ticket_id, asking_price, status | Belongs to Ticket | 4.9 |
+| **TicketTransfer** | A record of ownership change between Users — created either by a direct transfer (4.9) or automatically when a `ResaleListing` sells. | id, ticket_id, from_user_id, to_user_id, transferred_at, source (direct_transfer / resale) | Belongs to Ticket | 4.9 |
+| **ResalePolicy** | Organizer-controlled resale setting for an event: whether resale is allowed at all, and any price cap. | id, event_id, enabled, price_cap_rule | Belongs to Event | 4.9 |
+| **ResaleListing** *(first-class resource)* | A current owner's active offer to resell one ticket. Has its own lifecycle independent of the ticket's other history — a ticket can be listed, delisted, and relisted over time, and each attempt is its own record. | id, ticket_id, event_id (denormalized for browse/search), seller_id, asking_price, status (active / sold / cancelled / expired), listed_at, resolved_at (nullable), buyer_order_id (nullable, set once sold) | Belongs to Ticket; validated against the event's ResalePolicy at creation; produces an Order (see 2.4) and a TicketTransfer when sold | 4.9 |
 | **WaitlistEntry** | An attendee waiting for sold-out inventory. | id, event_id or ticket_type_id, user_id, position, notified_at, offer_expires_at | Belongs to Event/TicketType and User | 4.8 |
 
 ### 2.6 Check-in & Scanning
@@ -65,8 +72,9 @@ This document identifies the API's core resources (entities) derived from the ap
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
 | **CheckInConfig** | Per-event check-in policy: mode and its parameters. | id, event_id, mode (standard / pure_offline), offline_fallback_expiry (default 5 min) | Belongs to Event | 4.11 |
-| **ScannerDevice** | An authorized scanning device/credential for an event. | id, event_id, device_label, credential, status (active/revoked), role (primary / fallback-recorder) | Belongs to Event (via CheckInConfig) | 4.11 |
-| **CheckInRecord** | The result of one scan attempt. | id, ticket_id, device_id, scanned_at, result (valid/duplicate/invalid/wrong_event), sync_source (online / offline_fallback / blind_recorded) | Belongs to Ticket and ScannerDevice | 4.11 |
+| **ScannerDevice** | An authorized, pre-fetch-capable scanning device — the "real" device in either mode: the sole device in pure offline mode, or any of the N devices in standard mode. Always able to produce a `CheckInRecord` with a known result at scan time (online, or offline within the fallback-file window). | id, event_id, device_label, credential, status (active/revoked) | Belongs to Event (via CheckInConfig) | 4.11 |
+| **FallbackScanRecord** | *Distinct from `ScannerDevice`* — the last-resort stand-in used only in pure offline mode after the sole `ScannerDevice` fails. It was never issued the pre-fetched dataset, so it can't determine a result at scan time (it can verify the credential's signature to reject obvious forgeries, but can't know if a ticket's already been used elsewhere). It just captures the raw scan; the record starts unresolved and is reconciled once synced. | id, event_id, raw_credential, captured_at, synced_at (nullable until upload), reconciled_result (nullable), reconciled_ticket_id (nullable) | Belongs to Event; resolves into a Ticket/CheckInRecord once synced | 4.11 |
+| **CheckInRecord** | The final, known result of a scan — either produced immediately by a `ScannerDevice`, or produced when a `FallbackScanRecord` is reconciled after sync. | id, ticket_id, source_type (scanner_device / reconciled_fallback), source_id, scanned_at, result (valid/duplicate/invalid/wrong_event) | Belongs to Ticket; relates to ScannerDevice or FallbackScanRecord | 4.11 |
 
 ### 2.7 Engagement & Admin
 
@@ -83,14 +91,18 @@ This document identifies the API's core resources (entities) derived from the ap
 - `Order` → `Payment` / `Refund` are 1-to-many (a refund can be partial, and an order can have more than one payment attempt).
 - `Ticket` is the join point for almost everything downstream of purchase: transfers, resale, templates/artifacts, and check-in all key off `ticket_id`.
 - `CheckInConfig` governs how many `ScannerDevice` records an event may have and what each is allowed to do (pre-fetch/offline vs. online-only, per requirements 4.11).
+- `FallbackScanRecord` only ever exists under `CheckInConfig.mode = pure_offline`, and only after the event's single `ScannerDevice` has been marked failed/replaced — it's the exception path, not a peer of `ScannerDevice`.
+- `Ticket.ticket_number`'s prefix is copied from `Event.ticket_number_prefix` (a random 3-letter code reserved once, at event creation) — the relationship (Ticket → Event, via TicketType) is what guarantees the number's global uniqueness without a platform-wide lookup.
+- A `Ticket` may have at most one *active* `ResaleListing` at a time — it must resolve (sold/cancelled/expired) before the ticket can be relisted, since a ticket is a single admission unit and can't be sold to two buyers at once.
+- When a `ResaleListing` sells, the platform runs it like a mini-checkout rather than a direct handoff between the two parties: it creates an `Order`/`Payment` (so the organizer's price cap and any platform fee are actually enforced and collected, not just advisory), then on payment success creates a `TicketTransfer` (source: resale) and flips `Ticket.owner_id` — mirroring how a primary purchase resolves, just with the seller as the payee instead of the organizer.
 
 ## 4. Open Questions Carried From Requirements
 
-These resources make a few requirements-doc open questions concrete and worth resolving before schema design:
-
-- Whether `ScannerDevice` needs a distinct "fallback-recorder" role (pure offline mode) with a different data shape than a normal device — likely yes, since it only ever produces blind `CheckInRecord`s, never a pre-fetch.
-- Whether `TicketNumber` uniqueness (from requirements 4.10) is enforced at the `Event` scope or globally — affects whether `Ticket.ticket_number` needs a global unique index or a composite one with `event_id`.
-- Whether `ResaleListing` is a first-class resource in v1 or just a status flag on `Ticket` — requirements only specify organizer-controlled enable/cap, not a full marketplace UX, so a lighter model may be enough.
+- ~~Whether `ScannerDevice` needs a distinct "fallback-recorder" role or data shape.~~ **Resolved:** it's a separate resource, `FallbackScanRecord` — see 2.6.
+- ~~Whether ticket number uniqueness is per-event or global.~~ **Resolved:** global, via an event-derived prefix — see 2.5 and 3.
+- ~~Whether `ResaleListing` is a first-class resource or a status flag on `Ticket`.~~ **Resolved:** first-class resource — see 2.5 and 3. It carries its own lifecycle (listed/sold/cancelled/expired) independent of the ticket, and a sale runs through a real `Order`/`Payment`/`TicketTransfer` rather than a direct handoff.
+- ~~How exactly the event-derived ticket-number prefix is generated.~~ **Resolved:** a random 3-letter (A–Z) code, generated once and reserved at event creation, unique across all events — see `Event.ticket_number_prefix` in 2.2. Not a deterministic encoding of the event's own ID, and not reused as a general-purpose event code elsewhere in the API.
+- ~~Whether a resale purchase reuses `Order`/`Payment` or needs its own shape.~~ **Resolved:** reused — `Order` gains `payee_type`/`payee_id` so the same resource works for both cases: payee is the `Organization` on a primary purchase, and the reselling `User` on a resale purchase. See 2.4.
 
 ## 5. Next Step
 

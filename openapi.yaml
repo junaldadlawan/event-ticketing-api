@@ -1,0 +1,1135 @@
+openapi: 3.1.0
+info:
+  title: Event Ticketing API
+  version: "1.0.0-draft"
+  description: >
+    Core purchase and check-in flow for a multi-organizer event ticketing
+    marketplace. This is a first-pass contract covering identity/auth,
+    events & ticket types, cart & checkout, orders & tickets, and
+    check-in/scanning. See api-contract.md section 4 for what's deferred.
+servers:
+  - url: https://api.example.com/v1
+    description: Placeholder — actual host TBD in the architecture phase.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Organizations
+  - name: Events
+  - name: TicketTypes
+  - name: SeatMaps
+  - name: Cart
+  - name: Orders
+  - name: Tickets
+  - name: CheckIn
+
+paths:
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [Auth]
+      security: []
+      summary: Create a User account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      security: []
+      summary: Exchange credentials for tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      security: []
+      summary: Exchange a refresh token for a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  expires_in: { type: integer, description: seconds }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Auth]
+      summary: The caller's own account, with org memberships
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  /users/me/orders:
+    get:
+      operationId: listMyOrders
+      tags: [Orders]
+      summary: Orders placed by the caller
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderList" }
+
+  /organizations:
+    post:
+      operationId: createOrganization
+      tags: [Organizations]
+      summary: Create an Organization (caller becomes owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+
+  /organizations/{orgId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: getOrganization
+      tags: [Organizations]
+      summary: Get an Organization (members or admin only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateOrganization
+      tags: [Organizations]
+      summary: Update an Organization (owner/co-organizer only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+
+  /events:
+    get:
+      operationId: listEvents
+      tags: [Events]
+      security: []
+      summary: Search/list published events (public)
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: lat
+          in: query
+          schema: { type: number }
+        - name: lng
+          in: query
+          schema: { type: number }
+        - name: radius_km
+          in: query
+          schema: { type: number }
+        - name: date_from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: price_min
+          in: query
+          schema: { type: integer }
+        - name: price_max
+          in: query
+          schema: { type: integer }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [date, popularity, price] }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventList" }
+    post:
+      operationId: createEvent
+      tags: [Events]
+      summary: Create an Event (organizer, verified org)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventCreate" }
+      responses:
+        "201":
+          description: Created — includes system-generated ticket_number_prefix
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /events/{eventId}:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEvent
+      tags: [Events]
+      security: []
+      summary: Get an Event (public if published; organizer/admin otherwise)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateEvent
+      tags: [Events]
+      summary: Update an Event (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+
+  /events/{eventId}/publish:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: publishEvent
+      tags: [Events]
+      summary: Transition an Event draft -> published
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "409":
+          description: Organization not verified, or event not in a publishable state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /events/{eventId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: cancelEvent
+      tags: [Events]
+      summary: Cancel an Event; triggers async refunds for all issued tickets
+      responses:
+        "202":
+          description: Cancellation accepted; refund workflow runs asynchronously
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+
+  /events/{eventId}/seatmap:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventSeatMap
+      tags: [SeatMaps]
+      security: []
+      summary: Get the event's seat map with live seat status (reserved-seating events only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeatMap" }
+        "404":
+          description: Event has no seat map (GA-only)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /events/{eventId}/ticket-types:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: listTicketTypes
+      tags: [TicketTypes]
+      security: []
+      summary: List an event's ticket types (public if event published)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TicketType" }
+    post:
+      operationId: createTicketType
+      tags: [TicketTypes]
+      summary: Create a TicketType (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketTypeCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+
+  /ticket-types/{ticketTypeId}:
+    parameters:
+      - $ref: "#/components/parameters/TicketTypeId"
+    get:
+      operationId: getTicketType
+      tags: [TicketTypes]
+      security: []
+      summary: Get a TicketType
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+    patch:
+      operationId: updateTicketType
+      tags: [TicketTypes]
+      summary: Update a TicketType (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketTypeUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+
+  /carts:
+    post:
+      operationId: createCart
+      tags: [Cart]
+      summary: Create an empty Cart for the caller
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+
+  /carts/{cartId}:
+    parameters:
+      - $ref: "#/components/parameters/CartId"
+    get:
+      operationId: getCart
+      tags: [Cart]
+      summary: Get a Cart (owning buyer only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /carts/{cartId}/items:
+    parameters:
+      - $ref: "#/components/parameters/CartId"
+    post:
+      operationId: addCartItem
+      tags: [Cart]
+      summary: Add an item to the cart; places a temporary Hold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket_type_id]
+              properties:
+                ticket_type_id: { type: string, format: uuid }
+                seat_id:
+                  type: string
+                  format: uuid
+                  description: Required for reserved-seating ticket types.
+                quantity:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                  description: Used for GA ticket types; ignored if seat_id is set.
+      responses:
+        "201":
+          description: Item added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "409":
+          description: Seat or GA quantity no longer available
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /carts/{cartId}/items/{itemId}:
+    parameters:
+      - $ref: "#/components/parameters/CartId"
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: removeCartItem
+      tags: [Cart]
+      summary: Remove an item and release its Hold
+      responses:
+        "204": { description: Removed }
+
+  /carts/{cartId}/checkout:
+    parameters:
+      - $ref: "#/components/parameters/CartId"
+    post:
+      operationId: checkout
+      tags: [Cart]
+      summary: Charge the cart and issue tickets
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_method_token]
+              properties:
+                payment_method_token:
+                  type: string
+                  description: Client-side token from the payment gateway; the API never receives raw card data.
+      responses:
+        "201":
+          description: Order created and tickets issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "402":
+          description: Payment failed; cart and holds remain intact for retry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: A hold expired before checkout completed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orders/{orderId}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      operationId: getOrder
+      tags: [Orders]
+      summary: Get an Order (owning buyer, event organizer, or admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  /orders/{orderId}/tickets:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      operationId: listOrderTickets
+      tags: [Tickets]
+      summary: List tickets on an order
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Ticket" }
+
+  /events/{eventId}/orders:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: listEventOrders
+      tags: [Orders]
+      summary: List orders for an event (owning organizer or admin)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderList" }
+
+  /tickets/{ticketId}:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    get:
+      operationId: getTicket
+      tags: [Tickets]
+      summary: Get a Ticket (owning buyer, event organizer, or admin). Never returns the raw scannable credential.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+
+  /tickets/{ticketId}/artifact:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    get:
+      operationId: getTicketArtifact
+      tags: [Tickets]
+      summary: Get the rendered, deliverable ticket (PDF/image) carrying the QR/barcode and visible ticket_number
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema: { type: string, enum: [digital, physical] }
+      responses:
+        "200":
+          description: The rendered ticket file
+          content:
+            application/pdf: {}
+            image/png: {}
+
+  /tickets/{ticketId}/check-in-records:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    get:
+      operationId: listTicketCheckInRecords
+      tags: [CheckIn]
+      summary: Audit trail of scan attempts against a ticket (owning organizer or admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CheckInRecord" }
+
+  /events/{eventId}/check-in-config:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getCheckInConfig
+      tags: [CheckIn]
+      summary: Get an event's check-in mode/config
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckInConfig" }
+    patch:
+      operationId: updateCheckInConfig
+      tags: [CheckIn]
+      summary: Set an event's check-in mode/config (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: { type: string, enum: [standard, pure_offline] }
+                offline_fallback_expiry_seconds: { type: integer, default: 300 }
+      responses:
+        "200":
+          description: Updated. If a mode switch occurs while a device holds unsynced scans, a warning is included.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckInConfig" }
+
+  /events/{eventId}/scanner-devices:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: authorizeScannerDevice
+      tags: [CheckIn]
+      summary: Authorize a new ScannerDevice for an event (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_label: { type: string }
+                force_replace:
+                  type: boolean
+                  default: false
+                  description: Required to replace the sole device in pure_offline mode (the override flow, requirements 4.11).
+      responses:
+        "201":
+          description: Authorized — credential is shown once, here, and never again
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScannerDeviceWithCredential" }
+        "409":
+          description: pure_offline mode already has an active device; retry with force_replace true
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /scanner-devices/{deviceId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    delete:
+      operationId: revokeScannerDevice
+      tags: [CheckIn]
+      summary: Revoke a device's credential immediately (owning organizer)
+      responses:
+        "204": { description: Revoked }
+
+  /scanner-devices/{deviceId}/dataset:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      operationId: getScannerDeviceDataset
+      tags: [CheckIn]
+      security:
+        - deviceAuth: []
+      summary: Pre-fetch the ticket dataset for offline validation
+      responses:
+        "200":
+          description: >
+            Full event ticket dataset. In pure_offline mode this has no
+            expiry for the sole device; in standard mode the client must
+            treat it as stale after CheckInConfig.offline_fallback_expiry_seconds.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketDataset" }
+
+  /check-in/validate:
+    post:
+      operationId: validateScan
+      tags: [CheckIn]
+      security:
+        - deviceAuth: []
+      summary: Validate a scanned credential in real time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential, device_id]
+              properties:
+                credential: { type: string, description: Raw scanned QR/barcode payload }
+                device_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationResult" }
+
+  /check-in/fallback-scans:
+    post:
+      operationId: submitFallbackScans
+      tags: [CheckIn]
+      security:
+        - deviceAuth: []
+      summary: >
+        Batch-upload raw scans captured by the fallback recorder while the
+        sole ScannerDevice was down (pure_offline mode only, requirements 4.11).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, scans]
+              properties:
+                event_id: { type: string, format: uuid }
+                scans:
+                  type: array
+                  items:
+                    type: object
+                    required: [raw_credential, captured_at]
+                    properties:
+                      raw_credential: { type: string }
+                      captured_at: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Per-scan reconciled results; duplicates are flagged, not resolved automatically.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ValidationResult" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    deviceAuth:
+      type: http
+      scheme: bearer
+      description: A ScannerDevice's own credential, issued by POST /events/{eventId}/scanner-devices.
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 20, maximum: 100 }
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TicketTypeId:
+      name: ticketTypeId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CartId:
+      name: cartId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Authenticated, but not permitted (wrong role/scope)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Request failed validation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: integer, description: Minor units (e.g. cents) }
+        currency: { type: string, description: ISO 4217, example: USD }
+
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        is_admin: { type: boolean }
+        organizations:
+          type: array
+          items:
+            type: object
+            properties:
+              organization_id: { type: string, format: uuid }
+              role: { type: string, enum: [owner, co_organizer, check_in_staff] }
+        created_at: { type: string, format: date-time }
+
+    Organization:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        verification_status: { type: string, enum: [pending, verified, rejected] }
+        created_at: { type: string, format: date-time }
+
+    OrganizationUpdate:
+      type: object
+      properties:
+        name: { type: string }
+
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        venue:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            address: { type: string }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        timezone: { type: string, example: Asia/Manila }
+        images:
+          type: array
+          items: { type: string, format: uri }
+        status: { type: string, enum: [draft, published, on_sale, sold_out, cancelled, completed] }
+        ticket_number_prefix:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: Random 3-letter (A-Z) code, reserved unique platform-wide at creation; seeds Ticket.ticket_number only.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    EventCreate:
+      type: object
+      required: [title, start_at, end_at, timezone]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        venue_id: { type: string, format: uuid }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        timezone: { type: string }
+        images:
+          type: array
+          items: { type: string, format: uri }
+
+    EventUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        images:
+          type: array
+          items: { type: string, format: uri }
+
+    EventList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Event" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+
+    Pagination:
+      type: object
+      properties:
+        next_cursor: { type: [string, "null"] }
+        limit: { type: integer }
+
+    SeatMap:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        seats:
+          type: array
+          items: { $ref: "#/components/schemas/Seat" }
+
+    Seat:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        section: { type: string }
+        row: { type: string }
+        seat_number: { type: string }
+        status: { type: string, enum: [available, held, sold] }
+
+    TicketType:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { type: string, enum: [general_admission, reserved_seating] }
+        price: { $ref: "#/components/schemas/Money" }
+        quantity_total: { type: integer }
+        quantity_available: { type: integer }
+        sale_start_at: { type: string, format: date-time }
+        sale_end_at: { type: string, format: date-time }
+        max_per_order: { type: integer }
+
+    TicketTypeCreate:
+      type: object
+      required: [name, kind, price]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [general_admission, reserved_seating] }
+        price: { $ref: "#/components/schemas/Money" }
+        quantity_total: { type: integer }
+        sale_start_at: { type: string, format: date-time }
+        sale_end_at: { type: string, format: date-time }
+        max_per_order: { type: integer, default: 10 }
+
+    TicketTypeUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        price: { $ref: "#/components/schemas/Money" }
+        quantity_total: { type: integer }
+        sale_start_at: { type: string, format: date-time }
+        sale_end_at: { type: string, format: date-time }
+        max_per_order: { type: integer }
+
+    Cart:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        buyer_id: { type: string, format: uuid }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CartItem" }
+        applied_promo_code:
+          type: [string, "null"]
+          description: Deferred — promo codes aren't wired up in this pass.
+        total: { $ref: "#/components/schemas/Money" }
+
+    CartItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticket_type_id: { type: string, format: uuid }
+        seat_id: { type: [string, "null"], format: uuid }
+        quantity: { type: integer }
+        hold_expires_at: { type: string, format: date-time }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        buyer_id: { type: string, format: uuid }
+        payee_type: { type: string, enum: [organization, user] }
+        payee_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, paid, cancelled, refunded, partially_refunded] }
+        total: { $ref: "#/components/schemas/Money" }
+        tickets:
+          type: array
+          items: { $ref: "#/components/schemas/Ticket" }
+        created_at: { type: string, format: date-time }
+
+    OrderList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+
+    Ticket:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        ticket_type_id: { type: string, format: uuid }
+        seat_id: { type: [string, "null"], format: uuid }
+        owner_id: { type: string, format: uuid }
+        ticket_number:
+          type: string
+          description: "Human-visible PREFIX-XXXXXX, e.g. K3F-A1B2C3. Not a check-in credential."
+        status: { type: string, enum: [valid, used, transferred, refunded, cancelled] }
+
+    TicketDataset:
+      type: object
+      description: Full pre-fetched ticket state for offline validation.
+      properties:
+        event_id: { type: string, format: uuid }
+        generated_at: { type: string, format: date-time }
+        tickets:
+          type: array
+          items:
+            type: object
+            properties:
+              ticket_id: { type: string, format: uuid }
+              credential_hash: { type: string, description: For local signature/lookup verification without exposing the raw credential unnecessarily. }
+              status: { type: string, enum: [valid, used, transferred, refunded, cancelled] }
+
+    ValidationResult:
+      type: object
+      properties:
+        ticket_id: { type: [string, "null"], format: uuid }
+        result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
+        scanned_at: { type: string, format: date-time }
+        ticket_summary:
+          type: object
+          nullable: true
+          properties:
+            ticket_number: { type: string }
+            ticket_type_name: { type: string }
+            seat: { type: [string, "null"] }
+
+    CheckInConfig:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid }
+        mode: { type: string, enum: [standard, pure_offline] }
+        offline_fallback_expiry_seconds: { type: integer, default: 300 }
+        warning:
+          type: [string, "null"]
+          description: Set when a mode switch occurs while a device may hold unsynced scans.
+
+    ScannerDeviceWithCredential:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        device_label: { type: string }
+        status: { type: string, enum: [active, revoked] }
+        credential:
+          type: string
+          description: Shown once, at creation, and never again.
+
+    CheckInRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticket_id: { type: string, format: uuid }
+        source_type: { type: string, enum: [scanner_device, reconciled_fallback] }
+        source_id: { type: string, format: uuid }
+        scanned_at: { type: string, format: date-time }
+        result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
