@@ -25,8 +25,8 @@ public class Event {
     @Column(name = "id")
     private UUID id;
 
-    @Column(name = "organization_id")
-    private String organizationId;
+    @Column(name = "organizer_id")
+    private UUID organizationId;
 
     @Column(name = "title", nullable = false, length = 100)
     private String title;
@@ -40,17 +40,17 @@ public class Event {
     @Column(name = "venue")
     private int venue;
 
-    @Column(name = "start_at", nullable = false)
+    @Column(name = "start_time", nullable = false)
     private Instant startAt;
 
-    @Column(name = "end_at", nullable = false)
+    @Column(name = "end_time", nullable = false)
     private Instant endAt;
 
     @Column(name = "timezone", nullable = false)
     private String timezone;
 
-    @Column(name = "image", nullable = true)
-    private Byte image;
+    @Column(name = "image")
+    private byte[] image;
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
@@ -61,7 +61,7 @@ public class Event {
     private String ticketPrefix;
 
     @CreatedBy
-    @Column(name = "created_by", updatable = false, insertable = false, nullable = false)
+    @Column(name = "created_by", updatable = false, nullable = false)
     private String createdBy;
 
     @CreationTimestamp
@@ -69,11 +69,14 @@ public class Event {
     private Instant createdAt;
 
     @LastModifiedBy
-    @Column(name = "updated_by", nullable = true)
+    @Column(name = "updated_by")
     private String updatedBy;
 
     @UpdateTimestamp
-    @Column(name = "updated_at", nullable = true)
+    @Column(name = "updated_at")
     private Instant updatedAt;
+
+    @Column(name = "delete_at")
+    private Instant deleteAt;
 
 }

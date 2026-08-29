@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.common.validation;
 
 import jakarta.validation.Constraint;
+import jakarta.validation.Payload;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -12,4 +13,7 @@ import java.lang.annotation.Target;
 @Constraint(validatedBy = NoHtmlValidator.class)
 public @interface NoHtml {
     String message() default "must not contain '<' or '>'";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+
 }

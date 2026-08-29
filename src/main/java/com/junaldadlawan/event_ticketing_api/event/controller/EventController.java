@@ -1,17 +1,21 @@
 package com.junaldadlawan.event_ticketing_api.event.controller;
 
+import com.junaldadlawan.event_ticketing_api.common.dto.PageResponse;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
-import com.junaldadlawan.event_ticketing_api.event.entity.Event;
+import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventService;
 import jakarta.validation.Valid;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Controller;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/events")
@@ -20,28 +24,33 @@ import java.time.Instant;
 public class EventController {
 
     private final EventService eventService;
+    private final EventRepository eventRepository;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public EventResponse create(
-            @Valid @RequestBody EventRequest request
+    public EventResponse create(@Valid @RequestBody EventRequest request
     ) {
-        return EventResponse.from(Event.builder()
-                .title("Java Conference 2026")
-                .category("CONFERENCE1")
-                .venue(1)
-                .startAt(Instant.now())
-                .endAt(Instant.now())
-                .ticketPrefix("JAVA")
-                .build());
+        return EventResponse.from(eventService.createEvent(request));
+    }
 
-//        return EventResponse.from(Event.builder()
-//                .title("Java Conference 2026")
-//                .category("CONFERENCE")
-//                .venue(1)
-//                .startAt(Instant.now())
-//                .endAt(Instant.now())
-//                .ticketPrefix("JAVA")
-//                .build());
+    @GetMapping
+    public PageResponse<EventResponse> search(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Instant startsAfter,
+            @RequestParam(required = false) Instant startsBefore,
+            @PageableDefault(size = 20) Pageable pageable
+    ) {
+        return PageResponse.from(
+                eventService.listEvents(category, keyword, startsAfter, startsBefore, pageable)
+                        .map(EventResponse::from)
+        );
+    }
+
+    @DeleteMapping("/{eventId}")
+//    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public ResponseEntity<Void> deleteEvent(@PathVariable UUID eventId) {
+        eventService.delete(eventId);
+        return ResponseEntity.noContent().build();
     }
 }
