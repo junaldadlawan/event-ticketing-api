@@ -8,8 +8,10 @@ public class ValidEndTimeValidator implements ConstraintValidator<ValidEndTime, 
 
     @Override
     public boolean isValid(EventRequest request, ConstraintValidatorContext context) {
-        if(request == null || request.startAt() == null || request.endAt() == null) {
-            return false;
+        if(request == null ||
+                request.startAt() == null ||
+                request.endAt() == null) {
+            return true;
         }
         return !request.endAt().isBefore(request.startAt());
     }

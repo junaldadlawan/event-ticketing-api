@@ -2,7 +2,6 @@ package com.junaldadlawan.event_ticketing_api.event.dto;
 
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
-import org.springframework.http.ResponseEntity;
 
 import java.io.Serializable;
 import java.time.Instant;
@@ -13,7 +12,7 @@ import java.util.UUID;
  */
 public record EventResponse(
         UUID id,
-        String organizationId,
+        UUID organizationId,
         String title,
         String description,
         String category,
@@ -21,7 +20,7 @@ public record EventResponse(
         Instant startAt,
         Instant endAt,
         String timezone,
-        Byte image,
+        byte[] image,
         EventStatus status,
         String ticketPrefix,
         String createdBy,
