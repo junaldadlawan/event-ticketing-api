@@ -27,11 +27,6 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public UserResponse login(UserRequest request) {
-        return null;
-    }
-
-    @Override
     public List<User> getUsers() {
         return userRepository.findAll();
     }
