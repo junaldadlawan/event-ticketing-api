@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.event.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
+import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -35,7 +36,6 @@ public class EventServiceImpl implements EventService {
                 .timezone(request.timezone())
                 .image(request.image())
                 .ticketPrefix(request.ticketPrefix())
-                .createdBy("Aldrin")
                 .build();
         return eventRepository.save(newEvent);
     }
@@ -54,13 +54,29 @@ public class EventServiceImpl implements EventService {
     @Override
     public void delete(UUID eventId) {
         Event event = getOrThrow(eventId);
-        event.setDeleteAt(Instant.now());
+        event.markDeleted();
         eventRepository.save(event);
     }
 
     public Event getOrThrow(UUID eventId) {
         return eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + eventId + " not found"));
+    }
+
+    @Override
+    public Event updateEvent(UUID eventId, EventUpdateRequest request) {
+        Event event = getOrThrow(eventId);
+        event.setTitle(request.title());
+        event.setDescription(request.description());
+        event.setCategory(request.category());
+        event.setStartAt(request.startAt());
+        event.setEndAt(request.endAt());
+        event.setTimezone(request.timezone());
+        event.setImage(request.image());
+        event.setTicketPrefix(request.ticketPrefix());
+        event.setVenue(request.venue());
+
+        return eventRepository.save(event);
     }
 }
 

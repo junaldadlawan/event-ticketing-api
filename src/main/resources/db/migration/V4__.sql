@@ -1,0 +1,14 @@
+
+ALTER TABLE events
+    ADD deleted_at TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE users
+    ADD deleted_at TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE events
+DROP
+COLUMN delete_at;
+
+ALTER TABLE users
+DROP
+COLUMN delete_at;

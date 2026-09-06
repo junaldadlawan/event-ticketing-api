@@ -3,8 +3,11 @@ package com.junaldadlawan.event_ticketing_api.event.controller;
 import com.junaldadlawan.event_ticketing_api.common.dto.PageResponse;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
+import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
+import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventService;
+import jakarta.servlet.ServletResponse;
 import jakarta.validation.Valid;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -52,5 +55,12 @@ public class EventController {
     public ResponseEntity<Void> deleteEvent(@PathVariable UUID eventId) {
         eventService.delete(eventId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{eventId}")
+    public EventResponse update(
+            @PathVariable UUID eventId,
+            @Valid @RequestBody EventUpdateRequest request) {
+        return EventResponse.from(eventService.updateEvent(eventId, request));
     }
 }

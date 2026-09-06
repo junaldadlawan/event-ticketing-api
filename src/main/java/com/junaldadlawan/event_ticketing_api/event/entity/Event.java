@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.event.entity;
 
+import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -18,7 +19,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Event {
+public class Event extends Auditable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -59,24 +60,4 @@ public class Event {
 
     @Column(name = "ticket_prefix", nullable = false, length = 3)
     private String ticketPrefix;
-
-    @CreatedBy
-    @Column(name = "created_by", updatable = false, nullable = false)
-    private String createdBy;
-
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false, nullable = false)
-    private Instant createdAt;
-
-    @LastModifiedBy
-    @Column(name = "updated_by")
-    private String updatedBy;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private Instant updatedAt;
-
-    @Column(name = "delete_at")
-    private Instant deleteAt;
-
 }
