@@ -51,7 +51,6 @@ public class EventController {
     }
 
     @DeleteMapping("/{eventId}")
-//    @ResponseStatus(HttpStatus.NO_CONTENT)
     public ResponseEntity<Void> deleteEvent(@PathVariable UUID eventId) {
         eventService.delete(eventId);
         return ResponseEntity.noContent().build();
