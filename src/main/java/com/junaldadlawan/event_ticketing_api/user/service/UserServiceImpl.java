@@ -8,6 +8,7 @@ import com.junaldadlawan.event_ticketing_api.user.dto.UserUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 import com.junaldadlawan.event_ticketing_api.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -18,13 +19,14 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     public User register(UserRequest request) {
         User newUser = User.builder()
                 .name(request.name())
                 .email(request.email())
-                .passwordHash(request.passwordHash())
+                .passwordHash(passwordEncoder.encode(request.passwordHash()))
                 .role(request.role())
                 .build();
         return userRepository.save(newUser);
@@ -47,7 +49,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public User updatePassword(UUID id, UserPasswordUpdateRequest request) {
         User user = getOrThrow(id);
-        user.setPasswordHash(request.passwordHash());
+        user.setPasswordHash(passwordEncoder.encode(request.passwordHash()));
         return userRepository.save(user);
     }
 
