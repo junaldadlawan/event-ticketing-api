@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.user.entity;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
+import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -37,9 +38,9 @@ public class User extends Auditable {
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    @Size(max = 20)
     @NotNull
+    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
-    private String role;
+    private Role role;
 
 }

@@ -58,7 +58,7 @@ public class JwtService {
         var builder = Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("email", user.getEmail())
-                .claim("role", user.getRole())
+                .claim("role", user.getRole().name())
                 .claim("type", tokenType)
                 .issuedAt(now)
                 .expiration(expiry);
