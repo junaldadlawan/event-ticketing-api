@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.user.dto;
 
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
+import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -16,7 +17,7 @@ public record UserResponse(
         UUID id,
         @NotNull @Size(max = 150) String name,
         @NotNull @Size(max = 255) String email,
-        @NotNull @Size(max = 20) String role,
+        @NotNull Role role,
         @NotNull String createdBy,
         @NotNull Instant createdAt,
         @Size(max = 20) String updatedBy,
