@@ -1,12 +1,19 @@
 openapi: 3.1.0
 info:
   title: Event Ticketing API
-  version: "1.2.0-draft"
+  version: "1.3.0-draft"
   description: >
-    Core purchase and check-in flow for a multi-organizer event ticketing
-    marketplace. This is a first-pass contract covering identity/auth,
-    events & ticket types, cart & checkout, orders & tickets, and
-    check-in/scanning. See api-contract.md section 4 for what's deferred.
+    Full v1 marketplace surface for a multi-organizer event ticketing
+    platform: identity/auth, organization onboarding (application +
+    admin approval) and org-scoped roles, events & ticket types, cart &
+    checkout (with promo codes), orders & tickets, ticket transfer &
+    organizer-controlled resale, waitlists, refunds & payouts, ticket
+    templates, check-in/scanning, notifications, disputes, audit log, and
+    analytics. Aligned to requirements.md v1.0, business-rules.md v1.0,
+    and use-cases.md v1.0. Genuinely open/undecided items (target
+    markets, resale opt-in/out default, mid-event check-in mode
+    switching, etc.) are tracked in requirements.md section 7, not
+    modeled here.
 servers:
   - url: https://api.example.com/v1
     description: Placeholder — actual host TBD in the architecture phase.
@@ -21,10 +28,20 @@ tags:
   - name: Events
   - name: TicketTypes
   - name: SeatMaps
+  - name: PromoCodes
+  - name: Waitlist
   - name: Cart
   - name: Orders
   - name: Tickets
+  - name: Resale
+  - name: TicketTemplates
+  - name: Refunds
+  - name: Payouts
   - name: CheckIn
+  - name: Notifications
+  - name: Disputes
+  - name: Audit
+  - name: Analytics
 
 paths:
   /auth/register:
@@ -107,7 +124,7 @@ paths:
     get:
       operationId: getCurrentUser
       tags: [Auth]
-      summary: The caller's own account, with org memberships
+      summary: The caller's own account, with org memberships and roles
       responses:
         "200":
           description: OK
@@ -130,26 +147,76 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OrderList" }
 
+  /users/me/waitlist-entries:
+    get:
+      operationId: listMyWaitlistEntries
+      tags: [Waitlist]
+      summary: Waitlist entries the caller has joined
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WaitlistEntry" }
+
+  /users/me/notifications:
+    get:
+      operationId: listMyNotifications
+      tags: [Notifications]
+      summary: Notifications triggered for the caller, and their delivery status
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Notification" }
+
   /organizations:
-    post:
-      operationId: createOrganization
+    get:
+      operationId: listOrganizations
       tags: [Organizations]
-      summary: Create an Organization (caller becomes owner)
+      summary: List organization applications (admin only — the review queue)
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Organization" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: applyToCreateOrganization
+      tags: [Organizations]
+      summary: >
+        Submit an application to create an Organization. The caller does
+        NOT become owner on submission — only on admin approval
+        (see POST /organizations/{orgId}/approve).
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name: { type: string }
+            schema: { $ref: "#/components/schemas/OrganizationCreate" }
       responses:
         "201":
-          description: Created
+          description: Application submitted, status pending
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Organization" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /organizations/{orgId}:
     parameters:
@@ -157,7 +224,7 @@ paths:
     get:
       operationId: getOrganization
       tags: [Organizations]
-      summary: Get an Organization (members or admin only)
+      summary: Get an Organization (the applicant, its members, or admin)
       responses:
         "200":
           description: OK
@@ -169,7 +236,7 @@ paths:
     patch:
       operationId: updateOrganization
       tags: [Organizations]
-      summary: Update an Organization (owner/co-organizer only)
+      summary: Update an Organization (owner or organizer only; approved orgs only)
       requestBody:
         required: true
         content:
@@ -181,6 +248,121 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Organization" }
+
+  /organizations/{orgId}/approve:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      operationId: approveOrganization
+      tags: [Organizations]
+      summary: >
+        Approve a pending organization application (admin only). Sets
+        status to approved, sets owner_id to the applicant, and grants
+        the applicant the owner role via OrganizationMember.
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Application is not in pending status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /organizations/{orgId}/reject:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      operationId: rejectOrganization
+      tags: [Organizations]
+      summary: Reject a pending organization application (admin only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: Rejected — applicant gains no organization privileges
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Application is not in pending status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /organizations/{orgId}/members:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: listOrganizationMembers
+      tags: [Organizations]
+      summary: List an organization's members and their roles (members or admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OrganizationMember" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: assignOrganizationRole
+      tags: [Organizations]
+      summary: >
+        Assign a role (organizer or check_in_staff) to a user within this
+        organization. Roles are additive/combinable, not exclusive. Two
+        cases: assigning a *different* user requires the caller to be the
+        organization's owner; a caller may always assign an additional
+        role to *themselves* if they already hold at least one role
+        (owner or organizer) in this organization — no separate approval
+        needed for self-assignment. The owner role itself can never be
+        granted here — it's only ever set by organization-application
+        approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationMemberAssign" }
+      responses:
+        "201":
+          description: Role assigned (membership created or updated)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /organizations/{orgId}/payouts:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: listOrganizationPayouts
+      tags: [Payouts]
+      summary: >
+        List an organization's payouts (owner/organizer or admin).
+        Payouts are system-generated on a schedule; this pass exposes
+        read access only, not manual creation.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Payout" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /organizations/{orgId}/venues:
     parameters:
@@ -201,7 +383,7 @@ paths:
     post:
       operationId: createVenue
       tags: [Venues]
-      summary: Add a reusable Venue to the organization (owner/co-organizer only)
+      summary: Add a reusable Venue to the organization (owner or organizer only)
       requestBody:
         required: true
         content:
@@ -232,7 +414,7 @@ paths:
     patch:
       operationId: updateVenue
       tags: [Venues]
-      summary: Update a Venue (owning organization's owner/co-organizer only)
+      summary: Update a Venue (owning organization's owner or organizer only)
       requestBody:
         required: true
         content:
@@ -293,7 +475,7 @@ paths:
     post:
       operationId: createEvent
       tags: [Events]
-      summary: Create an Event (organizer, verified org)
+      summary: Create an Event (organizer or owner, approved org)
       requestBody:
         required: true
         content:
@@ -314,7 +496,7 @@ paths:
       operationId: getEvent
       tags: [Events]
       security: []
-      summary: Get an Event (public if published; organizer/admin otherwise)
+      summary: Get an Event (public if published; organizer/owner/admin otherwise)
       responses:
         "200":
           description: OK
@@ -325,7 +507,7 @@ paths:
     patch:
       operationId: updateEvent
       tags: [Events]
-      summary: Update an Event (owning organizer)
+      summary: Update an Event (organizer or owner of the owning organization)
       requestBody:
         required: true
         content:
@@ -352,7 +534,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Event" }
         "409":
-          description: Organization not verified, or event not in a publishable state
+          description: Organization not approved, or event not in a publishable state
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -453,6 +635,227 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
 
+  /events/{eventId}/promo-codes:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: listPromoCodes
+      tags: [PromoCodes]
+      summary: List an event's promo codes (owning organizer)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PromoCode" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createPromoCode
+      tags: [PromoCodes]
+      summary: Create a PromoCode for an event (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromoCodeCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoCode" }
+
+  /events/{eventId}/waitlist:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: joinWaitlist
+      tags: [Waitlist]
+      summary: Join the waitlist for a sold-out event or ticket type
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ticket_type_id:
+                  type: string
+                  format: uuid
+                  description: Omit to wait for the event generally.
+      responses:
+        "201":
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WaitlistEntry" }
+        "409":
+          description: Event/ticket type is not currently sold out
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /events/{eventId}/resale-policy:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getResalePolicy
+      tags: [Resale]
+      security: []
+      summary: Get an event's resale policy (public — a buyer needs to know before listing)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResalePolicy" }
+    patch:
+      operationId: updateResalePolicy
+      tags: [Resale]
+      summary: Enable/disable resale and set a price cap for an event (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResalePolicyUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResalePolicy" }
+
+  /events/{eventId}/resale-listings:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: listResaleListings
+      tags: [Resale]
+      security: []
+      summary: Browse active resale listings for an event (public)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ResaleListing" }
+
+  /events/{eventId}/refund-policy:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getRefundPolicy
+      tags: [Refunds]
+      summary: Get an event's refund policy (organizer, admin, or a buyer with an order on it)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefundPolicy" }
+    patch:
+      operationId: updateRefundPolicy
+      tags: [Refunds]
+      summary: Set an event's refund policy (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefundPolicyUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefundPolicy" }
+
+  /events/{eventId}/ticket-templates:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: listTicketTemplates
+      tags: [TicketTemplates]
+      summary: List an event's ticket templates (owning organizer)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TicketTemplate" }
+    post:
+      operationId: createTicketTemplate
+      tags: [TicketTemplates]
+      summary: Submit a physical or digital ticket layout for an event or ticket type (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketTemplateCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketTemplate" }
+
+  /ticket-templates/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateTicketTemplate
+      tags: [TicketTemplates]
+      summary: Update a ticket template (owning organizer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketTemplateUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketTemplate" }
+
+  /events/{eventId}/analytics:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventAnalytics
+      tags: [Analytics]
+      summary: Sales analytics for one event (owning organizer)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventAnalytics" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /analytics/platform:
+    get:
+      operationId: getPlatformAnalytics
+      tags: [Analytics]
+      summary: Platform-wide aggregate metrics (admin only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformAnalytics" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /carts:
     post:
       operationId: createCart
@@ -531,6 +934,44 @@ paths:
       responses:
         "204": { description: Removed }
 
+  /carts/{cartId}/promo-code:
+    parameters:
+      - $ref: "#/components/parameters/CartId"
+    post:
+      operationId: applyPromoCode
+      tags: [Cart]
+      summary: Apply a promo code to the cart; adjusts the total before payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Applied
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "422":
+          description: Code is expired, exhausted, or inapplicable to the items in the cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: removePromoCode
+      tags: [Cart]
+      summary: Remove the promo code currently applied to the cart
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+
   /carts/{cartId}/checkout:
     parameters:
       - $ref: "#/components/parameters/CartId"
@@ -577,7 +1018,7 @@ paths:
     get:
       operationId: getOrder
       tags: [Orders]
-      summary: Get an Order (owning buyer, event organizer, or admin)
+      summary: Get an Order (owning buyer, event organizer/owner, or admin)
       responses:
         "200":
           description: OK
@@ -601,13 +1042,49 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Ticket" }
 
+  /orders/{orderId}/refunds:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      operationId: listOrderRefunds
+      tags: [Refunds]
+      summary: List refunds issued against an order
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Refund" }
+    post:
+      operationId: createRefund
+      tags: [Refunds]
+      summary: Issue a full or partial refund for an order (owning organizer or admin), subject to the event's refund policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefundCreate" }
+      responses:
+        "201":
+          description: Refund initiated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Refund" }
+        "409":
+          description: Refund not permitted under the event's refund policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /events/{eventId}/orders:
     parameters:
       - $ref: "#/components/parameters/EventId"
     get:
       operationId: listEventOrders
       tags: [Orders]
-      summary: List orders for an event (owning organizer or admin)
+      summary: List orders for an event (owning organizer/owner or admin)
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -651,6 +1128,137 @@ paths:
             application/pdf: {}
             image/png: {}
 
+  /tickets/{ticketId}/transfer:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    post:
+      operationId: transferTicket
+      tags: [Tickets]
+      summary: Transfer a ticket to another registered user (owning buyer only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_user_id]
+              properties:
+                to_user_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            Transferred — the previous credential is invalidated and a
+            new one is issued to the recipient.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+
+  /tickets/{ticketId}/transfers:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    get:
+      operationId: listTicketTransfers
+      tags: [Tickets]
+      summary: Ownership-change history for a ticket (owning buyer, event organizer, or admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TicketTransfer" }
+
+  /tickets/{ticketId}/resale-listings:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    post:
+      operationId: createResaleListing
+      tags: [Resale]
+      summary: >
+        List a ticket for resale (owning buyer only). Rejected if the
+        event's ResalePolicy has resale disabled, the asking price
+        exceeds its price cap, or the ticket already has an active
+        listing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [asking_price]
+              properties:
+                asking_price: { $ref: "#/components/schemas/Money" }
+      responses:
+        "201":
+          description: Listed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResaleListing" }
+        "403":
+          description: Resale disabled for this event, or price exceeds the cap
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Ticket already has an active resale listing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /resale-listings/{listingId}:
+    parameters:
+      - name: listingId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: cancelResaleListing
+      tags: [Resale]
+      summary: Cancel an active resale listing (owning seller only)
+      responses:
+        "204": { description: Cancelled }
+
+  /resale-listings/{listingId}/purchase:
+    parameters:
+      - name: listingId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: purchaseResaleListing
+      tags: [Resale]
+      summary: >
+        Buy a resale-listed ticket. Runs like checkout: creates an Order
+        (payee is the reselling User, not the Organization), and on
+        payment success creates a TicketTransfer and reassigns the
+        ticket's owner.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_method_token]
+              properties:
+                payment_method_token: { type: string }
+      responses:
+        "201":
+          description: Purchased — ticket transferred to the buyer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "409":
+          description: Listing is no longer active
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /tickets/{ticketId}/check-in-records:
     parameters:
       - $ref: "#/components/parameters/TicketId"
@@ -683,7 +1291,7 @@ paths:
     patch:
       operationId: updateCheckInConfig
       tags: [CheckIn]
-      summary: Set an event's check-in mode/config (owning organizer)
+      summary: Set an event's check-in mode/config (owning organizer). Mode is always an explicit manual choice, never inferred.
       requestBody:
         required: true
         content:
@@ -819,6 +1427,98 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/ValidationResult" }
 
+  /disputes:
+    get:
+      operationId: listDisputes
+      tags: [Disputes]
+      summary: List disputes (admin only)
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, investigating, resolved, dismissed] }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Dispute" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createDispute
+      tags: [Disputes]
+      summary: Raise a dispute against an order or ticket (e.g. buyer-reported fraud)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DisputeCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+
+  /disputes/{disputeId}:
+    parameters:
+      - name: disputeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getDispute
+      tags: [Disputes]
+      summary: Get a dispute (the user who raised it, or admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateDispute
+      tags: [Disputes]
+      summary: Update a dispute's status/resolution (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DisputeUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [Audit]
+      summary: List audit log entries for sensitive actions (admin only)
+      parameters:
+        - name: actor_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditLogEntry" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -943,11 +1643,15 @@ components:
         is_admin: { type: boolean }
         organizations:
           type: array
+          description: One entry per organization the user has any role in.
           items:
             type: object
             properties:
               organization_id: { type: string, format: uuid }
-              role: { type: string, enum: [owner, co_organizer, check_in_staff] }
+              roles:
+                type: array
+                description: Combinable, not mutually exclusive — e.g. an owner may also be an organizer and/or check_in_staff for the same organization.
+                items: { type: string, enum: [owner, organizer, check_in_staff] }
         created_at: { type: string, format: date-time }
         created_by:
           type: [string, "null"]
@@ -959,14 +1663,67 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        verification_status: { type: string, enum: [pending, verified, rejected] }
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: An application in `pending` grants no organization privileges. Only `approved` gains an owner and can publish events or receive payouts.
+        documents:
+          type: array
+          description: Verification documents submitted with the application (e.g. business permit).
+          items:
+            type: object
+            properties:
+              type: { type: string, example: business_permit }
+              url: { type: string, format: uri }
+        owner_id:
+          type: [string, "null"]
+          format: uuid
+          description: Set only once the application is approved; equals the original applicant (created_by).
         created_at: { type: string, format: date-time }
-        created_by: { type: string, format: uuid, description: User who created the organization (its initial owner). }
+        created_by: { type: string, format: uuid, description: The applicant who submitted this organization's application. }
+
+    OrganizationCreate:
+      type: object
+      required: [name, documents]
+      properties:
+        name: { type: string }
+        documents:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [type, url]
+            properties:
+              type: { type: string, example: business_permit }
+              url: { type: string, format: uri }
 
     OrganizationUpdate:
       type: object
       properties:
         name: { type: string }
+
+    OrganizationMember:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        roles:
+          type: array
+          items: { type: string, enum: [owner, organizer, check_in_staff] }
+        assigned_at: { type: string, format: date-time }
+
+    OrganizationMemberAssign:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: Set equal to the caller's own id to self-assign.
+        role:
+          type: string
+          enum: [organizer, check_in_staff]
+          description: owner cannot be granted here — it's only ever set by organization-application approval.
 
     Venue:
       type: object
@@ -980,6 +1737,8 @@ components:
         longitude: { type: [number, "null"] }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid, description: User (organizer) who added this venue. }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
 
     VenueCreate:
       type: object
@@ -1079,6 +1838,10 @@ components:
         seats:
           type: array
           items: { $ref: "#/components/schemas/Seat" }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
 
     Seat:
       type: object
@@ -1088,6 +1851,8 @@ components:
         row: { type: string }
         seat_number: { type: string }
         status: { type: string, enum: [available, held, sold] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     TicketType:
       type: object
@@ -1102,6 +1867,10 @@ components:
         sale_start_at: { type: string, format: date-time }
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
 
     TicketTypeCreate:
       type: object
@@ -1125,6 +1894,185 @@ components:
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
 
+    PromoCode:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        code: { type: string }
+        discount_type: { type: string, enum: [percentage, fixed] }
+        discount_value:
+          type: number
+          description: A percentage (0-100) if discount_type is percentage, otherwise a fixed Money amount in minor units.
+        applicable_ticket_type_ids:
+          type: array
+          items: { type: string, format: uuid }
+        usage_limit_total: { type: [integer, "null"] }
+        usage_limit_per_buyer: { type: [integer, "null"] }
+        valid_from: { type: string, format: date-time }
+        valid_until: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
+
+    PromoCodeCreate:
+      type: object
+      required: [code, discount_type, discount_value, valid_from, valid_until]
+      properties:
+        code: { type: string }
+        discount_type: { type: string, enum: [percentage, fixed] }
+        discount_value: { type: number }
+        applicable_ticket_type_ids:
+          type: array
+          items: { type: string, format: uuid }
+        usage_limit_total: { type: integer }
+        usage_limit_per_buyer: { type: integer }
+        valid_from: { type: string, format: date-time }
+        valid_until: { type: string, format: date-time }
+
+    WaitlistEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        ticket_type_id: { type: [string, "null"], format: uuid }
+        user_id: { type: string, format: uuid }
+        position: { type: integer }
+        notified_at: { type: [string, "null"], format: date-time }
+        offer_expires_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+
+    ResalePolicy:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid }
+        enabled: { type: boolean, default: false }
+        price_cap_rule: { type: string, enum: [face_value, face_value_plus_fee, none] }
+        fee_amount:
+          $ref: "#/components/schemas/Money"
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
+
+    ResalePolicyUpdate:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        price_cap_rule: { type: string, enum: [face_value, face_value_plus_fee, none] }
+        fee_amount: { $ref: "#/components/schemas/Money" }
+
+    ResaleListing:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticket_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        seller_id: { type: string, format: uuid }
+        asking_price: { $ref: "#/components/schemas/Money" }
+        status: { type: string, enum: [active, sold, cancelled, expired] }
+        listed_at: { type: string, format: date-time }
+        resolved_at: { type: [string, "null"], format: date-time }
+        buyer_order_id: { type: [string, "null"], format: uuid }
+        updated_at: { type: string, format: date-time, description: Reflects status transitions between listed_at and resolved_at. }
+
+    RefundPolicy:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid }
+        rule_type: { type: string, enum: [refundable_until_n_days, no_refunds, custom] }
+        days_before_event: { type: [integer, "null"] }
+        custom_terms: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
+
+    RefundPolicyUpdate:
+      type: object
+      required: [rule_type]
+      properties:
+        rule_type: { type: string, enum: [refundable_until_n_days, no_refunds, custom] }
+        days_before_event: { type: integer }
+        custom_terms: { type: string }
+
+    Payment:
+      type: object
+      description: A payment-gateway transaction tied to an Order — same shape whether the order's payee is the organizer or a reselling attendee.
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        gateway_ref: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+        status: { type: string, enum: [pending, completed, failed] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, description: Reflects gateway status transitions. }
+
+    Refund:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        amount: { $ref: "#/components/schemas/Money" }
+        reason: { type: string }
+        initiated_by: { type: string, format: uuid }
+        status: { type: string, enum: [pending, completed, failed] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, description: Reflects status transitions. }
+
+    RefundCreate:
+      type: object
+      required: [reason]
+      properties:
+        amount:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: Omit for a full refund of the order's total.
+        reason: { type: string }
+
+    TicketTemplate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        ticket_type_id: { type: [string, "null"], format: uuid }
+        format: { type: string, enum: [physical, digital] }
+        branding:
+          type: object
+          properties:
+            logo_url: { type: [string, "null"], format: uri }
+            background_image_url: { type: [string, "null"], format: uri }
+            primary_color: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
+
+    TicketTemplateCreate:
+      type: object
+      required: [format]
+      properties:
+        ticket_type_id: { type: string, format: uuid }
+        format: { type: string, enum: [physical, digital] }
+        branding:
+          type: object
+          properties:
+            logo_url: { type: string, format: uri }
+            background_image_url: { type: string, format: uri }
+            primary_color: { type: string }
+
+    TicketTemplateUpdate:
+      type: object
+      properties:
+        branding:
+          type: object
+          properties:
+            logo_url: { type: string, format: uri }
+            background_image_url: { type: string, format: uri }
+            primary_color: { type: string }
+
     Cart:
       type: object
       properties:
@@ -1134,9 +2082,13 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CartItem" }
         applied_promo_code:
-          type: [string, "null"]
-          description: Deferred — promo codes aren't wired up in this pass.
+          type: [object, "null"]
+          properties:
+            code: { type: string }
+            discount_amount: { $ref: "#/components/schemas/Money" }
         total: { $ref: "#/components/schemas/Money" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     CartItem:
       type: object
@@ -1146,6 +2098,7 @@ components:
         seat_id: { type: [string, "null"], format: uuid }
         quantity: { type: integer }
         hold_expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
 
     Order:
       type: object
@@ -1155,6 +2108,7 @@ components:
         payee_type: { type: string, enum: [organization, user] }
         payee_id: { type: string, format: uuid }
         status: { type: string, enum: [pending, paid, cancelled, refunded, partially_refunded] }
+        promo_code: { type: [string, "null"] }
         total: { $ref: "#/components/schemas/Money" }
         tickets:
           type: array
@@ -1164,6 +2118,7 @@ components:
           type: string
           format: uuid
           description: User who initiated the purchase — normally equal to buyer_id, but may differ for an organizer/admin-initiated order (e.g. a comp ticket) placed on a buyer's behalf.
+        updated_at: { type: string, format: date-time, description: Reflects status transitions (pending -> paid -> refunded, etc). }
 
     OrderList:
       type: object
@@ -1186,6 +2141,18 @@ components:
           type: string
           description: "Human-visible PREFIX-XXXXXX, e.g. K3F-A1B2C3. Not a check-in credential."
         status: { type: string, enum: [valid, used, transferred, refunded, cancelled] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, description: Reflects status transitions. }
+
+    TicketTransfer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticket_id: { type: string, format: uuid }
+        from_user_id: { type: string, format: uuid }
+        to_user_id: { type: string, format: uuid }
+        source: { type: string, enum: [direct_transfer, resale] }
+        transferred_at: { type: string, format: date-time }
 
     TicketDataset:
       type: object
@@ -1225,6 +2192,9 @@ components:
         warning:
           type: [string, "null"]
           description: Set when a mode switch occurs while a device may hold unsynced scans.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid, description: Organizer who last changed the mode/config. }
 
     ScannerDeviceWithCredential:
       type: object
@@ -1236,6 +2206,10 @@ components:
         credential:
           type: string
           description: Shown once, at creation, and never again.
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid, description: Organizer who authorized this device. }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
 
     CheckInRecord:
       type: object
@@ -1246,3 +2220,92 @@ components:
         source_id: { type: string, format: uuid }
         scanned_at: { type: string, format: date-time }
         result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [order_confirmation, payment_receipt, event_reminder, event_change, event_cancellation, waitlist_availability, refund_confirmation]
+        channel: { type: string, enum: [email, sms, push] }
+        related_object_type: { type: [string, "null"] }
+        related_object_id: { type: [string, "null"], format: uuid }
+        sent_at: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [pending, sent, failed] }
+        created_at: { type: string, format: date-time, description: When the notification was triggered (distinct from sent_at). }
+
+    Dispute:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: [string, "null"], format: uuid }
+        ticket_id: { type: [string, "null"], format: uuid }
+        raised_by: { type: string, format: uuid }
+        status: { type: string, enum: [open, investigating, resolved, dismissed] }
+        resolution: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, description: Reflects status/resolution changes. }
+        updated_by: { type: string, format: uuid, description: Admin who last acted on it. }
+
+    DisputeCreate:
+      type: object
+      required: [reason]
+      properties:
+        order_id: { type: string, format: uuid }
+        ticket_id: { type: string, format: uuid }
+        reason: { type: string }
+
+    DisputeUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [open, investigating, resolved, dismissed] }
+        resolution: { type: string }
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid }
+        action: { type: string, example: refund.issued }
+        target_type: { type: [string, "null"] }
+        target_id: { type: [string, "null"], format: uuid }
+        created_at: { type: string, format: date-time }
+
+    Payout:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        gross: { $ref: "#/components/schemas/Money" }
+        fees: { $ref: "#/components/schemas/Money" }
+        net: { $ref: "#/components/schemas/Money" }
+        period_start: { type: string, format: date }
+        period_end: { type: string, format: date }
+        status: { type: string, enum: [scheduled, paid, failed] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, description: Reflects status transitions. }
+
+    EventAnalytics:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid }
+        tickets_sold: { type: integer }
+        revenue: { $ref: "#/components/schemas/Money" }
+        remaining_inventory: { type: integer }
+        sales_over_time:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              tickets_sold: { type: integer }
+              revenue: { $ref: "#/components/schemas/Money" }
+
+    PlatformAnalytics:
+      type: object
+      properties:
+        total_gmv: { $ref: "#/components/schemas/Money" }
+        active_organizers: { type: integer }
+        event_volume: { type: integer }
+        generated_at: { type: string, format: date-time }
