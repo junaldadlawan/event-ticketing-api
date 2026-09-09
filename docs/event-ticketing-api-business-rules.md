@@ -27,6 +27,7 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-AUTH-006 | An assigned role (organizer or scanner/check-in staff) is scoped to that one organization's own events. (§4.1) |
 | BR-AUTH-007 | Roles within an organization are independently combinable, not mutually exclusive or hierarchical — an owner may also be an organizer and/or a scanner/check-in staff for that same organization; an organizer may also be a scanner. (§3) |
 | BR-AUTH-008 | A user may assign themselves any additional role they're entitled to within their own organization, without a separate approval step. (§3, §4.1) |
+| BR-AUTH-009 | An organization's owner may list the users belonging to their own organization only (needed to manage their roles) — not another organization's users. A platform admin may list users across the entire platform. (§4.1) |
 
 ## 2. Organization Onboarding
 
