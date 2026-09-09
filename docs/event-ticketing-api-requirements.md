@@ -55,6 +55,7 @@ Roles are not mutually exclusive at the account level — a single account may h
 - The API must support token-based authentication (e.g. OAuth 2.0 / JWT) suitable for first-party web/mobile clients and third-party integrations.
 - An organization's owner must be able to assign other registered users scoped roles within that organization — organizer or scanner/check-in staff — each limited to that organization's own events; only the owner (not an assigned organizer) may make these assignments for other users.
 - A user may assign themselves any additional role they're entitled to within their own organization (e.g. an owner also acting as organizer or scanner, or an organizer also acting as scanner), without requiring separate approval. Roles within an organization are independently combinable, not mutually exclusive or hierarchical.
+- An organization's owner must be able to list the users belonging to their own organization, since managing their roles requires seeing who they are; this is scoped to that one organization only. A platform admin may list users across the entire platform, not just one organization.
 
 ### 4.2 Event & Organizer Management
 
