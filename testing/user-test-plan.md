@@ -9,12 +9,15 @@ narrower capability covered in `organization-test-plan.md`.
 
 ## Test Scenarios
 
-- [ ] Admin can list all users platform-wide
-- [ ] Non-admin, non-org-owner cannot list users (403)
-- [ ] Password is stored hashed, never in plain text
-- [ ] Admin can update a user's name/email/role
-- [ ] Admin can update a user's password
-- [ ] Admin can soft-delete a user
-- [ ] Soft-deleted users don't appear in the user list
-- [ ] Updating/deleting a non-existent user returns 404
-- [ ] Non-admin cannot update/delete/change password for any user (403)
+- [x] Admin can list all users platform-wide
+- [x] Non-admin, non-org-owner cannot list users (403)
+- [x] Password is stored hashed, never in plain text
+- [x] Admin can update a user's name/email/role
+- [x] Admin can update a user's password
+- [x] Admin can soft-delete a user
+- [x] Soft-deleted users don't appear in the user list
+- [x] Updating/deleting a non-existent user returns 404
+- [x] Non-admin cannot update/delete/change password for any user (403)
+
+See [user-test-results.md](user-test-results.md) for the executed test run
+and which automated test covers each scenario.
