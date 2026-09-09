@@ -43,7 +43,8 @@ public class EventServiceImpl implements EventService {
     @Override
     public Page<Event> listEvents(String category, String keyword, Instant from, Instant to, Pageable pageable) {
         Specification<Event> specification =
-                Specification.where(EventSpecification.hasStatus(EventStatus.DRAFT))
+                Specification.where(EventSpecification.hasStatus(EventStatus.PUBLISHED))
+                .and(EventSpecification.notDeleted())
                 .and(EventSpecification.hasCategory(category))
                 .and(EventSpecification.titleContains(keyword))
                 .and(EventSpecification.startsAfter(from))
