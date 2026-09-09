@@ -1,16 +1,8 @@
 # Event Ticketing API — Requirements Document
 
-**Version:** 1.6 (Draft)
-**Date:** 2026-08-25
-**Status:** For review — supersedes the approved v1.4 baseline with the changes below; needs re-approval.
-
-**Revision history:**
-- v1.1 adds API support for organizer-defined ticket layouts (physical and digital), clarifies digital ticket delivery via email/screenshot, and adds a validation API for mobile QR check-in — while making explicit that this project's scope is the **API only**; the ticket-layout web UI and the mobile scanning app are separate client applications outside this project.
-- v1.2 adds organizer-configurable scanner count per event (single- vs. multi-scanner mode), governing whether a scanning device may pre-fetch data and validate offline, plus a single-scanner override/replacement flow with offline-scan reconciliation.
-- v1.3 replaces the v1.2 scanner model with two explicit organizer-chosen modes: **standard (online) mode**, where any number of devices validate online but keep a time-boxed (default 5 min, configurable) offline-fallback file; and **pure offline mode**, where exactly one authorized device validates fully offline, with an unauthenticated fallback recorder as a last resort if it fails — accepting, rather than preventing, the resulting double-scan risk.
-- v1.4 adds a human-readable, organizer-prefixed ticket number (`<PREFIX>-XXXXXX`) alongside the QR/barcode credential, so buyers can visually distinguish tickets; it's for display only and carries no check-in authority in v1. **Approved 2026-08-25.**
-- v1.5 revises the ticket number's prefix: instead of organizer-chosen free text, the prefix is now a short code the API derives from the event's own unique ID, making the full ticket number unique platform-wide (not just per event) while only requiring the random suffix to avoid collisions within a single event.
-- v1.6 pins down exactly how that prefix is generated: a random 3-letter (A–Z) code assigned once per event at creation time and reserved against collisions with every other event — not a deterministic derivation from the event's ID/slug, and not used anywhere in the API except to seed ticket numbers.
+**Version:** 1.0
+**Date:** 2026-09-08
+**Status:** Draft — compiled into a single V1 baseline from the incremental v1.1–v1.6 drafts; needs approval.
 
 ## 1. Purpose
 
@@ -48,26 +40,28 @@ See section 6.
 |---|---|
 | **Attendee (buyer)** | Browses events, purchases tickets, manages their own orders and tickets. |
 | **Event organizer** | Creates and manages events, ticket types, pricing, and promo codes; views sales and analytics for their own events. |
+| **Organization owner** | The user whose organization application was approved by an admin; has full authority over that organization, including assigning other users as organizer or check-in staff/scanner for it. |
 | **Check-in staff / scanner** | Validates tickets/QR codes at the venue entrance, typically via a mobile scanning app (separate client, not built in this project); scoped to a single event, granted access by the organizer. |
 | **Platform admin** | Manages the platform: approves organizers, moderates events, resolves disputes, has cross-organizer visibility. |
 
-Roles are not mutually exclusive at the account level — a single account may hold an "organizer" role on some events and be an "attendee" on others.
+Roles are not mutually exclusive at the account level — a single account may hold an "organizer" role on some events and be an "attendee" on others. Within one organization, roles are independently combinable rather than a strict hierarchy: an organization owner may also hold the organizer role, the scanner/check-in-staff role, or both, for that same organization; likewise an organizer may also be a scanner. A user may assign **themselves** any additional role they're entitled to within their own organization without a separate approval step — self-assignment is unrestricted. Assigning a role to a *different* user still requires the organization owner (4.1).
 
 ## 4. Functional Requirements
 
 ### 4.1 Identity & Access
 
-- The API must support account registration and authentication for all four roles, with organizer and check-in-staff accounts scoped to the events/organizations they belong to.
+- The API must support account registration and authentication for every role, with organizer and check-in-staff accounts scoped to the events/organizations they belong to.
 - The API must support role-based access control (RBAC): an organizer can only manage their own events; check-in staff can only validate tickets for events they're assigned to; admins have platform-wide access.
 - The API must support token-based authentication (e.g. OAuth 2.0 / JWT) suitable for first-party web/mobile clients and third-party integrations.
-- Organizer accounts must support inviting and managing team members (e.g. co-organizers, check-in staff) with scoped permissions.
+- An organization's owner must be able to assign other registered users scoped roles within that organization — organizer or scanner/check-in staff — each limited to that organization's own events; only the owner (not an assigned organizer) may make these assignments for other users.
+- A user may assign themselves any additional role they're entitled to within their own organization (e.g. an owner also acting as organizer or scanner, or an organizer also acting as scanner), without requiring separate approval. Roles within an organization are independently combinable, not mutually exclusive or hierarchical.
 
 ### 4.2 Event & Organizer Management
 
 - Organizers must be able to create, update, publish, unpublish, and cancel events.
 - An event must support: title, description, category, venue/location, start/end date-time, timezone, images, and status (draft, published, on-sale, sold out, cancelled, completed).
 - Organizers must be able to create multiple ticket types per event (e.g. GA, VIP, Early Bird), each with its own price, currency, quantity, sale window, and per-order purchase limits.
-- The platform must support organizer onboarding/verification before an organizer can publish events or receive payouts (e.g. identity/business verification, payout account setup).
+- Becoming an organization owner requires an application-and-approval flow: an already-registered user submits an application to create an `Organization`, including required verification documents (e.g. business permit); a platform admin reviews it and approves or rejects it. Only on approval does the applicant become that organization's owner, gaining the ability to publish events, receive payouts, and assign team members (4.1). A rejected or still-pending application grants no organization privileges.
 
 ### 4.3 Ticket Inventory: Seating & General Admission
 
