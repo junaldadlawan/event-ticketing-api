@@ -28,6 +28,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // Must precede the broader GET /api/v1/events/** permitAll
+                        // matcher below (Spring Security matches in declaration
+                        // order, first match wins) - promo-code listing is
+                        // owning-organizer-only, not public, per openapi.yaml
+                        // (no `security: []` override on listPromoCodes).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/promo-codes").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/events/*/promo-codes").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or
@@ -48,6 +55,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/ticket-types").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/ticket-types/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/ticket-types/**").authenticated()
+                        // No public GET exists for carts at all - buyer-only,
+                        // always authenticated (Phase 5a).
+                        .requestMatchers("/api/v1/carts", "/api/v1/carts/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) -> {
