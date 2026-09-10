@@ -69,14 +69,14 @@ class UserControllerTest {
                 .name("New Name")
                 .email("new@example.com")
                 .passwordHash("hash")
-                .role(Role.ORGANIZER)
+                .role(Role.ADMIN)
                 .build();
         when(userService.update(eq(id), any())).thenReturn(updated);
 
         mockMvc.perform(put("/api/v1/users/{id}", id)
                         .contentType("application/json")
                         .content("""
-                                {"name":"New Name","email":"new@example.com","role":"ORGANIZER"}
+                                {"name":"New Name","email":"new@example.com","role":"ADMIN"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("New Name"));
@@ -89,7 +89,7 @@ class UserControllerTest {
         mockMvc.perform(put("/api/v1/users/{id}", id)
                         .contentType("application/json")
                         .content("""
-                                {"email":"new@example.com","role":"ORGANIZER"}
+                                {"email":"new@example.com","role":"ADMIN"}
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -103,7 +103,7 @@ class UserControllerTest {
         mockMvc.perform(put("/api/v1/users/{id}", id)
                         .contentType("application/json")
                         .content("""
-                                {"name":"New Name","email":"new@example.com","role":"ORGANIZER"}
+                                {"name":"New Name","email":"new@example.com","role":"ADMIN"}
                                 """))
                 .andExpect(status().isNotFound());
     }

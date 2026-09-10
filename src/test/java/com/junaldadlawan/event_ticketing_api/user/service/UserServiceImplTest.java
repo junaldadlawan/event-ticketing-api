@@ -72,7 +72,7 @@ class UserServiceImplTest {
     @Test
     void register_mapsNameEmailRole() {
         UserRequest request = new UserRequest(
-                "Jane Doe", "jane@example.com", "plainTextPassword", Role.ORGANIZER,
+                "Jane Doe", "jane@example.com", "plainTextPassword", Role.ADMIN,
                 OffsetDateTime.now(), OffsetDateTime.now(), null, null);
         when(passwordEncoder.encode(any())).thenReturn("hashed-value");
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
@@ -83,7 +83,7 @@ class UserServiceImplTest {
         User toSave = captor.getValue();
         assertThat(toSave.getName()).isEqualTo("Jane Doe");
         assertThat(toSave.getEmail()).isEqualTo("jane@example.com");
-        assertThat(toSave.getRole()).isEqualTo(Role.ORGANIZER);
+        assertThat(toSave.getRole()).isEqualTo(Role.ADMIN);
     }
 
     @Test
@@ -99,7 +99,7 @@ class UserServiceImplTest {
 
     @Test
     void update_updatesNameEmailRole() {
-        UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ORGANIZER);
+        UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ADMIN);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -107,13 +107,13 @@ class UserServiceImplTest {
 
         assertThat(updated.getName()).isEqualTo("New Name");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
-        assertThat(updated.getRole()).isEqualTo(Role.ORGANIZER);
+        assertThat(updated.getRole()).isEqualTo(Role.ADMIN);
     }
 
     @Test
     void update_unknownId_throwsResourceNotFoundException() {
         UUID unknownId = UUID.randomUUID();
-        UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ORGANIZER);
+        UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ADMIN);
         when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.update(unknownId, request))
