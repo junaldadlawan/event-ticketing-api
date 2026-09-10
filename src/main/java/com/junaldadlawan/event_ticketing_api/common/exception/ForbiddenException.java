@@ -1,0 +1,9 @@
+package com.junaldadlawan.event_ticketing_api.common.exception;
+
+import org.springframework.http.HttpStatus;
+
+public class ForbiddenException extends ApiException {
+    public ForbiddenException(String message) {
+        super(HttpStatus.FORBIDDEN, message);
+    }
+}
