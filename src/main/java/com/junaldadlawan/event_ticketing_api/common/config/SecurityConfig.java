@@ -41,6 +41,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/venues/**").authenticated()
+                        // /api/v1/events/**'s existing GET permitAll already covers
+                        // GET /events/{id}/ticket-types and GET /events/{id}/seatmap;
+                        // /api/v1/ticket-types/** is a new top-level prefix (like
+                        // /api/v1/venues/** in Phase 2) that needs its own matcher.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/events/*/ticket-types").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/ticket-types/**").permitAll()
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/ticket-types/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) -> {
