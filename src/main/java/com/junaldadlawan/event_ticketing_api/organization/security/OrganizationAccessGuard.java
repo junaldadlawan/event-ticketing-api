@@ -9,15 +9,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-import java.util.Set;
 import java.util.UUID;
 
 /**
  * Imperative, service-layer authorization helper for the organization module.
  * Resolves the caller from {@link SecurityContextHolder} rather than relying
  * on method security ({@code @PreAuthorize}), which has no precedent in this
- * codebase. {@link #isOwnerOrOrganizerAnywhere(Authentication)} is also wired
- * directly into {@code SecurityConfig}'s SpEL for the event-mutation matchers.
+ * codebase.
  */
 @Component
 @RequiredArgsConstructor
@@ -52,26 +50,6 @@ public class OrganizationAccessGuard {
 
     public boolean isMember(UUID userId, UUID organizationId) {
         return organizationMemberRepository.existsByUserIdAndOrganizationId(userId, organizationId);
-    }
-
-    /**
-     * Used by {@code SecurityConfig}'s event-mutation matchers. Can only check
-     * "owner/organizer of *some* organization" — not "of *this event's*
-     * organization" — since {@code Event.organizationId} is still an unwired
-     * placeholder (Phase 3's job).
-     */
-    public boolean isOwnerOrOrganizerAnywhere(Authentication authentication) {
-        if (!isAuthenticated(authentication)) {
-            return false;
-        }
-        UUID userId;
-        try {
-            userId = UUID.fromString(authentication.getName());
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
-        return organizationMemberRepository.existsByUserIdAndRolesIn(
-                userId, Set.of(OrganizationRole.OWNER, OrganizationRole.ORGANIZER));
     }
 
     private boolean isAuthenticated(Authentication authentication) {

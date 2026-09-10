@@ -4,12 +4,10 @@ import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-import org.springframework.data.annotation.CreatedBy;
-import org.springframework.data.annotation.LastModifiedBy;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -26,7 +24,7 @@ public class Event extends Auditable {
     @Column(name = "id")
     private UUID id;
 
-    @Column(name = "organizer_id")
+    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
     @Column(name = "title", nullable = false, length = 100)
@@ -38,8 +36,8 @@ public class Event extends Auditable {
     @Column(name = "category", nullable = false, length = 20)
     private String category;
 
-    @Column(name = "venue")
-    private int venue;
+    @Column(name = "venue_id")
+    private UUID venueId;
 
     @Column(name = "start_time", nullable = false)
     private Instant startAt;
@@ -50,8 +48,16 @@ public class Event extends Auditable {
     @Column(name = "timezone", nullable = false)
     private String timezone;
 
-    @Column(name = "image")
-    private byte[] image;
+    @ElementCollection
+    @CollectionTable(
+            name = "event_images",
+            joinColumns = @JoinColumn(name = "event_id"),
+            // No FK constraints, matching every other table in this schema (see V6 migration).
+            foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT))
+    @OrderColumn(name = "sort_order")
+    @Column(name = "url", length = 2048)
+    @Builder.Default
+    private List<String> images = new ArrayList<>();
 
     @Enumerated(EnumType.STRING)
     @Builder.Default

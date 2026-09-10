@@ -5,11 +5,8 @@ import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
-import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventService;
-import jakarta.servlet.ServletResponse;
 import jakarta.validation.Valid;
-import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -23,17 +20,15 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/events")
 @RequiredArgsConstructor
-@Builder
 public class EventController {
 
     private final EventService eventService;
-    private final EventRepository eventRepository;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public EventResponse create(@Valid @RequestBody EventRequest request
     ) {
-        return EventResponse.from(eventService.createEvent(request));
+        return toResponse(eventService.createEvent(request));
     }
 
     @GetMapping
@@ -46,8 +41,13 @@ public class EventController {
     ) {
         return PageResponse.from(
                 eventService.listEvents(category, keyword, startsAfter, startsBefore, pageable)
-                        .map(EventResponse::from)
+                        .map(this::toResponse)
         );
+    }
+
+    @GetMapping("/{eventId}")
+    public EventResponse get(@PathVariable UUID eventId) {
+        return toResponse(eventService.getEvent(eventId));
     }
 
     @DeleteMapping("/{eventId}")
@@ -56,10 +56,25 @@ public class EventController {
         return ResponseEntity.noContent().build();
     }
 
-    @PutMapping("/{eventId}")
+    @PatchMapping("/{eventId}")
     public EventResponse update(
             @PathVariable UUID eventId,
             @Valid @RequestBody EventUpdateRequest request) {
-        return EventResponse.from(eventService.updateEvent(eventId, request));
+        return toResponse(eventService.updateEvent(eventId, request));
+    }
+
+    @PostMapping("/{eventId}/publish")
+    public EventResponse publish(@PathVariable UUID eventId) {
+        return toResponse(eventService.publishEvent(eventId));
+    }
+
+    @PostMapping("/{eventId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public EventResponse cancel(@PathVariable UUID eventId) {
+        return toResponse(eventService.cancelEvent(eventId));
+    }
+
+    private EventResponse toResponse(Event event) {
+        return EventResponse.from(event, eventService.resolveVenue(event.getVenueId()));
     }
 }
