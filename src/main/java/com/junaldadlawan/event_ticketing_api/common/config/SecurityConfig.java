@@ -52,6 +52,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/events/**").access(ownerOrOrganizerOrAdmin)
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/venues/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) -> {
