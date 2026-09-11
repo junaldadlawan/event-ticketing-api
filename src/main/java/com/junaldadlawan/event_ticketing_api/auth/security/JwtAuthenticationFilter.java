@@ -44,7 +44,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             } catch (JwtException e) {
-                SecurityContextHolder.clearContext();
+                // Code-reviewer MEDIUM (Phase 10 review): deliberately does
+                // NOT call SecurityContextHolder.clearContext() here. This
+                // filter and DeviceAuthenticationFilter are registered at
+                // the same addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)
+                // anchor and only run in this order (JWT first) because of
+                // stable-sort insertion order in SecurityConfig - a header
+                // that fails JWT parsing (e.g. a device credential, which
+                // has a structurally different shape) is exactly the case
+                // where a later filter in the chain is expected to
+                // authenticate the request instead. Unconditionally
+                // clearing here would silently wipe out that later filter's
+                // Authentication if the two filters were ever reordered.
             }
         }
 

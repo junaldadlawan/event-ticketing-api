@@ -427,3 +427,81 @@ first to persist `Ticket` rows via a test file under `checkin/`, and its
 query above. The pre-existing `events`/`organizations`/`organization_members`/
 `users` residue documented in prior phases' results docs (4/1/1/11) is
 unrelated to and unmodified by this pass.
+
+## Post-dispatch addendum (2026-09-11): code-reviewer found 1 HIGH, 2 MEDIUM, all fixed
+
+A `code-reviewer` pass over this dispatch's files (run after this results
+doc was first written) found one HIGH and two MEDIUM issues, all fixed and
+the HIGH covered by a new regression test:
+
+- **HIGH — a TOCTOU race let `pure_offline` mode end up with two
+  simultaneously-`ACTIVE` scanner devices, violating BR-CHECKIN-008's
+  "exactly one authorized device" invariant.**
+  `ScannerDeviceServiceImpl.authorize()` read the event's active-device list
+  via a plain `ScannerDeviceRepository.findByEventIdAndStatus` (no lock) and
+  no DB-level constraint backed the invariant either (`V18` only indexes
+  `scanner_devices(event_id)`, no partial unique index). Two concurrent
+  `POST /events/{eventId}/scanner-devices` requests for the same
+  `pure_offline` event (or two concurrent `force_replace` calls) could both
+  read the same pre-lock device list under Postgres `READ_COMMITTED`, both
+  pass the check/revoke step, and both insert a new `ACTIVE` device - after
+  which both could pull the full offline dataset and both could validate
+  scans, defeating the "exactly one real device" guarantee pure_offline mode
+  depends on. This pass's own tests for this path
+  (`ScannerDeviceServiceImplTest`) were Mockito-based and sequential, and the
+  one real concurrency test in this suite (`CheckInIntegrationTest`'s
+  8-thread scan race) covers a completely different code path
+  (`CheckInServiceImpl.resolveAndMarkTicket`'s ticket lock), so this race was
+  never exercised. Fixed by locking the event's `CheckInConfig` row first -
+  new `CheckInConfigRepository.findByEventIdForUpdate` (`@Lock(PESSIMISTIC_WRITE)`,
+  same idiom as `OrderRepository`/`TicketRepository`'s `findByIdForUpdate`) -
+  so concurrent `authorize()` calls for a pure_offline event now actually
+  serialize on that row; an absent config row (STANDARD mode, no invariant
+  to protect) takes no lock, so the STANDARD-mode unlimited-devices path is
+  unaffected. New test:
+  `ScannerDeviceIntegrationTest.authorize_pureOfflineMode_concurrentRequests_onlyOneEverActive`
+  (8-thread `ExecutorService`, asserts exactly 1 success + `threadCount - 1`
+  conflicts + exactly 1 `ACTIVE` device in the DB afterward). The three
+  pre-existing `ScannerDeviceServiceImplTest` cases that stubbed
+  `checkInConfigRepository.findByEventId` were updated to stub
+  `findByEventIdForUpdate` instead, since that's now the only method the
+  production code calls.
+- **MEDIUM — `ScannerDeviceAuthorizeRequest`/`CheckInConfigUpdateRequest`
+  had no validation, and neither controller method applied `@Valid`.** A
+  missing `deviceLabel` (a `NOT NULL` column) fell through to an unhandled
+  `DataIntegrityViolationException` at insert time (a raw 500, since no
+  global `@ControllerAdvice` exists yet per `CLAUDE.md`) instead of a clean
+  400; a negative/zero `offlineFallbackExpirySeconds` was silently persisted
+  and echoed back by `GET`, undermining BR-CHECKIN-007's "fixed time window"
+  semantics. Fixed by adding `@NotBlank` to `deviceLabel`, `@Positive` to
+  `offlineFallbackExpirySeconds`, and `@Valid` on both controller methods -
+  matching every other Phase 10 request DTO's existing pattern
+  (`ValidateScanRequest`, `FallbackScanBatchRequest`). No new test added:
+  this is the same validation idiom already covered by existing tests
+  elsewhere in the suite (e.g. `CheckInControllerTest`'s missing-field 400
+  cases), and re-adding an equivalent case here would duplicate that
+  coverage rather than exercise anything new.
+- **MEDIUM — filter-ordering safety for `deviceAuth` relied on undocumented,
+  fragile Spring Security behavior.** `JwtAuthenticationFilter` and
+  `DeviceAuthenticationFilter` both anchor at
+  `addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)`, so
+  their relative order is whatever this dispatch's registration order
+  (JWT first) happens to produce via a stable sort - nothing enforced it.
+  This worked safely only because `JwtAuthenticationFilter` called
+  `SecurityContextHolder.clearContext()` unconditionally on any
+  `JwtException`, and a device credential always fails JWT parsing - but if
+  the two `addFilterBefore` calls were ever reordered, a legitimate device
+  request's just-set `Authentication` would be silently wiped by the JWT
+  filter's `clearContext()` call, 401-ing every `deviceAuth` endpoint for
+  every device. Fixed by removing the `clearContext()` call - it has no
+  positive effect today (nothing is set yet when this filter's catch runs in
+  the current order) and its only effect was this footgun; a short comment
+  now documents why. No new test added: this fix makes the two filters'
+  relative order a non-issue rather than changing any currently-observable
+  behavior, so there's nothing new for a test to assert against without
+  reaching into filter-registration internals.
+
+**Verification:** targeted `checkin.**`/`auth.**` run (117 tests, 0
+failures) followed by the full suite (999 tests, 0 failures - 998 from the
+original dispatch + this addendum's 1 new regression test). `BUILD
+SUCCESS`.
