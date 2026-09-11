@@ -1,7 +1,9 @@
 package com.junaldadlawan.event_ticketing_api.ticket.repository;
 
 import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -10,6 +12,18 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TicketRepository extends JpaRepository<Ticket, UUID> {
+
+    /**
+     * Row lock for Phase 7's ownership-transfer paths (direct transfer and
+     * resale purchase) - both mutate {@code owner_id}/{@code credential}/
+     * {@code credentialVersion} on the same ticket row, and a resale-listing
+     * purchase races against a concurrent direct transfer of the same
+     * ticket. Same idiom as {@code CartRepository}/{@code SeatRepository}'s
+     * {@code findByIdForUpdate}.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Ticket t where t.id = :id")
+    Optional<Ticket> findByIdForUpdate(@Param("id") UUID id);
 
     /**
      * Backs the per-event ticket-number suffix generation retry loop in

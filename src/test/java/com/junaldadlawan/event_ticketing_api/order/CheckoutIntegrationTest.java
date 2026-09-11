@@ -839,10 +839,11 @@ class CheckoutIntegrationTest {
         assertThat(new java.util.HashSet<>(credentials)).hasSize(3);
 
         // Each credential embeds its own ticket's id (per TicketCredentialService's
-        // format: ticketId + "." + signature) - confirms the 3 credentials aren't
-        // just 3 copies of one value that happens to differ by coincidence.
+        // format: ticketId + ":" + version + "." + signature; fresh issuance is
+        // always version 0) - confirms the 3 credentials aren't just 3 copies
+        // of one value that happens to differ by coincidence.
         for (Ticket ticket : issuedTickets) {
-            assertThat(ticket.getCredential()).startsWith(ticket.getId().toString() + ".");
+            assertThat(ticket.getCredential()).startsWith(ticket.getId().toString() + ":0.");
         }
     }
 }
