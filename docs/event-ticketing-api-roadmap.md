@@ -128,17 +128,25 @@ What checkout actually issues.
 - ✅ `GET /orders/{id}`, `GET /orders/{id}/tickets`, `GET /tickets/{id}`,
   `GET /users/me/orders`, `GET /events/{id}/orders`. (Phase 6a)
 
-## Phase 7 — Transfer & Resale
+## Phase 7 — Transfer & Resale ✅
 
 Depends on `Ticket` existing.
 
-- ⬜ `TicketTransfer` entity + `POST /tickets/{id}/transfer` (`BR-TRANSFER-001`/
-  `002`/`005`).
-- ⬜ `ResalePolicy` entity + `GET/PATCH /events/{id}/resale-policy`.
-- ⬜ `ResaleListing` entity + `POST /tickets/{id}/resale-listings`,
+- ✅ `TicketTransfer` entity + `POST /tickets/{id}/transfer`, `GET
+  /tickets/{id}/transfers` (`BR-TRANSFER-001`/`002`/`005`). Credential
+  invalidation uses a new `Ticket.credentialVersion` counter folded into the
+  signed credential payload (the ticket row persists across transfers per
+  the ERD, so re-deriving from the bare ticket id alone couldn't change).
+- ✅ `ResalePolicy` entity + `GET/PATCH /events/{id}/resale-policy`.
+- ✅ `ResaleListing` entity + `POST /tickets/{id}/resale-listings`,
   `DELETE /resale-listings/{id}`, `GET /events/{id}/resale-listings`,
   `POST /resale-listings/{id}/purchase` (reuses the Phase 5 checkout
-  machinery with the seller as payee) (`BR-TRANSFER-003`/`004`).
+  machinery with the seller as payee) (`BR-TRANSFER-003`/`004`). Price cap
+  is anchored to a new `Ticket.faceValue` snapshot taken at issuance, not
+  the ticket type's current price (code-reviewer MEDIUM). A direct transfer
+  auto-cancels the ticket's own active listing so a listing can never
+  outlive the ownership state it was created against (code-reviewer
+  CRITICAL).
 
 ## Phase 8 — Refunds & Payouts
 
