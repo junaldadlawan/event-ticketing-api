@@ -169,18 +169,23 @@ refund trigger.
   No generation job exists yet (out of scope per the spec) - the table is
   always empty via any real flow today.
 
-## Phase 9 — Waitlist
+## Phase 9 — Waitlist ⚠️ (join/position tracking done, notify trigger not built)
 
 Depends on `Event`/`TicketType` existing; the "notify when inventory frees
 up" half depends on Phase 11's notification trigger existing to be
 meaningful (the join/position tracking can land without it).
 
-- ⬜ `WaitlistEntry` entity + `POST /events/{id}/waitlist`, `GET
-  /users/me/waitlist-entries` (`BR-WAIT-001`–`003`).
+- ✅ `WaitlistEntry` entity + `POST /events/{id}/waitlist`, `GET
+  /users/me/waitlist-entries` (`BR-WAIT-001`). FIFO position assignment
+  races (two concurrent joins for the same event+ticket-type computing the
+  same position) are guarded by a DB partial unique index + app-level
+  retry, same idiom as Phase 7/8's locking fixes.
 - ⬜ The active job/trigger that notifies waitlisted users in order when a
-  hold/cancellation frees inventory — this is the same "needs an active
-  trigger, not just lazy expiry" mechanism flagged in the cart-expiry
-  discussion.
+  hold/cancellation frees inventory (`BR-WAIT-002`/`003`) — still depends
+  on Phase 11 (Notifications), which doesn't exist yet; `notifiedAt`/
+  `offerExpiresAt` stay `null` on every row until that phase builds the
+  trigger. This is the same "needs an active trigger, not just lazy
+  expiry" mechanism flagged in the cart-expiry discussion.
 
 ## Phase 10 — Check-in & Scanning
 
