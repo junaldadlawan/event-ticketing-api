@@ -291,6 +291,14 @@ public class CheckoutServiceImpl implements CheckoutService {
         UUID ticketId = UUID.randomUUID();
         String ticketNumber = generateUniqueTicketNumber(event.getId(), event.getTicketPrefix());
         String credential = ticketCredentialService.generate(ticketId);
+        // Snapshotted at issuance (Phase 7, code-reviewer MEDIUM) so a later
+        // resale's price cap (BR-TRANSFER-004) is anchored to what this
+        // buyer actually paid, not whatever the ticket type's price happens
+        // to be at resale time.
+        Money faceValue = ticketTypeRepository.findById(ticketTypeId)
+                .map(TicketType::getPrice)
+                .map(price -> Money.builder().amount(price.getAmount()).currency(price.getCurrency()).build())
+                .orElse(null);
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
                 .orderId(order.getId())
@@ -299,6 +307,7 @@ public class CheckoutServiceImpl implements CheckoutService {
                 .seatId(seatId)
                 .ownerId(ownerId)
                 .ticketNumber(ticketNumber)
+                .faceValue(faceValue)
                 .credential(credential)
                 .status(TicketStatus.VALID)
                 .build();
