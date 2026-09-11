@@ -148,19 +148,26 @@ Depends on `Ticket` existing.
   outlive the ownership state it was created against (code-reviewer
   CRITICAL).
 
-## Phase 8 — Refunds & Payouts
+## Phase 8 — Refunds & Payouts ✅
 
 Depends on `Order`/`Payment` existing. Also finishes Phase 3's event-cancel
 refund trigger.
 
-- ⬜ `RefundPolicy` entity + `GET/PATCH /events/{id}/refund-policy`
-  (`BR-PAY-004`).
-- ⬜ `Refund` entity + `POST/GET /orders/{id}/refunds` (`BR-PAY-002`/
-  `003`).
-- ⬜ Wire event cancellation (Phase 3) to actually trigger refunds for
-  every ticket holder (`BR-PAY-005`).
-- ⬜ `Payout` entity + `GET /organizations/{id}/payouts` (read-only;
+- ✅ `RefundPolicy` entity + `GET/PATCH /events/{id}/refund-policy`
+  (`BR-PAY-004`). GET is organizer/owner/admin/buyer-with-an-order-on-it
+  only (not public, unlike `ResalePolicy`) - new `SecurityConfig` matcher.
+- ✅ `Refund` entity + `POST/GET /orders/{id}/refunds` (`BR-PAY-002`/
+  `003`). A full refund (cumulative reaches the order's total) marks every
+  one of the order's tickets `REFUNDED`; a partial refund leaves them
+  `VALID`. New `PaymentGatewayClient.refund(...)` method.
+- ✅ Wire event cancellation (Phase 3) to actually trigger refunds for
+  every ticket holder (`BR-PAY-005`) - mandatory, bypasses the refund
+  policy entirely, best-effort per order (one gateway failure doesn't stop
+  the rest of the event's orders from being refunded).
+- ✅ `Payout` entity + `GET /organizations/{id}/payouts` (read-only;
   payouts are system-generated on a schedule, per the spec) (`BR-PAY-006`).
+  No generation job exists yet (out of scope per the spec) - the table is
+  always empty via any real flow today.
 
 ## Phase 9 — Waitlist
 
