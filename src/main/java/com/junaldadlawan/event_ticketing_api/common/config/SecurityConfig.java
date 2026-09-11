@@ -35,6 +35,16 @@ public class SecurityConfig {
                         // (no `security: []` override on listPromoCodes).
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/promo-codes").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/promo-codes").authenticated()
+                        // Same reasoning: GET /events/{eventId}/orders (Phase 6a) is
+                        // owning-organizer/admin-only, not public - must precede the
+                        // broader GET /api/v1/events/** permitAll matcher below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/orders").authenticated()
+                        // Same reasoning again: GET/POST /events/{eventId}/ticket-templates
+                        // (Phase 6b) is owning-organizer-only per openapi.yaml's
+                        // listTicketTemplates summary, not public - must precede the
+                        // broader GET /api/v1/events/** permitAll matcher below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/ticket-templates").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/events/*/ticket-templates").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or
@@ -44,6 +54,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/events", "/api/v1/events/*/publish", "/api/v1/events/*/cancel").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/events/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/events/**").authenticated()
+                        // Must precede the broad /api/v1/users/** ADMIN-only matcher
+                        // below - GET /users/me/orders (Phase 6a) is any authenticated
+                        // buyer's own order history, not an admin-only user-management
+                        // endpoint, even though its path nests under /users/**.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me/orders").authenticated()
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
@@ -55,9 +70,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/ticket-types").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/ticket-types/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/ticket-types/**").authenticated()
+                        // /api/v1/ticket-templates/** (Phase 6b) is a new top-level prefix
+                        // (PATCH-only, no GET-single/DELETE per openapi.yaml) - always
+                        // authenticated, no public GET exists for it at all.
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/ticket-templates/**").authenticated()
                         // No public GET exists for carts at all - buyer-only,
                         // always authenticated (Phase 5a).
                         .requestMatchers("/api/v1/carts", "/api/v1/carts/**").authenticated()
+                        // /api/v1/orders/** and /api/v1/tickets/** (Phase 6a) need no
+                        // explicit matcher of their own - neither prefix is touched by
+                        // any permitAll/role-restricted matcher above, so both already
+                        // fall through to the anyRequest().authenticated() below; the
+                        // real buyer/organizer/admin visibility check happens in
+                        // OrderServiceImpl/TicketServiceImpl.
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) -> {
