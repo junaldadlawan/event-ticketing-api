@@ -32,6 +32,10 @@ import com.junaldadlawan.event_ticketing_api.promocode.repository.PromoCodeRepos
 import com.junaldadlawan.event_ticketing_api.promocode.service.PromoCodeUsageLimitGuard;
 import com.junaldadlawan.event_ticketing_api.seatmap.enums.SeatStatus;
 import com.junaldadlawan.event_ticketing_api.seatmap.repository.SeatRepository;
+import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
+import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
+import com.junaldadlawan.event_ticketing_api.ticket.service.TicketCredentialService;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
@@ -39,7 +43,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,6 +61,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CheckoutServiceImpl implements CheckoutService {
 
+    // 36-char alphabet minus ambiguous O/0, I/1 (BR-TICKET-005's
+    // recommendation) - 32^6 combinations per event, retried-until-unique
+    // against TicketRepository.existsByEventIdAndTicketNumber, same idiom as
+    // EventServiceImpl.generateUniqueTicketPrefix.
+    private static final String TICKET_NUMBER_SUFFIX_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final int TICKET_NUMBER_SUFFIX_LENGTH = 6;
+    private static final int MAX_TICKET_NUMBER_ATTEMPTS = 50;
+
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final CartService cartService;
@@ -69,6 +83,9 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final OrganizationAccessGuard accessGuard;
     private final PromoCodeRepository promoCodeRepository;
     private final PromoCodeUsageLimitGuard promoCodeUsageLimitGuard;
+    private final TicketRepository ticketRepository;
+    private final TicketCredentialService ticketCredentialService;
+    private final SecureRandom random = new SecureRandom();
 
     @Override
     @Transactional(noRollbackFor = GoneException.class)
@@ -97,7 +114,7 @@ public class CheckoutServiceImpl implements CheckoutService {
                 // Order, don't recharge, don't re-touch inventory.
                 Order order = orderRepository.findById(existing.getOrderId())
                         .orElseThrow(() -> new ResourceNotFoundException("Order " + existing.getOrderId() + " not found"));
-                return OrderResponse.from(order);
+                return OrderResponse.from(order, ticketRepository.findByOrderId(order.getId()));
             }
             // orderId is still null: a genuinely concurrent duplicate
             // request is in-flight right now.
@@ -172,7 +189,10 @@ public class CheckoutServiceImpl implements CheckoutService {
             }
         }
 
-        UUID payeeId = resolvePayeeOrganizationId(items);
+        // Also resolved here (rather than after payment) so the same lookup
+        // can be reused below for ticket issuance without an extra query.
+        Event event = resolveEvent(items);
+        UUID payeeId = event.getOrganizationId();
 
         PaymentResult result = paymentGatewayClient.charge(paymentMethodToken, total);
         if (!result.successful()) {
@@ -203,12 +223,12 @@ public class CheckoutServiceImpl implements CheckoutService {
                 .build();
         paymentRepository.save(payment);
 
-        // Convert each hold into its final sold state. Ticket issuance
-        // (BR-TICKET-001/002 - a scannable credential + human-readable
-        // ticket number per item) is explicitly deferred to Phase 6's
-        // Ticket entity (see the roadmap) - this dispatch only finalizes
-        // inventory state and clears the cart, it does NOT create any
-        // Ticket rows.
+        // Convert each hold into its final sold state AND issue one Ticket
+        // row per admission unit (Phase 6a confirmed decision #2): a GA
+        // CartItem with quantity=N issues N separate Ticket rows (each its
+        // own credential/ticket number); a reserved-seating CartItem
+        // (quantity always 1) issues exactly 1, tied to its seat.
+        List<Ticket> issuedTickets = new ArrayList<>();
         for (CartItem item : items) {
             if (item.getSeatId() != null) {
                 // Reserved seating: flip HELD -> SOLD.
@@ -217,12 +237,25 @@ public class CheckoutServiceImpl implements CheckoutService {
                             seat.setStatus(SeatStatus.SOLD);
                             seatRepository.save(seat);
                         });
+                issuedTickets.add(issueTicket(savedOrder, event, item.getTicketTypeId(), item.getSeatId(), buyerId));
+            } else {
+                // GA: TicketType.quantityAvailable was already decremented at
+                // hold-placement time (Phase 5a) - that decrement simply
+                // becomes permanent, nothing further to do to TicketType.
+                for (int i = 0; i < item.getQuantity(); i++) {
+                    issuedTickets.add(issueTicket(savedOrder, event, item.getTicketTypeId(), null, buyerId));
+                }
             }
-            // GA: TicketType.quantityAvailable was already decremented at
-            // hold-placement time (Phase 5a) - that decrement simply
-            // becomes permanent, nothing further to do to TicketType.
             cartItemRepository.delete(item);
         }
+        // Force a flush so @CreationTimestamp/@UpdateTimestamp are actually
+        // populated on each issued Ticket before OrderResponse.from reads
+        // them below - without this, tickets.save() alone only schedules the
+        // INSERT; Hibernate doesn't assign the generated timestamp values
+        // until flush, so the response could otherwise (non-deterministically,
+        // depending on whether some other query happened to trigger an
+        // auto-flush first) serialize createdAt/updatedAt as null.
+        ticketRepository.flush();
 
         lockedCart.setPromoCodeId(null);
         cartRepository.save(lockedCart);
@@ -232,19 +265,64 @@ public class CheckoutServiceImpl implements CheckoutService {
             idempotencyKeyRepository.save(key);
         });
 
-        return OrderResponse.from(savedOrder);
+        return OrderResponse.from(savedOrder, issuedTickets);
     }
 
     /**
      * A cart is constrained to a single event's ticket types (Phase 5a), so
-     * any item's ticket type resolves to the same event/organization.
+     * any item's ticket type resolves to the same event/organization -
+     * looking at the first item is enough.
      */
-    private UUID resolvePayeeOrganizationId(List<CartItem> items) {
+    private Event resolveEvent(List<CartItem> items) {
         UUID ticketTypeId = items.get(0).getTicketTypeId();
         TicketType ticketType = ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket type " + ticketTypeId + " not found"));
-        Event event = eventRepository.findByIdAndDeletedAtIsNull(ticketType.getEventId())
+        return eventRepository.findByIdAndDeletedAtIsNull(ticketType.getEventId())
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + ticketType.getEventId() + " not found"));
-        return event.getOrganizationId();
+    }
+
+    /**
+     * Issues one Ticket row: a fresh random id (needed up front so the
+     * credential can embed it - see {@code Ticket}'s javadoc), a
+     * per-event-unique human-readable ticket number (BR-TICKET-002/005), and
+     * the HMAC-signed credential (BR-TICKET-001).
+     */
+    private Ticket issueTicket(Order order, Event event, UUID ticketTypeId, UUID seatId, UUID ownerId) {
+        UUID ticketId = UUID.randomUUID();
+        String ticketNumber = generateUniqueTicketNumber(event.getId(), event.getTicketPrefix());
+        String credential = ticketCredentialService.generate(ticketId);
+        Ticket ticket = Ticket.builder()
+                .id(ticketId)
+                .orderId(order.getId())
+                .eventId(event.getId())
+                .ticketTypeId(ticketTypeId)
+                .seatId(seatId)
+                .ownerId(ownerId)
+                .ticketNumber(ticketNumber)
+                .credential(credential)
+                .status(TicketStatus.VALID)
+                .build();
+        return ticketRepository.save(ticket);
+    }
+
+    /**
+     * Retry-until-unique idiom mirrored from {@code
+     * EventServiceImpl.generateUniqueTicketPrefix} - BR-TICKET-005: the
+     * 6-character suffix only needs to be unique within its own event, not
+     * platform-wide.
+     */
+    private String generateUniqueTicketNumber(UUID eventId, String prefix) {
+        for (int attempt = 0; attempt < MAX_TICKET_NUMBER_ATTEMPTS; attempt++) {
+            StringBuilder suffix = new StringBuilder(TICKET_NUMBER_SUFFIX_LENGTH);
+            for (int i = 0; i < TICKET_NUMBER_SUFFIX_LENGTH; i++) {
+                suffix.append(TICKET_NUMBER_SUFFIX_ALPHABET.charAt(random.nextInt(TICKET_NUMBER_SUFFIX_ALPHABET.length())));
+            }
+            String candidate = prefix + "-" + suffix;
+            if (!ticketRepository.existsByEventIdAndTicketNumber(eventId, candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException(
+                "Unable to generate a unique ticket number after " + MAX_TICKET_NUMBER_ATTEMPTS + " attempts");
     }
 }

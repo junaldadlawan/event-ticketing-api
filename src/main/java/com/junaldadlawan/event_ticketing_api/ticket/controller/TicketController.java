@@ -1,0 +1,52 @@
+package com.junaldadlawan.event_ticketing_api.ticket.controller;
+
+import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
+import com.junaldadlawan.event_ticketing_api.ticket.artifact.RenderedTicketArtifact;
+import com.junaldadlawan.event_ticketing_api.ticket.artifact.TicketArtifactService;
+import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketResponse;
+import com.junaldadlawan.event_ticketing_api.ticket.service.TicketService;
+import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TicketTemplateFormat;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Locale;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/tickets")
+@RequiredArgsConstructor
+public class TicketController {
+
+    private final TicketService ticketService;
+    private final TicketArtifactService ticketArtifactService;
+
+    @GetMapping("/{ticketId}")
+    public TicketResponse get(@PathVariable UUID ticketId) {
+        return TicketResponse.from(ticketService.getTicket(ticketId));
+    }
+
+    @GetMapping("/{ticketId}/artifact")
+    public ResponseEntity<byte[]> getArtifact(@PathVariable UUID ticketId, @RequestParam String format) {
+        TicketTemplateFormat parsedFormat = parseFormat(format);
+        RenderedTicketArtifact artifact = ticketArtifactService.render(ticketId, parsedFormat);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(artifact.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + artifact.filename() + "\"")
+                .body(artifact.content());
+    }
+
+    private TicketTemplateFormat parseFormat(String format) {
+        try {
+            return TicketTemplateFormat.valueOf(format.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("format must be one of: digital, physical");
+        }
+    }
+}

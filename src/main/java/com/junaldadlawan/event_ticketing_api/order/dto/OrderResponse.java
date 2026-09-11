@@ -3,6 +3,8 @@ package com.junaldadlawan.event_ticketing_api.order.dto;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
 import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
 import com.junaldadlawan.event_ticketing_api.order.enums.PayeeType;
+import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketResponse;
+import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 
 import java.io.Serializable;
@@ -12,11 +14,10 @@ import java.util.UUID;
 
 /**
  * DTO for {@link Order}, matching openapi.yaml's {@code Order} schema.
- * {@code tickets} is always an empty list: ticket issuance (BR-TICKET-001/
- * 002, the {@code Ticket} entity itself) is explicitly out of scope for this
- * dispatch and deferred to Phase 6 per the roadmap - kept here only so the
- * response shape matches openapi's documented {@code Order.tickets} field
- * rather than omitting it outright.
+ * {@code tickets} is now populated with the order's actually-issued Tickets
+ * (Phase 6a) — {@code from} requires the caller to supply them (resolved via
+ * {@code TicketRepository.findByOrderId}) rather than defaulting to empty,
+ * so no call site can silently forget to look them up.
  */
 public record OrderResponse(
         UUID id,
@@ -26,12 +27,12 @@ public record OrderResponse(
         OrderStatus status,
         String promoCode,
         MoneyDto total,
-        List<Object> tickets,
+        List<TicketResponse> tickets,
         Instant createdAt,
         String createdBy,
         Instant updatedAt) implements Serializable {
 
-    public static OrderResponse from(Order order) {
+    public static OrderResponse from(Order order, List<Ticket> tickets) {
         return new OrderResponse(
                 order.getId(),
                 order.getBuyerId(),
@@ -40,7 +41,7 @@ public record OrderResponse(
                 order.getStatus(),
                 order.getPromoCode(),
                 new MoneyDto(order.getTotal().getAmount(), order.getTotal().getCurrency()),
-                List.of(),
+                tickets.stream().map(TicketResponse::from).toList(),
                 order.getCreatedAt(),
                 order.getCreatedBy(),
                 order.getUpdatedAt());
