@@ -6,10 +6,6 @@ import com.junaldadlawan.event_ticketing_api.ticket.artifact.TicketArtifactServi
 import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketResponse;
 import com.junaldadlawan.event_ticketing_api.ticket.service.TicketService;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TicketTemplateFormat;
-import com.junaldadlawan.event_ticketing_api.tickettransfer.dto.TicketTransferRequest;
-import com.junaldadlawan.event_ticketing_api.tickettransfer.dto.TicketTransferResponse;
-import com.junaldadlawan.event_ticketing_api.tickettransfer.service.TicketTransferService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
