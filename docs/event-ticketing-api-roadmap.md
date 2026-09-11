@@ -187,20 +187,35 @@ meaningful (the join/position tracking can land without it).
   trigger. This is the same "needs an active trigger, not just lazy
   expiry" mechanism flagged in the cart-expiry discussion.
 
-## Phase 10 — Check-in & Scanning
+## Phase 10 — Check-in & Scanning ✅
 
 Depends on `Ticket` existing.
 
-- ⬜ `CheckInConfig` entity + `GET/PATCH /events/{id}/check-in-config`
-  (`BR-CHECKIN-004`).
-- ⬜ `ScannerDevice` entity + `POST /events/{id}/scanner-devices`,
+- ✅ `CheckInConfig` entity + `GET/PATCH /events/{id}/check-in-config`
+  (`BR-CHECKIN-004`). Finally implements `TicketCredentialService.verify`
+  (deferred since Phase 6a) - a credential's embedded version is checked
+  against `Ticket.credentialVersion`, so a transferred/resold ticket's old
+  credential correctly stops validating (BR-TRANSFER-005's payoff).
+- ✅ `ScannerDevice` entity + `POST /events/{id}/scanner-devices`,
   `DELETE /scanner-devices/{id}`, `GET /scanner-devices/{id}/dataset`
-  (`BR-CHECKIN-005`–`008`).
-- ⬜ `CheckInRecord` entity + `POST /check-in/validate` (`BR-CHECKIN-001`–
-  `003`).
-- ⬜ `FallbackScanRecord` entity + `POST /check-in/fallback-scans`
+  (`BR-CHECKIN-005`–`008`). New `deviceAuth` mechanism (`DeviceAuthenticationFilter`,
+  parallel to `JwtAuthenticationFilter`) - a device credential is an
+  HMAC-signed token re-derived from its own id, same "re-derivable, not
+  stored" design as ticket credentials; revocation is checked live
+  (`status == ACTIVE`) at request time, not via a token blacklist.
+- ✅ `CheckInRecord` entity + `POST /check-in/validate` (`BR-CHECKIN-001`–
+  `003`). Locks the ticket row for the whole check-then-mark-used sequence
+  (same idiom as Phase 7/8's locking fixes) to prevent two concurrent
+  scans of the same ticket both succeeding.
+- ✅ `FallbackScanRecord` entity + `POST /check-in/fallback-scans`
   (pure-offline mode only) (`BR-CHECKIN-009`/`010`), `GET
-  /tickets/{id}/check-in-records`.
+  /tickets/{id}/check-in-records`. Reconciliation is always synchronous in
+  this implementation (the upload call itself proves connectivity), so
+  there's no genuinely deferred "pending sync" state to model.
+- Out of scope (client-side behavior, not a server concern): a standard-mode
+  device locally enforcing its offline-fallback file's expiry window
+  (BR-CHECKIN-007) - the server only ever provides the configured window's
+  length, never observes or enforces a specific device's local clock.
 
 ## Phase 11 — Notifications
 

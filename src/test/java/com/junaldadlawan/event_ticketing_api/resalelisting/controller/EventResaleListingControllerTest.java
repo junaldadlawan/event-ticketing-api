@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.resalelisting.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.resalelisting.dto.ResaleListingResponse;
 import com.junaldadlawan.event_ticketing_api.resalelisting.enums.ResaleListingStatus;
@@ -42,6 +43,9 @@ class EventResaleListingControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     @Test
     void listActive_existingEvent_returns200_pagedShape() throws Exception {

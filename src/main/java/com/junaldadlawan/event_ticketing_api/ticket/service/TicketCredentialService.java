@@ -7,8 +7,10 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -32,8 +34,13 @@ import java.util.UUID;
  * same ticket" actually change the credential. Every ticket starts at
  * version 0 at checkout issuance (the 1-arg overload).
  * <p>
- * Generation only — no verification/lookup method here. That's Phase 10's
- * check-in validation job.
+ * Generation AND verification (Phase 10, {@code /check-in/validate}) both
+ * live here - {@link #verify} is the counterpart {@link #generate}
+ * javadoc'd itself as deferred. Verification never trusts the CLAIMED
+ * ticket id/version embedded in a scanned credential without first
+ * recomputing and comparing the signature: a forged credential (right
+ * shape, wrong signature) is indistinguishable from garbage and returns
+ * {@link Optional#empty()}, never a parsed-but-unsigned result.
  */
 @Component
 public class TicketCredentialService {
@@ -53,14 +60,69 @@ public class TicketCredentialService {
 
     public String generate(UUID ticketId, int version) {
         String payload = ticketId + ":" + version;
+        return payload + "." + sign(payload);
+    }
+
+    /**
+     * Parses and verifies a raw scanned credential. Returns {@link
+     * Optional#empty()} for anything that doesn't parse as {@code
+     * ticketId:version.signature} (malformed, corrupted, or simply not a
+     * credential this server ever issued) OR whose signature doesn't match
+     * a freshly-recomputed one for the claimed payload - the two failure
+     * modes are deliberately indistinguishable to the caller, so a forged
+     * credential can't be told apart from noise. Does NOT check the
+     * embedded {@code version} against {@code Ticket.credentialVersion} -
+     * that requires a DB lookup by {@code ticketId}, which is the caller's
+     * job (see {@code CheckInServiceImpl.validate}); a version mismatch
+     * means "superseded by a later transfer/resale" (BR-TRANSFER-005), a
+     * different failure mode than "signature invalid".
+     */
+    public Optional<ParsedCredential> verify(String rawCredential) {
+        if (rawCredential == null) {
+            return Optional.empty();
+        }
+        String[] parts = rawCredential.split("\\.", 2);
+        if (parts.length != 2) {
+            return Optional.empty();
+        }
+        String payload = parts[0];
+        String providedSignature = parts[1];
+
+        String[] payloadParts = payload.split(":", 2);
+        if (payloadParts.length != 2) {
+            return Optional.empty();
+        }
+        UUID ticketId;
+        int version;
+        try {
+            ticketId = UUID.fromString(payloadParts[0]);
+            version = Integer.parseInt(payloadParts[1]);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+
+        String expectedSignature = sign(payload);
+        boolean signatureMatches = MessageDigest.isEqual(
+                expectedSignature.getBytes(StandardCharsets.UTF_8),
+                providedSignature.getBytes(StandardCharsets.UTF_8));
+        if (!signatureMatches) {
+            return Optional.empty();
+        }
+        return Optional.of(new ParsedCredential(ticketId, version));
+    }
+
+    private String sign(String payload) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(keySpec);
             byte[] signature = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
-            String encodedSignature = Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
-            return payload + "." + encodedSignature;
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-            throw new IllegalStateException("Failed to generate ticket credential", e);
+            throw new IllegalStateException("Failed to sign ticket credential", e);
         }
+    }
+
+    /** A credential whose signature has been verified - {@code ticketId}/{@code version} are trustworthy. */
+    public record ParsedCredential(UUID ticketId, int version) {
     }
 }

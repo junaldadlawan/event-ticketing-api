@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.resalepolicy.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.resalepolicy.dto.ResalePolicyResponse;
@@ -41,6 +42,9 @@ class EventResalePolicyControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     @Test
     void get_noPolicyYet_returns200_withDisabledDefault() throws Exception {

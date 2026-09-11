@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.order.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.GoneException;
@@ -49,6 +50,9 @@ class CartCheckoutControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private OrderResponse orderResponse(UUID orderId) {
         return new OrderResponse(orderId, UUID.randomUUID(), PayeeType.ORGANIZATION, UUID.randomUUID(),
