@@ -9,12 +9,16 @@ import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.refund.service.RefundService;
+import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,13 +71,19 @@ class EventServiceImplTest {
     @Mock
     private RefundService refundService;
 
+    @Mock
+    private TicketRepository ticketRepository;
+
+    @Mock
+    private NotificationService notificationService;
+
     private EventServiceImpl eventService;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService);
+        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService);
         orgId = UUID.randomUUID();
     }
 
@@ -690,6 +700,51 @@ class EventServiceImplTest {
         assertThat(result.getStatus()).isEqualTo(EventStatus.CANCELLED);
         verify(accessGuard, never()).hasRole(any(), any(), any());
         verify(refundService).refundAllForEventCancellation(eventId, adminId);
+    }
+
+    // ---- cancelEvent(): BR-NOTIFY-001 (Phase 11) EVENT_CANCELLATION to every distinct current ticket owner ----
+
+    private Ticket ticketOwnedBy(UUID ownerId) {
+        return Ticket.builder().id(UUID.randomUUID()).ownerId(ownerId).ticketNumber("T-1").credential("cred").build();
+    }
+
+    @Test
+    void cancelEvent_success_notifiesEveryDistinctCurrentTicketOwner_notOncePerTicket() {
+        UUID eventId = UUID.randomUUID();
+        UUID ownerCallerId = UUID.randomUUID();
+        UUID holderA = UUID.randomUUID();
+        UUID holderB = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.PUBLISHED)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerCallerId);
+        when(accessGuard.hasRole(ownerCallerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        // Holder A has TWO tickets (e.g. bought a GA CartItem with quantity=2)
+        // - must only be notified ONCE, not per-ticket.
+        when(ticketRepository.findByEventId(eventId)).thenReturn(List.of(
+                ticketOwnedBy(holderA), ticketOwnedBy(holderA), ticketOwnedBy(holderB)));
+
+        eventService.cancelEvent(eventId);
+
+        verify(notificationService).notify(holderA, NotificationType.EVENT_CANCELLATION, "Event", eventId);
+        verify(notificationService).notify(holderB, NotificationType.EVENT_CANCELLATION, "Event", eventId);
+        verify(notificationService, times(2)).notify(any(), any(), any(), any());
+    }
+
+    @Test
+    void cancelEvent_noTicketsSoldYet_firesNoEventCancellationNotifications() {
+        UUID eventId = UUID.randomUUID();
+        UUID ownerCallerId = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.PUBLISHED)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerCallerId);
+        when(accessGuard.hasRole(ownerCallerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ticketRepository.findByEventId(eventId)).thenReturn(List.of());
+
+        eventService.cancelEvent(eventId);
+
+        verifyNoInteractions(notificationService);
     }
 
     // ---- delete() : proving the second core fix (previously NO per-event auth check at all) ----

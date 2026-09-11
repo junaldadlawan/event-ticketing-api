@@ -14,6 +14,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.PaymentFailedExcep
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
 import com.junaldadlawan.event_ticketing_api.order.entity.CheckoutIdempotencyKey;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
@@ -82,6 +84,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final PaymentGatewayClient paymentGatewayClient;
     private final OrganizationAccessGuard accessGuard;
     private final PromoCodeRepository promoCodeRepository;
+    private final NotificationService notificationService;
     private final PromoCodeUsageLimitGuard promoCodeUsageLimitGuard;
     private final TicketRepository ticketRepository;
     private final TicketCredentialService ticketCredentialService;
@@ -264,6 +267,11 @@ public class CheckoutServiceImpl implements CheckoutService {
             key.setOrderId(savedOrder.getId());
             idempotencyKeyRepository.save(key);
         });
+
+        // BR-NOTIFY-001 (Phase 11). notificationService.notify never throws
+        // (NFR 5.2) so this can't fail an otherwise-successful checkout.
+        notificationService.notify(buyerId, NotificationType.ORDER_CONFIRMATION, "Order", savedOrder.getId());
+        notificationService.notify(buyerId, NotificationType.PAYMENT_RECEIPT, "Order", savedOrder.getId());
 
         return OrderResponse.from(savedOrder, issuedTickets);
     }

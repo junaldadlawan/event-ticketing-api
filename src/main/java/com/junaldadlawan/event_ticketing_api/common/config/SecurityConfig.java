@@ -78,6 +78,10 @@ public class SecurityConfig {
                         // is any authenticated user's own waitlist history, not an
                         // admin-only user-management endpoint.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/waitlist-entries").authenticated()
+                        // Same reasoning again: GET /users/me/notifications
+                        // (Phase 11) is any authenticated user's own
+                        // notification history.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me/notifications").authenticated()
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
@@ -125,6 +129,12 @@ public class SecurityConfig {
                                     HttpStatus.FORBIDDEN, "You do not have permission to access this resource");
                             objectMapper.writeValue(response.getOutputStream(), problem);
                         }))
+                // Both filters anchor at the same UsernamePasswordAuthenticationFilter
+                // offset, so their relative order is whichever this stable
+                // sort's registration order happens to be (JWT first) - see
+                // JwtAuthenticationFilter's catch block for why it's safe
+                // either way (it never clobbers an Authentication a later
+                // filter set).
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(deviceAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

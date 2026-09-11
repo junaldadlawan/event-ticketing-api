@@ -39,7 +39,12 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 
-        CheckInMode mode = checkInConfigRepository.findByEventId(eventId).map(CheckInConfig::getMode).orElse(CheckInMode.STANDARD);
+        // Code-reviewer HIGH: locked (not a plain findByEventId) so two
+        // concurrent authorize() calls for a pure_offline event actually
+        // serialize on this row, rather than both reading "no active device
+        // yet" under READ_COMMITTED and both inserting one - see
+        // CheckInConfigRepository.findByEventIdForUpdate's javadoc.
+        CheckInMode mode = checkInConfigRepository.findByEventIdForUpdate(eventId).map(CheckInConfig::getMode).orElse(CheckInMode.STANDARD);
         if (mode == CheckInMode.PURE_OFFLINE) {
             List<ScannerDevice> activeDevices = scannerDeviceRepository.findByEventIdAndStatus(eventId, ScannerDeviceStatus.ACTIVE);
             if (!activeDevices.isEmpty()) {
