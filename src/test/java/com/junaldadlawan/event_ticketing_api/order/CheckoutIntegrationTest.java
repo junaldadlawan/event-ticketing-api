@@ -31,6 +31,8 @@ import com.junaldadlawan.event_ticketing_api.seatmap.entity.SeatMap;
 import com.junaldadlawan.event_ticketing_api.seatmap.enums.SeatStatus;
 import com.junaldadlawan.event_ticketing_api.seatmap.repository.SeatMapRepository;
 import com.junaldadlawan.event_ticketing_api.seatmap.repository.SeatRepository;
+import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
@@ -106,6 +108,8 @@ class CheckoutIntegrationTest {
     @Autowired
     private SeatRepository seatRepository;
     @Autowired
+    private TicketRepository ticketRepository;
+    @Autowired
     private ObjectMapper objectMapper;
 
     private final List<UUID> createdCartItemIds = new ArrayList<>();
@@ -117,12 +121,17 @@ class CheckoutIntegrationTest {
     private final List<UUID> createdOrgIds = new ArrayList<>();
     private final List<UUID> createdOrderIds = new ArrayList<>();
     private final List<UUID> createdPaymentIds = new ArrayList<>();
+    private final List<UUID> createdTicketIds = new ArrayList<>();
     private final List<UUID> createdIdempotencyKeyIds = new ArrayList<>();
     private final List<UUID> createdSeatIds = new ArrayList<>();
     private final List<UUID> createdSeatMapIds = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
+        for (UUID id : createdTicketIds) {
+            ticketRepository.deleteById(id);
+        }
+        createdTicketIds.clear();
         for (UUID id : createdPaymentIds) {
             paymentRepository.deleteById(id);
         }
@@ -308,10 +317,14 @@ class CheckoutIntegrationTest {
     }
 
     private void addGaItem(String token, UUID cartId, UUID ticketTypeId) throws Exception {
+        addGaItem(token, cartId, ticketTypeId, 1);
+    }
+
+    private void addGaItem(String token, UUID cartId, UUID ticketTypeId, int quantity) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/carts/{cartId}/items", cartId)
                         .header("Authorization", "Bearer " + token)
                         .contentType("application/json")
-                        .content("{\"ticketTypeId\":\"" + ticketTypeId + "\",\"quantity\":1}"))
+                        .content("{\"ticketTypeId\":\"" + ticketTypeId + "\",\"quantity\":" + quantity + "}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         var items = objectMapper.readTree(result.getResponse().getContentAsString()).get("items");
@@ -360,6 +373,9 @@ class CheckoutIntegrationTest {
         createdOrderIds.add(orderId);
         for (Payment payment : paymentRepository.findByOrderId(orderId)) {
             createdPaymentIds.add(payment.getId());
+        }
+        for (Ticket ticket : ticketRepository.findByOrderId(orderId)) {
+            createdTicketIds.add(ticket.getId());
         }
     }
 
@@ -437,6 +453,10 @@ class CheckoutIntegrationTest {
             createdPaymentIds.add(payment.getId());
         }
         assertThat(payments).as("exactly one Payment (one gateway charge) for the single Order").hasSize(1);
+
+        for (Ticket ticket : ticketRepository.findByOrderId(orders.get(0).getId())) {
+            createdTicketIds.add(ticket.getId());
+        }
 
         // Track any surviving CartItem for cleanup (should be none - the
         // winning checkout deletes them).
@@ -723,8 +743,14 @@ class CheckoutIntegrationTest {
         assertThat(json.get("payeeType").asText()).isEqualTo("ORGANIZATION");
         assertThat(json.get("payeeId").asText()).isEqualTo(orgId.toString());
         assertThat(json.get("total").get("amount").asLong()).isEqualTo(2700L);
+        // One GA ticket (quantity=1) + one reserved-seating ticket (confirmed decision #2).
         assertThat(json.get("tickets").isArray()).isTrue();
-        assertThat(json.get("tickets").isEmpty()).isTrue();
+        assertThat(json.get("tickets")).hasSize(2);
+        for (var ticketNode : json.get("tickets")) {
+            assertThat(ticketNode.has("credential")).as("credential must never appear in the response").isFalse();
+            assertThat(ticketNode.get("status").asText()).isEqualTo("VALID");
+            assertThat(ticketNode.get("ticketNumber").asText()).matches("^[A-Z0-9]{3}-[A-Z0-9]{6}$");
+        }
         UUID orderId = UUID.fromString(json.get("id").asText());
 
         // Order/Payment final state.
@@ -749,5 +775,74 @@ class CheckoutIntegrationTest {
         assertThat(cartItemRepository.findByCartId(cartId)).isEmpty();
         Cart cart = cartRepository.findById(cartId).orElseThrow();
         assertThat(cart.getPromoCodeId()).isNull();
+    }
+
+    // ---- MEDIUM finding (code-reviewer): a single GA CartItem with quantity>1 must
+    // produce genuinely distinct ticketNumber/credential values per issued Ticket,
+    // proven against real Postgres in one transaction (not mocked-stub-passes-the-loop) ----
+
+    /**
+     * The existing unit-test coverage
+     * ({@code CheckoutServiceImplTest.checkout_success_ga_createsOrderAndPayment_...})
+     * mocks {@code ticketRepository.existsByEventIdAndTicketNumber} to always
+     * return {@code false} and {@code ticketCredentialService.generate} to
+     * always return the same stub string — that proves the issuance loop
+     * runs N times, but says nothing about real-world distinctness. This
+     * test runs a GA {@code CartItem} at {@code quantity=3} through the real
+     * checkout path against real Postgres and asserts all 3 resulting
+     * {@code ticketNumber} values are pairwise distinct AND all 3
+     * {@code credential} values (read directly from the DB — the API never
+     * exposes it) are pairwise distinct. This also implicitly proves
+     * Hibernate's auto-flush-before-query behavior: {@code
+     * generateUniqueTicketNumber}'s per-event {@code
+     * existsByEventIdAndTicketNumber} uniqueness check must see each
+     * earlier, same-transaction, not-yet-committed {@code Ticket} row before
+     * it can correctly avoid re-issuing a duplicate suffix within the loop.
+     */
+    @Test
+    void checkout_success_gaCartItemQuantityThree_issuesThreeTicketsWithDistinctNumbersAndCredentials() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        String token = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(token);
+        addGaItem(token, cartId, ticketTypeId, 3);
+
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        MvcResult result = checkout(token, cartId, key, "tok_ok");
+        assertThat(result.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(result);
+
+        var json = objectMapper.readTree(result.getResponse().getContentAsString());
+        UUID orderId = UUID.fromString(json.get("id").asText());
+        assertThat(json.get("tickets")).hasSize(3);
+        for (var ticketNode : json.get("tickets")) {
+            assertThat(ticketNode.has("credential")).as("credential must never appear in the response").isFalse();
+            // BR-TICKET-005's actual alphabet: excludes ambiguous O/0, I/1.
+            assertThat(ticketNode.get("ticketNumber").asText()).matches("^[A-Z0-9]{1,4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$");
+        }
+
+        // Real-DB distinctness check, read directly (credential is never in the API response).
+        List<Ticket> issuedTickets = ticketRepository.findByOrderId(orderId);
+        assertThat(issuedTickets).hasSize(3);
+
+        List<String> ticketNumbers = issuedTickets.stream().map(Ticket::getTicketNumber).toList();
+        assertThat(ticketNumbers).as("all 3 ticketNumbers must be pairwise distinct").doesNotHaveDuplicates();
+        assertThat(new java.util.HashSet<>(ticketNumbers)).hasSize(3);
+
+        List<String> credentials = issuedTickets.stream().map(Ticket::getCredential).toList();
+        assertThat(credentials).as("all 3 credentials must be pairwise distinct").doesNotHaveDuplicates();
+        assertThat(new java.util.HashSet<>(credentials)).hasSize(3);
+
+        // Each credential embeds its own ticket's id (per TicketCredentialService's
+        // format: ticketId + "." + signature) - confirms the 3 credentials aren't
+        // just 3 copies of one value that happens to differ by coincidence.
+        for (Ticket ticket : issuedTickets) {
+            assertThat(ticket.getCredential()).startsWith(ticket.getId().toString() + ".");
+        }
     }
 }

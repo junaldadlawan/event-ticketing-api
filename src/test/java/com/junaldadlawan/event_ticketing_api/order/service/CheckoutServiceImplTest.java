@@ -36,6 +36,10 @@ import com.junaldadlawan.event_ticketing_api.promocode.service.PromoCodeUsageLim
 import com.junaldadlawan.event_ticketing_api.seatmap.entity.Seat;
 import com.junaldadlawan.event_ticketing_api.seatmap.enums.SeatStatus;
 import com.junaldadlawan.event_ticketing_api.seatmap.repository.SeatRepository;
+import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
+import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
+import com.junaldadlawan.event_ticketing_api.ticket.service.TicketCredentialService;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
@@ -111,6 +115,10 @@ class CheckoutServiceImplTest {
     private PromoCodeRepository promoCodeRepository;
     @Mock
     private PromoCodeUsageLimitGuard promoCodeUsageLimitGuard;
+    @Mock
+    private TicketRepository ticketRepository;
+    @Mock
+    private TicketCredentialService ticketCredentialService;
 
     private CheckoutServiceImpl service;
 
@@ -124,7 +132,7 @@ class CheckoutServiceImplTest {
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
-                promoCodeUsageLimitGuard);
+                promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService);
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();
         idempotencyKey = UUID.randomUUID();
@@ -174,9 +182,17 @@ class CheckoutServiceImplTest {
                 .id(id)
                 .organizationId(organizationId)
                 .title("Concert")
+                .ticketPrefix("ABC")
                 .startAt(startAt)
                 .endAt(startAt.plus(2, ChronoUnit.HOURS))
                 .build();
+    }
+
+    /** Stubs ticket issuance's collaborators for any test that reaches a successful checkout. */
+    private void stubTicketIssuance() {
+        when(ticketRepository.existsByEventIdAndTicketNumber(any(), any())).thenReturn(false);
+        when(ticketCredentialService.generate(any())).thenReturn("stub-credential");
+        when(ticketRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     private CartResponse cartView(UUID cartId, UUID buyerId, long total, String promoCode) {
@@ -248,10 +264,12 @@ class CheckoutServiceImplTest {
                 .status(OrderStatus.PAID).cartId(cartId).total(Money.builder().amount(1000L).currency("USD").build())
                 .createdBy(buyerId.toString()).createdAt(Instant.now()).build();
         when(orderRepository.findById(existingOrderId)).thenReturn(Optional.of(existingOrder));
+        when(ticketRepository.findByOrderId(existingOrderId)).thenReturn(List.of());
 
         OrderResponse response = service.checkout(cartId, idempotencyKey, "tok_ok");
 
         assertThat(response.id()).isEqualTo(existingOrderId);
+        assertThat(response.tickets()).isEmpty();
         verifyNoInteractions(paymentGatewayClient);
         verify(orderRepository, never()).saveAndFlush(any());
         verify(idempotencyKeyManager, never()).delete(any());
@@ -384,6 +402,7 @@ class CheckoutServiceImplTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, organizationId)));
         when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any()))
                 .thenReturn(PaymentResult.success("mock_ref_123"));
+        stubTicketIssuance();
         UUID savedOrderId = UUID.randomUUID();
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         when(orderRepository.saveAndFlush(orderCaptor.capture())).thenAnswer(inv -> {
@@ -404,7 +423,17 @@ class CheckoutServiceImplTest {
         assertThat(response.payeeType()).isEqualTo(PayeeType.ORGANIZATION);
         assertThat(response.payeeId()).isEqualTo(organizationId);
         assertThat(response.total().amount()).isEqualTo(1800L);
-        assertThat(response.tickets()).isEmpty();
+        // quantity=2 GA CartItem issues 2 separate Ticket rows (confirmed decision #2).
+        assertThat(response.tickets()).hasSize(2);
+        assertThat(response.tickets()).allSatisfy(ticket -> {
+            assertThat(ticket.orderId()).isEqualTo(savedOrderId);
+            assertThat(ticket.eventId()).isEqualTo(eventId);
+            assertThat(ticket.ticketTypeId()).isEqualTo(ticketTypeId);
+            assertThat(ticket.seatId()).isNull();
+            assertThat(ticket.ownerId()).isEqualTo(buyerId);
+            assertThat(ticket.ticketNumber()).startsWith("ABC-");
+            assertThat(ticket.status()).isEqualTo(TicketStatus.VALID);
+        });
 
         Order savedOrder = orderCaptor.getValue();
         assertThat(savedOrder.getBuyerId()).isEqualTo(buyerId);
@@ -422,6 +451,7 @@ class CheckoutServiceImplTest {
         assertThat(keyRow.getOrderId()).isEqualTo(savedOrderId);
         verify(idempotencyKeyRepository).save(keyRow);
         verify(idempotencyKeyManager, never()).delete(any());
+        verify(ticketRepository, org.mockito.Mockito.times(2)).save(any(Ticket.class));
     }
 
     @Test
@@ -450,12 +480,16 @@ class CheckoutServiceImplTest {
         Seat heldSeat = Seat.builder().id(seatId).status(SeatStatus.HELD).build();
         when(seatRepository.findByIdForUpdate(seatId)).thenReturn(Optional.of(heldSeat));
         when(idempotencyKeyRepository.findById(idempotencyKey)).thenReturn(Optional.empty());
+        stubTicketIssuance();
 
-        service.checkout(cartId, idempotencyKey, "tok_ok");
+        OrderResponse response = service.checkout(cartId, idempotencyKey, "tok_ok");
 
         assertThat(heldSeat.getStatus()).isEqualTo(SeatStatus.SOLD);
         verify(seatRepository).save(heldSeat);
         verify(cartItemRepository).delete(item);
+        // Reserved-seating CartItem (quantity always 1) issues exactly 1 Ticket, tied to its seat.
+        assertThat(response.tickets()).hasSize(1);
+        assertThat(response.tickets().get(0).seatId()).isEqualTo(seatId);
     }
 
     @Test
@@ -482,6 +516,7 @@ class CheckoutServiceImplTest {
         });
         when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyKeyRepository.findById(idempotencyKey)).thenReturn(Optional.empty());
+        stubTicketIssuance();
 
         service.checkout(cartId, idempotencyKey, "tok_ok");
 
