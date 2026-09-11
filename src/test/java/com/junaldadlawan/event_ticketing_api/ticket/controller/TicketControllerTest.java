@@ -9,6 +9,9 @@ import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
 import com.junaldadlawan.event_ticketing_api.ticket.service.TicketService;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TicketTemplateFormat;
+import com.junaldadlawan.event_ticketing_api.tickettransfer.entity.TicketTransfer;
+import com.junaldadlawan.event_ticketing_api.tickettransfer.enums.TransferSource;
+import com.junaldadlawan.event_ticketing_api.tickettransfer.service.TicketTransferService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -16,10 +19,14 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,6 +54,9 @@ class TicketControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private TicketTransferService ticketTransferService;
 
     private Ticket ticket(UUID id) {
         return Ticket.builder()
@@ -143,5 +153,118 @@ class TicketControllerTest {
 
         mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ---- POST /tickets/{ticketId}/transfer (Phase 7) ----
+
+    @Test
+    void transfer_validRequest_returns200_withUpdatedOwnerAndWithoutCredential() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        UUID toUserId = UUID.randomUUID();
+        Ticket transferred = ticket(ticketId);
+        transferred.setOwnerId(toUserId);
+        transferred.setCredentialVersion(1);
+        when(ticketTransferService.transfer(ticketId, toUserId)).thenReturn(transferred);
+
+        mockMvc.perform(post("/api/v1/tickets/{ticketId}/transfer", ticketId)
+                        .contentType("application/json")
+                        .content("{\"toUserId\":\"" + toUserId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerId").value(toUserId.toString()))
+                .andExpect(jsonPath("$.credential").doesNotExist());
+    }
+
+    @Test
+    void transfer_missingToUserId_returns400() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/v1/tickets/{ticketId}/transfer", ticketId)
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void transfer_unknownTicket_returns404() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketTransferService.transfer(any(), any()))
+                .thenThrow(new ResourceNotFoundException("Ticket " + ticketId + " not found"));
+
+        mockMvc.perform(post("/api/v1/tickets/{ticketId}/transfer", ticketId)
+                        .contentType("application/json")
+                        .content("{\"toUserId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void transfer_nonOwningCaller_returns403() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketTransferService.transfer(any(), any()))
+                .thenThrow(new ForbiddenException("Only the ticket's owning buyer may transfer it"));
+
+        mockMvc.perform(post("/api/v1/tickets/{ticketId}/transfer", ticketId)
+                        .contentType("application/json")
+                        .content("{\"toUserId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void transfer_ticketNotValid_returns409() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketTransferService.transfer(any(), any()))
+                .thenThrow(new com.junaldadlawan.event_ticketing_api.common.exception.ConflictException("Only a valid ticket may be transferred"));
+
+        mockMvc.perform(post("/api/v1/tickets/{ticketId}/transfer", ticketId)
+                        .contentType("application/json")
+                        .content("{\"toUserId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void transfer_recipientIsCurrentOwner_returns400() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketTransferService.transfer(any(), any()))
+                .thenThrow(new com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException("Cannot transfer a ticket to its own current owner"));
+
+        mockMvc.perform(post("/api/v1/tickets/{ticketId}/transfer", ticketId)
+                        .contentType("application/json")
+                        .content("{\"toUserId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ---- GET /tickets/{ticketId}/transfers (Phase 7) ----
+
+    @Test
+    void listTransfers_existingTicket_returns200_withOrderedHistory() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        TicketTransfer transfer = TicketTransfer.builder()
+                .id(UUID.randomUUID()).ticketId(ticketId).fromUserId(UUID.randomUUID()).toUserId(UUID.randomUUID())
+                .source(TransferSource.DIRECT_TRANSFER).transferredAt(Instant.now()).build();
+        when(ticketTransferService.listTransfers(ticketId)).thenReturn(List.of(transfer));
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/transfers", ticketId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticketId").value(ticketId.toString()))
+                .andExpect(jsonPath("$[0].source").value("DIRECT_TRANSFER"));
+    }
+
+    @Test
+    void listTransfers_unauthorizedCaller_returns403() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketTransferService.listTransfers(ticketId))
+                .thenThrow(new ForbiddenException("Only the ticket's owning buyer, the event's organizer/owner, or an admin may view this ticket"));
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/transfers", ticketId))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listTransfers_unknownTicket_returns404() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketTransferService.listTransfers(ticketId))
+                .thenThrow(new ResourceNotFoundException("Ticket " + ticketId + " not found"));
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/transfers", ticketId))
+                .andExpect(status().isNotFound());
     }
 }
