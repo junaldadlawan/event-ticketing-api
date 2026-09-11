@@ -5,6 +5,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
@@ -12,9 +14,14 @@ import com.junaldadlawan.event_ticketing_api.waitlist.dto.WaitlistEntryResponse;
 import com.junaldadlawan.event_ticketing_api.waitlist.entity.WaitlistEntry;
 import com.junaldadlawan.event_ticketing_api.waitlist.repository.WaitlistEntryRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +30,7 @@ import java.util.UUID;
  * WaitlistEntry}'s javadoc for why the notify-on-inventory-freed trigger
  * (BR-WAIT-002/003) is out of scope for this dispatch.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WaitlistServiceImpl implements WaitlistService {
@@ -34,6 +42,10 @@ public class WaitlistServiceImpl implements WaitlistService {
     private final TicketTypeRepository ticketTypeRepository;
     private final OrganizationAccessGuard accessGuard;
     private final WaitlistPositionAssigner positionAssigner;
+    private final NotificationService notificationService;
+
+    @Value("${app.waitlist.offer-window-hours:24}")
+    private int offerWindowHours;
 
     /**
      * Deliberately NOT {@code @Transactional} (code-reviewer HIGH): this
@@ -159,5 +171,40 @@ public class WaitlistServiceImpl implements WaitlistService {
             }
         }
         throw new IllegalStateException("Unable to assign a waitlist position after " + MAX_POSITION_RETRY_ATTEMPTS + " attempts");
+    }
+
+    @Override
+    public void notifyNextInLineIfAvailable(UUID eventId, UUID ticketTypeId) {
+        // Each scope is caught independently (not one try/catch around both
+        // calls) - a failure notifying the ticket-type-specific waiter must
+        // not prevent the event-general waiter from still being offered
+        // their spot, and vice versa. These are two unrelated people.
+        safelyNotifyNextForScope(eventId, ticketTypeId);
+        // Restocking one specific ticket type always ends the event's
+        // overall "generally sold out" state (requireEventGenerallySoldOut
+        // requires EVERY ticket type to be sold out) - so an event-general
+        // waiter may now also be owed an offer.
+        safelyNotifyNextForScope(eventId, null);
+    }
+
+    private void safelyNotifyNextForScope(UUID eventId, UUID ticketTypeId) {
+        try {
+            notifyNextForScope(eventId, ticketTypeId);
+        } catch (RuntimeException e) {
+            log.error("Failed to notify next waitlisted user for event {} ticketType {}", eventId, ticketTypeId, e);
+        }
+    }
+
+    private void notifyNextForScope(UUID eventId, UUID ticketTypeId) {
+        List<WaitlistEntry> matches = ticketTypeId != null
+                ? waitlistEntryRepository.findNextNotNotifiedForTicketTypeForUpdate(eventId, ticketTypeId, Pageable.ofSize(1))
+                : waitlistEntryRepository.findNextNotNotifiedEventGeneralForUpdate(eventId, Pageable.ofSize(1));
+        matches.stream().findFirst().ifPresent(entry -> {
+            Instant now = Instant.now();
+            entry.setNotifiedAt(now);
+            entry.setOfferExpiresAt(now.plus(offerWindowHours, ChronoUnit.HOURS));
+            waitlistEntryRepository.save(entry);
+            notificationService.notify(entry.getUserId(), NotificationType.WAITLIST_AVAILABILITY, "WaitlistEntry", entry.getId());
+        });
     }
 }

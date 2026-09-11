@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.checkin.controller;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceAuthorizeRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.service.ScannerDeviceService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,7 +24,7 @@ public class EventScannerDeviceController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ScannerDeviceResponse authorize(@PathVariable UUID eventId, @RequestBody ScannerDeviceAuthorizeRequest request) {
+    public ScannerDeviceResponse authorize(@PathVariable UUID eventId, @Valid @RequestBody ScannerDeviceAuthorizeRequest request) {
         return scannerDeviceService.authorize(eventId, request);
     }
 }

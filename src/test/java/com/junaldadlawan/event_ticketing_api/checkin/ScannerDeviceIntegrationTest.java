@@ -274,6 +274,69 @@ class ScannerDeviceIntegrationTest {
         assertThat(devices).hasSize(1);
     }
 
+    /**
+     * Regression test for the code-reviewer HIGH finding (Phase 10 review):
+     * {@code authorize()} used to read the event's active-device list with a
+     * plain {@code findByEventId} (no lock), so two concurrent requests
+     * could both observe "no active device yet" under READ_COMMITTED and
+     * both insert one, landing on two simultaneously-ACTIVE devices for a
+     * pure_offline event - violating BR-CHECKIN-008's "exactly one" rule.
+     * Fixed by locking the event's {@code CheckInConfig} row first (see
+     * {@code CheckInConfigRepository.findByEventIdForUpdate}), so concurrent
+     * {@code authorize()} calls for the same pure_offline event actually
+     * serialize. Same {@code ExecutorService} idiom as {@code
+     * CheckInIntegrationTest}'s concurrent-scan race proof.
+     */
+    @Test
+    void authorize_pureOfflineMode_concurrentRequests_onlyOneEverActive() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        setMode(eventId, CheckInMode.PURE_OFFLINE);
+        String ownerToken = jwtService.generateAccessToken(owner);
+
+        int threadCount = 8;
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
+        java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(threadCount);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Integer>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threadCount; i++) {
+            int index = i;
+            futures.add(executor.submit(() -> {
+                ready.countDown();
+                go.await();
+                MvcResult result = mockMvc.perform(post("/api/v1/events/{eventId}/scanner-devices", eventId)
+                                .header("Authorization", "Bearer " + ownerToken)
+                                .contentType("application/json")
+                                .content("{\"deviceLabel\":\"Concurrent Gate " + index + "\"}"))
+                        .andReturn();
+                return result.getResponse().getStatus();
+            }));
+        }
+
+        ready.await();
+        go.countDown();
+
+        long successCount = 0;
+        long conflictCount = 0;
+        for (java.util.concurrent.Future<Integer> future : futures) {
+            int status = future.get();
+            if (status == 201) {
+                successCount++;
+            } else if (status == 409) {
+                conflictCount++;
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(1);
+        assertThat(conflictCount).isEqualTo(threadCount - 1);
+        List<ScannerDevice> activeDevices = scannerDeviceRepository.findByEventIdAndStatus(eventId, ScannerDeviceStatus.ACTIVE);
+        assertThat(activeDevices).hasSize(1);
+    }
+
     @Test
     void authorize_pureOfflineMode_forceReplace_revokesExistingAndAuthorizesNew() throws Exception {
         User owner = inMemoryUser(Role.CUSTOMER);

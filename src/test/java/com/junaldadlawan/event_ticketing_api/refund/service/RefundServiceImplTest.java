@@ -8,6 +8,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
 import com.junaldadlawan.event_ticketing_api.order.entity.Payment;
 import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
@@ -31,6 +33,9 @@ import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
+import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
+import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
+import com.junaldadlawan.event_ticketing_api.waitlist.service.WaitlistService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -83,6 +88,12 @@ class RefundServiceImplTest {
     private PaymentGatewayClient paymentGatewayClient;
     @Mock
     private OrganizationAccessGuard accessGuard;
+    @Mock
+    private TicketTypeRepository ticketTypeRepository;
+    @Mock
+    private WaitlistService waitlistService;
+    @Mock
+    private NotificationService notificationService;
 
     private RefundServiceImpl service;
 
@@ -94,7 +105,8 @@ class RefundServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new RefundServiceImpl(refundRepository, refundPolicyRepository, orderRepository,
-                paymentRepository, ticketRepository, eventRepository, paymentGatewayClient, accessGuard);
+                paymentRepository, ticketRepository, eventRepository, paymentGatewayClient, accessGuard,
+                ticketTypeRepository, waitlistService, notificationService);
         orgId = UUID.randomUUID();
         eventId = UUID.randomUUID();
         orderId = UUID.randomUUID();
@@ -734,5 +746,147 @@ class RefundServiceImplTest {
 
         verifyNoInteractions(paymentGatewayClient, paymentRepository);
         verify(refundRepository, never()).save(any());
+    }
+
+    // ---- BR-NOTIFY-001 (Phase 11): REFUND_CONFIRMATION fires on any successful refund, never on a decline ----
+
+    @Test
+    void createRefund_fullRefund_firesRefundConfirmationNotification_toTheBuyer() {
+        Order order = order(1000L, OrderStatus.PAID);
+        stubOrderAndEventLookup(order);
+        stubOrganizerCaller(UUID.randomUUID());
+        when(refundRepository.sumCompletedAmountByOrderId(orderId)).thenReturn(0L, 1000L);
+        RefundPolicy policy = RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build();
+        when(refundPolicyRepository.findByEventId(eventId)).thenReturn(Optional.of(policy));
+        when(paymentRepository.findByOrderId(orderId)).thenReturn(List.of(payment("mock_ref")));
+        when(paymentGatewayClient.refund(eq("mock_ref"), any())).thenReturn(PaymentResult.success("mock_refund_notify"));
+        UUID savedRefundId = UUID.randomUUID();
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> {
+            Refund r = inv.getArgument(0);
+            r.setId(savedRefundId);
+            return r;
+        });
+        when(ticketRepository.findByOrderId(orderId)).thenReturn(List.of());
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createRefund(orderId, requestWithReason("full refund"));
+
+        verify(notificationService).notify(buyerId, NotificationType.REFUND_CONFIRMATION, "Refund", savedRefundId);
+    }
+
+    @Test
+    void createRefund_partialRefund_alsoFiresRefundConfirmationNotification() {
+        Order order = order(1000L, OrderStatus.PAID);
+        stubOrderAndEventLookup(order);
+        stubOrganizerCaller(UUID.randomUUID());
+        when(refundRepository.sumCompletedAmountByOrderId(orderId)).thenReturn(0L, 400L);
+        RefundPolicy policy = RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build();
+        when(refundPolicyRepository.findByEventId(eventId)).thenReturn(Optional.of(policy));
+        when(paymentRepository.findByOrderId(orderId)).thenReturn(List.of(payment("mock_ref")));
+        when(paymentGatewayClient.refund(eq("mock_ref"), any())).thenReturn(PaymentResult.success("mock_refund_partial_notify"));
+        UUID savedRefundId = UUID.randomUUID();
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> {
+            Refund r = inv.getArgument(0);
+            r.setId(savedRefundId);
+            return r;
+        });
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RefundCreateRequest request = new RefundCreateRequest(new MoneyDto(400L, "USD"), "partial refund");
+        service.createRefund(orderId, request);
+
+        verify(notificationService).notify(buyerId, NotificationType.REFUND_CONFIRMATION, "Refund", savedRefundId);
+    }
+
+    @Test
+    void createRefund_gatewayDeclined_doesNotFireAnyNotification() {
+        Order order = order(1000L, OrderStatus.PAID);
+        stubOrderAndEventLookup(order);
+        stubOrganizerCaller(UUID.randomUUID());
+        when(refundRepository.sumCompletedAmountByOrderId(orderId)).thenReturn(0L);
+        RefundPolicy policy = RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build();
+        when(refundPolicyRepository.findByEventId(eventId)).thenReturn(Optional.of(policy));
+        when(paymentRepository.findByOrderId(orderId)).thenReturn(List.of(payment("gwref_fail_notify")));
+        when(paymentGatewayClient.refund(eq("gwref_fail_notify"), any())).thenReturn(PaymentResult.failure("declined"));
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createRefund(orderId, requestWithReason("will be declined"));
+
+        verifyNoInteractions(notificationService);
+    }
+
+    // ---- BR-WAIT-002/003 (Phase 11): a full refund of a GA ticket restocks inventory and offers it to the waitlist ----
+
+    @Test
+    void createRefund_fullRefund_gaTicket_restocksQuantityAvailable_andNotifiesWaitlist() {
+        Order order = order(1000L, OrderStatus.PAID);
+        stubOrderAndEventLookup(order);
+        stubOrganizerCaller(UUID.randomUUID());
+        when(refundRepository.sumCompletedAmountByOrderId(orderId)).thenReturn(0L, 1000L);
+        RefundPolicy policy = RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build();
+        when(refundPolicyRepository.findByEventId(eventId)).thenReturn(Optional.of(policy));
+        when(paymentRepository.findByOrderId(orderId)).thenReturn(List.of(payment("mock_ref")));
+        when(paymentGatewayClient.refund(eq("mock_ref"), any())).thenReturn(PaymentResult.success("mock_refund_ga"));
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+        Ticket gaTicket = ticket(UUID.randomUUID(), orderId); // seatId null -> GA
+        UUID ticketTypeId = gaTicket.getTicketTypeId();
+        when(ticketRepository.findByOrderId(orderId)).thenReturn(List.of(gaTicket));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        TicketType ticketType = TicketType.builder().id(ticketTypeId).eventId(eventId).quantityAvailable(0).build();
+        when(ticketTypeRepository.findByIdForUpdate(ticketTypeId)).thenReturn(Optional.of(ticketType));
+
+        service.createRefund(orderId, requestWithReason("full refund, GA ticket"));
+
+        assertThat(ticketType.getQuantityAvailable()).isEqualTo(1);
+        verify(ticketTypeRepository).save(ticketType);
+        verify(waitlistService).notifyNextInLineIfAvailable(eventId, ticketTypeId);
+    }
+
+    /**
+     * Reserved-seating {@code TicketType}s never had {@code quantityAvailable}
+     * decremented at checkout in the first place (only {@code Seat.status}
+     * flips) - restocking it here for a seated ticket's refund would
+     * fabricate inventory that was never actually reserved via that
+     * counter. Confirms the scope restriction is real, not just documented.
+     */
+    @Test
+    void createRefund_fullRefund_seatedTicket_doesNotRestockOrNotifyWaitlist() {
+        Order order = order(1000L, OrderStatus.PAID);
+        stubOrderAndEventLookup(order);
+        stubOrganizerCaller(UUID.randomUUID());
+        when(refundRepository.sumCompletedAmountByOrderId(orderId)).thenReturn(0L, 1000L);
+        RefundPolicy policy = RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build();
+        when(refundPolicyRepository.findByEventId(eventId)).thenReturn(Optional.of(policy));
+        when(paymentRepository.findByOrderId(orderId)).thenReturn(List.of(payment("mock_ref")));
+        when(paymentGatewayClient.refund(eq("mock_ref"), any())).thenReturn(PaymentResult.success("mock_refund_seated"));
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+        Ticket seatedTicket = ticket(UUID.randomUUID(), orderId);
+        seatedTicket.setSeatId(UUID.randomUUID());
+        when(ticketRepository.findByOrderId(orderId)).thenReturn(List.of(seatedTicket));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createRefund(orderId, requestWithReason("full refund, seated ticket"));
+
+        assertThat(seatedTicket.getStatus()).isEqualTo(TicketStatus.REFUNDED);
+        verifyNoInteractions(ticketTypeRepository, waitlistService);
+    }
+
+    @Test
+    void createRefund_partialRefund_doesNotTouchWaitlistOrTicketTypeInventory() {
+        Order order = order(1000L, OrderStatus.PAID);
+        stubOrderAndEventLookup(order);
+        stubOrganizerCaller(UUID.randomUUID());
+        when(refundRepository.sumCompletedAmountByOrderId(orderId)).thenReturn(0L, 400L);
+        RefundPolicy policy = RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build();
+        when(refundPolicyRepository.findByEventId(eventId)).thenReturn(Optional.of(policy));
+        when(paymentRepository.findByOrderId(orderId)).thenReturn(List.of(payment("mock_ref")));
+        when(paymentGatewayClient.refund(eq("mock_ref"), any())).thenReturn(PaymentResult.success("mock_refund_partial_ga"));
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RefundCreateRequest request = new RefundCreateRequest(new MoneyDto(400L, "USD"), "partial refund");
+        service.createRefund(orderId, request);
+
+        verifyNoInteractions(ticketTypeRepository, waitlistService);
     }
 }

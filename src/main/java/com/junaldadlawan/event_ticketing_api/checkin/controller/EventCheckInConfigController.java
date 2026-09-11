@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.checkin.controller;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.service.CheckInConfigService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,7 +33,7 @@ public class EventCheckInConfigController {
     }
 
     @PatchMapping
-    public CheckInConfigResponse update(@PathVariable UUID eventId, @RequestBody CheckInConfigUpdateRequest request) {
+    public CheckInConfigResponse update(@PathVariable UUID eventId, @Valid @RequestBody CheckInConfigUpdateRequest request) {
         return checkInConfigService.update(eventId, request);
     }
 }

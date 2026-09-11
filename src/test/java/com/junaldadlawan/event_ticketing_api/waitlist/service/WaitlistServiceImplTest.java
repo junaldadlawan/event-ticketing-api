@@ -5,6 +5,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
@@ -24,9 +26,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -44,8 +49,10 @@ import static org.mockito.Mockito.when;
  * WaitlistPositionAssignerTest} instead, since that logic was extracted
  * into its own {@code REQUIRES_NEW} bean — see that class's javadoc for
  * why a same-transaction retry doesn't work on Postgres). Notify-on-
- * inventory-freed (BR-WAIT-002/003) is out of scope — see {@code
- * WaitlistEntry}'s javadoc.
+ * inventory-freed (BR-WAIT-002/003) is covered separately in {@code
+ * RefundServiceImplTest} (the trigger call site) and {@code
+ * WaitlistServiceImplTest}'s own {@code notifyNextInLineIfAvailable} tests
+ * below.
  */
 @ExtendWith(MockitoExtension.class)
 class WaitlistServiceImplTest {
@@ -60,12 +67,14 @@ class WaitlistServiceImplTest {
     private OrganizationAccessGuard accessGuard;
     @Mock
     private WaitlistPositionAssigner positionAssigner;
+    @Mock
+    private NotificationService notificationService;
 
     private WaitlistServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new WaitlistServiceImpl(waitlistEntryRepository, eventRepository, ticketTypeRepository, accessGuard, positionAssigner);
+        service = new WaitlistServiceImpl(waitlistEntryRepository, eventRepository, ticketTypeRepository, accessGuard, positionAssigner, notificationService);
     }
 
     private Event event(UUID id) {
@@ -405,5 +414,121 @@ class WaitlistServiceImplTest {
         when(waitlistEntryRepository.findByUserIdOrderByCreatedAtAsc(callerId)).thenReturn(List.of());
 
         assertThat(service.listMyEntries()).isEmpty();
+    }
+
+    // ---- notifyNextInLineIfAvailable() / notifyNextForScope() (Phase 11, BR-WAIT-002/003) ----
+
+    @Test
+    void notifyNextInLineIfAvailable_ticketTypeScopedWaiterExists_notifiedAndOffered() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID waiterId = UUID.randomUUID();
+        WaitlistEntry specificWaiter = entry(eventId, ticketTypeId, waiterId, 1);
+        when(waitlistEntryRepository.findNextNotNotifiedForTicketTypeForUpdate(eq(eventId), eq(ticketTypeId), any()))
+                .thenReturn(List.of(specificWaiter));
+        when(waitlistEntryRepository.findNextNotNotifiedEventGeneralForUpdate(eq(eventId), any()))
+                .thenReturn(List.of());
+
+        service.notifyNextInLineIfAvailable(eventId, ticketTypeId);
+
+        assertThat(specificWaiter.getNotifiedAt()).isNotNull();
+        assertThat(specificWaiter.getOfferExpiresAt()).isNotNull();
+        verify(waitlistEntryRepository).save(specificWaiter);
+        verify(notificationService).notify(waiterId, NotificationType.WAITLIST_AVAILABILITY, "WaitlistEntry", specificWaiter.getId());
+    }
+
+    @Test
+    void notifyNextInLineIfAvailable_eventGeneralWaiterExists_alsoNotifiedIndependently() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID generalWaiterId = UUID.randomUUID();
+        WaitlistEntry generalWaiter = entry(eventId, null, generalWaiterId, 1);
+        when(waitlistEntryRepository.findNextNotNotifiedForTicketTypeForUpdate(eq(eventId), eq(ticketTypeId), any()))
+                .thenReturn(List.of());
+        when(waitlistEntryRepository.findNextNotNotifiedEventGeneralForUpdate(eq(eventId), any()))
+                .thenReturn(List.of(generalWaiter));
+
+        service.notifyNextInLineIfAvailable(eventId, ticketTypeId);
+
+        assertThat(generalWaiter.getNotifiedAt()).isNotNull();
+        verify(waitlistEntryRepository).save(generalWaiter);
+        verify(notificationService).notify(generalWaiterId, NotificationType.WAITLIST_AVAILABILITY, "WaitlistEntry", generalWaiter.getId());
+    }
+
+    /**
+     * Restocking one ticket type always ends the event's overall
+     * "generally sold out" state - both the ticket-type-scoped AND the
+     * event-general waiter (if either exists) are notified from the SAME
+     * restock, as two distinct people, two distinct notifications.
+     */
+    @Test
+    void notifyNextInLineIfAvailable_bothScopesHaveWaiters_bothNotifiedIndependently_asDifferentPeople() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID specificWaiterId = UUID.randomUUID();
+        UUID generalWaiterId = UUID.randomUUID();
+        WaitlistEntry specificWaiter = entry(eventId, ticketTypeId, specificWaiterId, 1);
+        WaitlistEntry generalWaiter = entry(eventId, null, generalWaiterId, 1);
+        when(waitlistEntryRepository.findNextNotNotifiedForTicketTypeForUpdate(eq(eventId), eq(ticketTypeId), any()))
+                .thenReturn(List.of(specificWaiter));
+        when(waitlistEntryRepository.findNextNotNotifiedEventGeneralForUpdate(eq(eventId), any()))
+                .thenReturn(List.of(generalWaiter));
+
+        service.notifyNextInLineIfAvailable(eventId, ticketTypeId);
+
+        verify(notificationService).notify(specificWaiterId, NotificationType.WAITLIST_AVAILABILITY, "WaitlistEntry", specificWaiter.getId());
+        verify(notificationService).notify(generalWaiterId, NotificationType.WAITLIST_AVAILABILITY, "WaitlistEntry", generalWaiter.getId());
+        verify(notificationService, times(2)).notify(any(), eq(NotificationType.WAITLIST_AVAILABILITY), eq("WaitlistEntry"), any());
+    }
+
+    @Test
+    void notifyNextInLineIfAvailable_noOneWaitingInEitherScope_isANoOp() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        when(waitlistEntryRepository.findNextNotNotifiedForTicketTypeForUpdate(eq(eventId), eq(ticketTypeId), any()))
+                .thenReturn(List.of());
+        when(waitlistEntryRepository.findNextNotNotifiedEventGeneralForUpdate(eq(eventId), any()))
+                .thenReturn(List.of());
+
+        service.notifyNextInLineIfAvailable(eventId, ticketTypeId);
+
+        verify(waitlistEntryRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+    }
+
+    /**
+     * NFR 5.2-equivalent for the waitlist trigger: never throws, even if the
+     * underlying repository blows up - this is called from the middle of a
+     * refund transaction (see {@code RefundServiceImpl.restockAndNotifyWaitlistIfGeneralAdmission}),
+     * which must not fail because of this.
+     * <p>
+     * Regression test: each scope is now caught INDEPENDENTLY (fixed after
+     * a qa-tester finding on the original shared-try/catch version, which
+     * meant an exception on the ticket-type-scoped scope's save silently
+     * skipped the unrelated event-general waiter too). A failure notifying
+     * the ticket-type-specific waiter must not prevent the event-general
+     * waiter from still being offered their spot - they're two different
+     * people.
+     */
+    @Test
+    void notifyNextInLineIfAvailable_specificScopeSaveThrows_swallowed_eventGeneralScopeStillAttempted() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        WaitlistEntry specificWaiter = entry(eventId, ticketTypeId, UUID.randomUUID(), 1);
+        WaitlistEntry generalWaiter = entry(eventId, null, UUID.randomUUID(), 1);
+        when(waitlistEntryRepository.findNextNotNotifiedForTicketTypeForUpdate(eq(eventId), eq(ticketTypeId), any()))
+                .thenReturn(List.of(specificWaiter));
+        when(waitlistEntryRepository.save(specificWaiter)).thenThrow(new RuntimeException("connection lost"));
+        when(waitlistEntryRepository.findNextNotNotifiedEventGeneralForUpdate(eq(eventId), any()))
+                .thenReturn(List.of(generalWaiter));
+        when(waitlistEntryRepository.save(generalWaiter)).thenReturn(generalWaiter);
+
+        assertThatCode(() -> service.notifyNextInLineIfAvailable(eventId, ticketTypeId)).doesNotThrowAnyException();
+
+        verify(waitlistEntryRepository).findNextNotNotifiedEventGeneralForUpdate(eq(eventId), any());
+        verify(waitlistEntryRepository).save(generalWaiter);
+        verify(notificationService).notify(eq(generalWaiter.getUserId()), eq(NotificationType.WAITLIST_AVAILABILITY), eq("WaitlistEntry"), eq(generalWaiter.getId()));
+        // The specific-scope waiter never got a saved notifiedAt (its save threw) and was never notified.
+        verify(notificationService, never()).notify(eq(specificWaiter.getUserId()), any(), any(), any());
     }
 }

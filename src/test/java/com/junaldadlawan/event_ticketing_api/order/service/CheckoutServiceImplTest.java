@@ -16,6 +16,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.common.exception.UnprocessableEntityException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
 import com.junaldadlawan.event_ticketing_api.order.entity.CheckoutIdempotencyKey;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
@@ -114,6 +116,8 @@ class CheckoutServiceImplTest {
     @Mock
     private PromoCodeRepository promoCodeRepository;
     @Mock
+    private NotificationService notificationService;
+    @Mock
     private PromoCodeUsageLimitGuard promoCodeUsageLimitGuard;
     @Mock
     private TicketRepository ticketRepository;
@@ -132,7 +136,7 @@ class CheckoutServiceImplTest {
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
-                promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService);
+                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService);
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();
         idempotencyKey = UUID.randomUUID();
@@ -522,5 +526,85 @@ class CheckoutServiceImplTest {
 
         verifyNoInteractions(promoCodeUsageLimitGuard);
         verify(promoCodeRepository, never()).findById(any());
+    }
+
+    // ---- BR-NOTIFY-001 (Phase 11): checkout fires ORDER_CONFIRMATION + PAYMENT_RECEIPT ----
+
+    @Test
+    void checkout_success_firesOrderConfirmationAndPaymentReceiptNotifications_toTheBuyer() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        CartItem item = gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
+        when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any()))
+                .thenReturn(PaymentResult.success("mock_ref_notify"));
+        UUID savedOrderId = UUID.randomUUID();
+        when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(savedOrderId);
+            o.setCreatedAt(Instant.now());
+            return o;
+        });
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyKeyRepository.findById(idempotencyKey)).thenReturn(Optional.empty());
+        stubTicketIssuance();
+
+        service.checkout(cartId, idempotencyKey, "tok_ok");
+
+        verify(notificationService).notify(buyerId, NotificationType.ORDER_CONFIRMATION, "Order", savedOrderId);
+        verify(notificationService).notify(buyerId, NotificationType.PAYMENT_RECEIPT, "Order", savedOrderId);
+        verify(notificationService, org.mockito.Mockito.times(2)).notify(any(), any(), any(), any());
+    }
+
+    @Test
+    void checkout_replayWithSameKey_doesNotFireAnyNotifications() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID existingOrderId = UUID.randomUUID();
+        CheckoutIdempotencyKey existing = CheckoutIdempotencyKey.builder()
+                .id(idempotencyKey).buyerId(buyerId).cartId(cartId).orderId(existingOrderId).build();
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+                .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(existing, false));
+        Order existingOrder = Order.builder()
+                .id(existingOrderId).buyerId(buyerId).payeeType(PayeeType.ORGANIZATION).payeeId(UUID.randomUUID())
+                .status(OrderStatus.PAID).cartId(cartId).total(Money.builder().amount(1000L).currency("USD").build())
+                .createdBy(buyerId.toString()).createdAt(Instant.now()).build();
+        when(orderRepository.findById(existingOrderId)).thenReturn(Optional.of(existingOrder));
+        when(ticketRepository.findByOrderId(existingOrderId)).thenReturn(List.of());
+
+        service.checkout(cartId, idempotencyKey, "tok_ok");
+
+        // Replay of an already-completed checkout isn't a new purchase - no
+        // additional ORDER_CONFIRMATION/PAYMENT_RECEIPT should fire.
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void checkout_paymentDeclined_doesNotFireAnyNotifications() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        CartItem item = gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
+        when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_fail"), any()))
+                .thenReturn(PaymentResult.failure("Payment declined by gateway for the provided payment method token"));
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_fail"))
+                .isInstanceOf(PaymentFailedException.class);
+
+        verifyNoInteractions(notificationService);
     }
 }

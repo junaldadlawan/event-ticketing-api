@@ -22,14 +22,15 @@ import java.util.UUID;
  * {@code notifiedAt}/{@code offerExpiresAt} are set-once-later fields, not a
  * general revision-tracking {@code updatedAt}.
  * <p>
- * Phase 9 confirmed decision: this dispatch implements join/position
- * tracking (BR-WAIT-001) only - the active trigger that notifies
- * waitlisted users in FIFO order when inventory frees up (BR-WAIT-002/003)
- * is explicitly out of scope per the roadmap's own framing ("depends on
- * Phase 11's notification trigger existing to be meaningful"), since Phase
- * 11 (Notifications) doesn't exist yet and there's no delivery mechanism to
- * trigger. {@code notifiedAt}/{@code offerExpiresAt} therefore stay {@code
- * null} for every row this phase ever creates - nothing populates them yet.
+ * Phase 9 built join/position tracking (BR-WAIT-001) only, leaving
+ * {@code notifiedAt}/{@code offerExpiresAt} permanently {@code null} - the
+ * active trigger that notifies waitlisted users in FIFO order when
+ * inventory frees up (BR-WAIT-002/003) depended on Phase 11's notification
+ * delivery mechanism existing to be meaningful. Phase 11 (Notifications)
+ * implements that trigger - see {@code WaitlistServiceImpl
+ * .notifyNextInLineIfAvailable} - so both fields DO get populated now, on
+ * whichever row is next in line when a GA ticket refund restocks its
+ * ticket type's inventory.
  */
 @Entity
 @Table(name = "waitlist_entries")
