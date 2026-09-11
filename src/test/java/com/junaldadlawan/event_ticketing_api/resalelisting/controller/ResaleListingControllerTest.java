@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.resalelisting.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.PaymentFailedException;
@@ -46,6 +47,9 @@ class ResaleListingControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private OrderResponse orderResponse(UUID orderId, UUID sellerId) {
         return new OrderResponse(orderId, UUID.randomUUID(), PayeeType.USER, sellerId, OrderStatus.PAID, null,

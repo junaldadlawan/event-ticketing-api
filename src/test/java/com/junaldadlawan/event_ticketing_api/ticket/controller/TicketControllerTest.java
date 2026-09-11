@@ -1,6 +1,11 @@
 package com.junaldadlawan.event_ticketing_api.ticket.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInRecordResponse;
+import com.junaldadlawan.event_ticketing_api.checkin.enums.CheckInResult;
+import com.junaldadlawan.event_ticketing_api.checkin.enums.CheckInSourceType;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.service.CheckInService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.ticket.artifact.RenderedTicketArtifact;
@@ -55,7 +60,13 @@ class TicketControllerTest {
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
+
+    @MockitoBean
     private TicketTransferService ticketTransferService;
+
+    @MockitoBean
+    private CheckInService checkInService;
 
     private Ticket ticket(UUID id) {
         return Ticket.builder()
@@ -246,6 +257,52 @@ class TicketControllerTest {
                 .thenThrow(new ForbiddenException("nope"));
 
         mockMvc.perform(get("/api/v1/tickets/{ticketId}/transfers", ticketId))
+                .andExpect(status().isForbidden());
+    }
+
+    // ---- GET /tickets/{ticketId}/check-in-records (Phase 10) ----
+
+    @Test
+    void listCheckInRecords_existingTicket_returns200_withHistory() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        CheckInRecordResponse record = new CheckInRecordResponse(UUID.randomUUID(), ticketId,
+                CheckInSourceType.SCANNER_DEVICE, UUID.randomUUID(), Instant.now(), CheckInResult.VALID);
+        when(checkInService.listTicketCheckInRecords(ticketId)).thenReturn(List.of(record));
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/check-in-records", ticketId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticketId").value(ticketId.toString()))
+                .andExpect(jsonPath("$[0].sourceType").value("SCANNER_DEVICE"))
+                .andExpect(jsonPath("$[0].result").value("VALID"));
+    }
+
+    @Test
+    void listCheckInRecords_noRecordsYet_returns200_withEmptyArray() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(checkInService.listTicketCheckInRecords(ticketId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/check-in-records", ticketId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void listCheckInRecords_unknownTicket_returns404() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(checkInService.listTicketCheckInRecords(ticketId))
+                .thenThrow(new ResourceNotFoundException("Ticket " + ticketId + " not found"));
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/check-in-records", ticketId))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listCheckInRecords_unauthorizedCaller_returns403() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(checkInService.listTicketCheckInRecords(ticketId))
+                .thenThrow(new ForbiddenException("Only the event's organizer/owner or an admin may view this ticket's check-in records"));
+
+        mockMvc.perform(get("/api/v1/tickets/{ticketId}/check-in-records", ticketId))
                 .andExpect(status().isForbidden());
     }
 }

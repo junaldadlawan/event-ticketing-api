@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.seatmap.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.seatmap.entity.Seat;
@@ -40,6 +41,9 @@ class SeatMapControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     @Test
     void get_seatMapExists_returns200WithSeats() throws Exception {
