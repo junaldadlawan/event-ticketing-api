@@ -19,4 +19,11 @@ public interface PaymentGatewayClient {
      * infrastructure errors.
      */
     PaymentResult charge(String paymentMethodToken, Money amount);
+
+    /**
+     * Reverses (fully or partially) a previously-{@code completed} charge,
+     * identified by its own {@code gatewayRef} (Phase 8). Same
+     * never-throws-on-decline contract as {@link #charge}.
+     */
+    PaymentResult refund(String gatewayRef, Money amount);
 }

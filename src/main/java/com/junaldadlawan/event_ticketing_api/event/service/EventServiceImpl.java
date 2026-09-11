@@ -16,6 +16,7 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.refund.service.RefundService;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class EventServiceImpl implements EventService {
     private final OrganizationRepository organizationRepository;
     private final VenueRepository venueRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final RefundService refundService;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -167,10 +169,16 @@ public class EventServiceImpl implements EventService {
         }
 
         event.setStatus(EventStatus.CANCELLED);
-        // NOTE: no refund logic here — the async refund workflow for issued
-        // tickets is Phase 8's job (Phase 8 doesn't exist yet); this only
-        // performs the status transition itself, per the roadmap's own note.
-        return eventRepository.save(event);
+        Event saved = eventRepository.save(event);
+
+        // BR-PAY-005 (Phase 8): cancelling an event triggers a mandatory
+        // refund for every ticket holder, regardless of the event's
+        // configured refund policy. Synchronous within this same
+        // transaction/request - no async/queue infrastructure exists
+        // elsewhere in this codebase to justify one here either.
+        refundService.refundAllForEventCancellation(eventId, accessGuard.currentUserId());
+
+        return saved;
     }
 
     @Override
