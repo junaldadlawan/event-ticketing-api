@@ -6,6 +6,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -143,5 +144,125 @@ class TicketCredentialServiceTest {
         String guessedSignature = hmacSign("a-wrong-guessed-secret-value", ticketId + ":0");
 
         assertThat(credential.split("\\.", 2)[1]).isNotEqualTo(guessedSignature);
+    }
+
+    // ---- verify() — Phase 10's new addition, first consumer of a credential ever generated since Phase 6a ----
+
+    @Test
+    void verify_roundTripsWithGenerate_returnsTheEmbeddedTicketIdAndVersion() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+        UUID ticketId = UUID.randomUUID();
+
+        String credential = service.generate(ticketId, 3);
+        Optional<TicketCredentialService.ParsedCredential> parsed = service.verify(credential);
+
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().ticketId()).isEqualTo(ticketId);
+        assertThat(parsed.get().version()).isEqualTo(3);
+    }
+
+    @Test
+    void verify_defaultVersionZero_roundTrips() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+        UUID ticketId = UUID.randomUUID();
+
+        Optional<TicketCredentialService.ParsedCredential> parsed = service.verify(service.generate(ticketId));
+
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().version()).isZero();
+    }
+
+    /**
+     * A forged credential — right shape (a real UUID and a plausible
+     * version), but a signature this server never produced — must be
+     * indistinguishable from garbage: {@link Optional#empty()}, never a
+     * parsed-but-unsigned result.
+     */
+    @Test
+    void verify_tamperedSignature_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+        UUID ticketId = UUID.randomUUID();
+        String credential = service.generate(ticketId, 0);
+        String forged = credential.substring(0, credential.length() - 1)
+                + (credential.charAt(credential.length() - 1) == 'A' ? 'B' : 'A');
+
+        assertThat(service.verify(forged)).isEmpty();
+    }
+
+    /** A credential signed under a DIFFERENT secret (e.g. mistakenly reusing app.jwt.secret) must not verify here. */
+    @Test
+    void verify_signedWithADifferentSecret_returnsEmpty() {
+        TicketCredentialService issuer = new TicketCredentialService("ticket-secret-A-0123456789abcdef");
+        TicketCredentialService verifier = new TicketCredentialService("ticket-secret-B-fedcba9876543210");
+        String credential = issuer.generate(UUID.randomUUID());
+
+        assertThat(verifier.verify(credential)).isEmpty();
+    }
+
+    @Test
+    void verify_nullInput_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+
+        assertThat(service.verify(null)).isEmpty();
+    }
+
+    @Test
+    void verify_noDotSeparator_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+
+        assertThat(service.verify("not-a-credential-at-all")).isEmpty();
+    }
+
+    @Test
+    void verify_payloadMissingColonSeparator_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+
+        assertThat(service.verify("no-colon-here.somesignature")).isEmpty();
+    }
+
+    @Test
+    void verify_nonUuidTicketIdSegment_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+
+        assertThat(service.verify("not-a-uuid:0.somesignature")).isEmpty();
+    }
+
+    @Test
+    void verify_nonIntegerVersionSegment_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+        UUID ticketId = UUID.randomUUID();
+
+        assertThat(service.verify(ticketId + ":not-a-number.somesignature")).isEmpty();
+    }
+
+    @Test
+    void verify_emptyString_returnsEmpty() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+
+        assertThat(service.verify("")).isEmpty();
+    }
+
+    /**
+     * {@code verify} only reports the version embedded in the credential -
+     * it never compares it against anything (no {@code Ticket} lookup, no
+     * "expected version" parameter). A stale (v0) credential for a ticket
+     * whose CURRENT {@code credentialVersion} is now 5 still verifies fine
+     * here and simply reports version 0 - it's the CALLER's job (see
+     * {@code CheckInServiceImpl.resolveAndMarkTicket}) to compare that
+     * against the ticket's current version and decide staleness.
+     */
+    @Test
+    void verify_doesNotCompareEmbeddedVersionAgainstAnything_justReportsIt() {
+        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
+        UUID ticketId = UUID.randomUUID();
+
+        Optional<TicketCredentialService.ParsedCredential> staleParsed = service.verify(service.generate(ticketId, 0));
+        Optional<TicketCredentialService.ParsedCredential> currentParsed = service.verify(service.generate(ticketId, 5));
+
+        // Both verify successfully - verify() itself has no concept of "current".
+        assertThat(staleParsed).isPresent();
+        assertThat(currentParsed).isPresent();
+        assertThat(staleParsed.get().version()).isZero();
+        assertThat(currentParsed.get().version()).isEqualTo(5);
     }
 }

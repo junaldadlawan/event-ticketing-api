@@ -58,4 +58,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
      * two-step order lookup.
      */
     boolean existsByEventIdAndOwnerId(UUID eventId, UUID ownerId);
+
+    /** Phase 10: {@code GET /scanner-devices/{deviceId}/dataset} - the full pre-fetch for offline validation. */
+    List<Ticket> findByEventId(UUID eventId);
 }

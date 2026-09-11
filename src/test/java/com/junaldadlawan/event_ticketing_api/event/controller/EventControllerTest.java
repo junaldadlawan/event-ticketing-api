@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.event.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -51,6 +52,9 @@ class EventControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private Event event(UUID eventId, EventStatus status) {
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
