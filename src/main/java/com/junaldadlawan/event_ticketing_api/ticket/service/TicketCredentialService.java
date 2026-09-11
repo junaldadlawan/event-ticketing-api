@@ -14,7 +14,7 @@ import java.util.UUID;
 /**
  * Generates a ticket's scannable credential (Phase 6a confirmed decision #1):
  * a dedicated HMAC-SHA256-signed opaque token, deliberately NOT a JWT.
- * Format: {@code ticketId + ":" + version + "." + base64url(HMAC-SHA256(ticketId + ":" + version, secret))}.
+ * Format: {@code ticketId + "." + base64url(HMAC-SHA256(ticketId.toString(), secret))}.
  * <p>
  * The credential carries no expiry/validity claim of its own — a ticket's
  * real validity lives in {@code Ticket.status}, checked at scan-time (Phase
@@ -22,15 +22,6 @@ import java.util.UUID;
  * embeds a random UUID) and tamper-evident (the signature proves this server
  * issued it). Uses its own dedicated secret ({@code
  * app.ticket.credential.secret}), never the auth-token JWT secret.
- * <p>
- * The embedded {@code version} is Phase 7's addition (BR-TRANSFER-005): a
- * ticket row persists across transfers/resales (same ticket id - see the
- * ERD's "Ticket ||--o{ TicketTransfer"), so re-deriving a credential from the
- * bare ticket id alone would always produce the SAME string, unable to
- * invalidate anything. Bumping {@code Ticket.credentialVersion} and folding
- * it into the signed payload is what makes "issue a new credential for the
- * same ticket" actually change the credential. Every ticket starts at
- * version 0 at checkout issuance (the 1-arg overload).
  * <p>
  * Generation only — no verification/lookup method here. That's Phase 10's
  * check-in validation job.
@@ -46,13 +37,8 @@ public class TicketCredentialService {
         this.keySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
     }
 
-    /** Convenience for fresh issuance at checkout — always version 0. */
     public String generate(UUID ticketId) {
-        return generate(ticketId, 0);
-    }
-
-    public String generate(UUID ticketId, int version) {
-        String payload = ticketId + ":" + version;
+        String payload = ticketId.toString();
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(keySpec);

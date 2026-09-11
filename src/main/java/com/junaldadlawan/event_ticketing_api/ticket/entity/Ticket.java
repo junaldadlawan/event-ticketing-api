@@ -1,11 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.ticket.entity;
 
-import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
-import jakarta.persistence.AttributeOverride;
-import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
-import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -86,34 +82,6 @@ public class Ticket implements Persistable<UUID> {
 
     @Column(name = "credential", nullable = false, length = 500)
     private String credential;
-
-    /**
-     * Folded into {@code credential}'s signed payload (Phase 7 - see
-     * {@code TicketCredentialService}) so a transfer/resale can produce a
-     * genuinely different credential for the SAME ticket row (BR-TRANSFER-005)
-     * by bumping this and regenerating, without needing a new ticket id.
-     * Starts at 0 for every ticket issued at checkout.
-     */
-    @Builder.Default
-    @Column(name = "credential_version", nullable = false)
-    private int credentialVersion = 0;
-
-    /**
-     * The ticket type's price AT THE MOMENT this ticket was issued (Phase 7,
-     * code-reviewer MEDIUM) - resale's price cap (BR-TRANSFER-004) must be
-     * anchored to what was actually paid, not the ticket type's current
-     * price, or an organizer raising tiered/early-bird pricing later would
-     * silently let early buyers resell above what BR-TRANSFER-004's cap is
-     * meant to enforce. Nullable: tickets issued before this column existed
-     * fall back to the ticket type's current price at resale time (see
-     * {@code ResaleListingServiceImpl.requirePriceWithinCap}).
-     */
-    @Embedded
-    @AttributeOverrides({
-            @AttributeOverride(name = "amount", column = @Column(name = "face_value_amount")),
-            @AttributeOverride(name = "currency", column = @Column(name = "face_value_currency", length = 3))
-    })
-    private Money faceValue;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
