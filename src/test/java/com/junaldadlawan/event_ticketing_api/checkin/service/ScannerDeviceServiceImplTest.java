@@ -110,7 +110,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId)).thenReturn(Optional.empty());
         when(credentialService.generate(any())).thenReturn("generated-credential");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -131,7 +131,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId))
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.STANDARD).build()));
         when(credentialService.generate(any())).thenReturn("cred");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -151,7 +151,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId))
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.PURE_OFFLINE).build()));
         when(scannerDeviceRepository.findByEventIdAndStatus(eventId, ScannerDeviceStatus.ACTIVE)).thenReturn(List.of());
         when(credentialService.generate(any())).thenReturn("cred");
@@ -169,7 +169,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId))
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.PURE_OFFLINE).build()));
         ScannerDevice existing = ScannerDevice.builder().id(UUID.randomUUID()).eventId(eventId)
                 .deviceLabel("Existing").status(ScannerDeviceStatus.ACTIVE).build();
@@ -187,7 +187,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId))
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.PURE_OFFLINE).build()));
         ScannerDevice existing = ScannerDevice.builder().id(UUID.randomUUID()).eventId(eventId)
                 .deviceLabel("Existing").status(ScannerDeviceStatus.ACTIVE).build();
@@ -204,7 +204,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId))
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.PURE_OFFLINE).build()));
         ScannerDevice existing = ScannerDevice.builder().id(UUID.randomUUID()).eventId(eventId)
                 .deviceLabel("Existing").status(ScannerDeviceStatus.ACTIVE).build();
@@ -234,7 +234,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         stubAuthorizedCaller(callerId, orgId);
-        when(checkInConfigRepository.findByEventId(eventId))
+        when(checkInConfigRepository.findByEventIdForUpdate(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.PURE_OFFLINE).build()));
         ScannerDevice existing1 = ScannerDevice.builder().id(UUID.randomUUID()).eventId(eventId)
                 .deviceLabel("Existing1").status(ScannerDeviceStatus.ACTIVE).build();

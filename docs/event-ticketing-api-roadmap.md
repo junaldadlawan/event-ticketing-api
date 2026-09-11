@@ -217,7 +217,7 @@ Depends on `Ticket` existing.
   (BR-CHECKIN-007) - the server only ever provides the configured window's
   length, never observes or enforces a specific device's local clock.
 
-## Phase 11 — Notifications
+## Phase 11 — Notifications ✅
 
 Cross-cutting — each trigger point (order confirmation, refund
 confirmation, etc.) technically depends on the feature that fires it
@@ -225,11 +225,48 @@ already existing, so this is naturally built incrementally alongside
 Phases 5–10 rather than all at once. Listed here as the point where the
 underlying delivery mechanism (email at minimum) should exist.
 
-- ⬜ `Notification` entity + delivery (email at minimum, per
-  `requirements.md` §4.12) + `GET /users/me/notifications`.
-- ⬜ Wire trigger points as each feature above ships: order confirmation
-  (Phase 5), refund confirmation (Phase 8), waitlist availability (Phase
-  9), event change/cancellation (Phase 3/8).
+- ✅ `Notification` entity + delivery (email at minimum, per
+  `requirements.md` §4.12, via a `MockEmailSender` - no real SMTP/provider
+  integration, same swappable-later-stub precedent as
+  `MockPaymentGatewayClient`) + `GET /users/me/notifications`
+  (`BR-NOTIFY-001`). `NotificationServiceImpl.notify` never throws and runs
+  `@Transactional(propagation = REQUIRES_NEW)` (NFR 5.2 - "a notification
+  failure must not roll back a successful payment"; the propagation
+  boundary was a code-reviewer CRITICAL fix - a plain `saveAndFlush` with
+  no boundary of its own only joins the caller's ambient transaction, so a
+  DB-level failure there could mark a checkout/refund's transaction
+  rollback-only despite being caught internally).
+- ✅ Wired trigger points: order confirmation + payment receipt (Phase 5,
+  `CheckoutServiceImpl.doCheckout` - fired only on a fresh checkout, never
+  on an idempotency-key replay), refund confirmation (Phase 8,
+  `RefundServiceImpl.issueRefund` - both full and partial refunds), event
+  cancellation (Phase 3/8, `EventServiceImpl.cancelEvent` - every distinct
+  CURRENT ticket owner, reflecting any Phase 7 transfer/resale, as a
+  notification separate from the per-order refund confirmation above),
+  waitlist availability (Phase 9, first real implementation of
+  BR-WAIT-002/003 - `WaitlistServiceImpl.notifyNextInLineIfAvailable`,
+  triggered by `RefundServiceImpl.restockAndNotifyWaitlistIfGeneralAdmission`
+  restocking a refunded GA ticket's `TicketType.quantityAvailable`; locked
+  via `@Lock(PESSIMISTIC_WRITE)` queries, a code-reviewer HIGH fix after the
+  only other lock in the call path - the ticket-type row - was found not to
+  protect the event-general waitlist scope against two concurrent refunds
+  of *different* ticket types of the same event).
+- Out of scope, both documented as gaps rather than oversights: EVENT_CHANGE
+  has no trigger because `EventUpdateRequest`/`updateEvent` only ever
+  mutates title/description/category/images - event start/end time and
+  venue are immutable after creation in this codebase's current
+  implementation, so there is no code path that changes them for a
+  notification to fire from. EVENT_REMINDER is inherently time-based (e.g.
+  "24 hours before the event"), not triggered by any user action, and this
+  codebase has no `@Scheduled`/job-scheduling infrastructure anywhere to
+  drive it. Also out of scope: an "accept waitlist offer"/redeem endpoint
+  and an offer-expiry-driven cascade to the next waitlisted user if the
+  current offer lapses unused - `notifiedAt`/`offerExpiresAt` are now
+  populated, but no API surface exists yet (in `openapi.yaml` or
+  elsewhere) for redeeming a held offer or for a background job to detect
+  and cascade an expired one; `GET /users/me/notifications` also stayed an
+  unpaginated `List`, matching the existing `GET /users/me/waitlist-entries`
+  gap rather than fixing it in isolation for only the newest endpoint.
 
 ## Phase 12 — Disputes & Admin Moderation
 

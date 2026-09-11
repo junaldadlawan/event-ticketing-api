@@ -11,12 +11,16 @@ import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.specification.EventSpecification;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.refund.service.RefundService;
+import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +51,8 @@ public class EventServiceImpl implements EventService {
     private final VenueRepository venueRepository;
     private final OrganizationAccessGuard accessGuard;
     private final RefundService refundService;
+    private final TicketRepository ticketRepository;
+    private final NotificationService notificationService;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -177,6 +183,19 @@ public class EventServiceImpl implements EventService {
         // transaction/request - no async/queue infrastructure exists
         // elsewhere in this codebase to justify one here either.
         refundService.refundAllForEventCancellation(eventId, accessGuard.currentUserId());
+
+        // BR-NOTIFY-001 (Phase 11): a distinct notification about the EVENT
+        // being cancelled, separate from the per-order REFUND_CONFIRMATION
+        // the line above already triggers - a ticket holder should hear
+        // "your event was cancelled" even if refundAllForEventCancellation's
+        // best-effort sweep couldn't refund their specific order. Every
+        // current ticket holder (ticket.getOwnerId(), which reflects any
+        // Phase 7 transfer/resale - not necessarily the original buyer).
+        // Never throws (NFR 5.2).
+        ticketRepository.findByEventId(eventId).stream()
+                .map(Ticket::getOwnerId)
+                .distinct()
+                .forEach(ownerId -> notificationService.notify(ownerId, NotificationType.EVENT_CANCELLATION, "Event", eventId));
 
         return saved;
     }

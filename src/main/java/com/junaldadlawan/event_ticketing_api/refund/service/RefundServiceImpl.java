@@ -7,6 +7,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
 import com.junaldadlawan.event_ticketing_api.order.entity.Payment;
 import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
@@ -28,6 +30,8 @@ import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
+import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
+import com.junaldadlawan.event_ticketing_api.waitlist.service.WaitlistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -78,6 +82,9 @@ public class RefundServiceImpl implements RefundService {
     private final EventRepository eventRepository;
     private final PaymentGatewayClient paymentGatewayClient;
     private final OrganizationAccessGuard accessGuard;
+    private final TicketTypeRepository ticketTypeRepository;
+    private final WaitlistService waitlistService;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -204,15 +211,42 @@ public class RefundServiceImpl implements RefundService {
                     if (ticket.getOwnerId().equals(order.getBuyerId())) {
                         ticket.setStatus(TicketStatus.REFUNDED);
                         ticketRepository.save(ticket);
+                        restockAndNotifyWaitlistIfGeneralAdmission(ticket);
                     }
                 }
             } else {
                 order.setStatus(OrderStatus.PARTIALLY_REFUNDED);
             }
             orderRepository.save(order);
+            // BR-NOTIFY-001 (Phase 11). Fired for both a full and a partial
+            // refund - either way the buyer was just refunded money and
+            // should be told. Never throws (NFR 5.2).
+            notificationService.notify(order.getBuyerId(), NotificationType.REFUND_CONFIRMATION, "Refund", saved.getId());
         }
 
         return saved;
+    }
+
+    /**
+     * Phase 11 (BR-WAIT-002/003): a refunded ticket frees up one unit of
+     * inventory. Restricted to GA tickets ({@code seatId == null}) -
+     * reserved-seating {@code TicketType}s never had {@code
+     * quantityAvailable} decremented at checkout in the first place (see
+     * {@code CheckoutServiceImpl.doCheckout}: seated items only ever flip
+     * {@code Seat.status}), so restocking it here for a seated ticket would
+     * fabricate inventory that was never actually reserved via that
+     * counter. Mirrors {@code CartServiceImpl.releaseHold}'s exact GA
+     * restock idiom (locked read, increment, save).
+     */
+    private void restockAndNotifyWaitlistIfGeneralAdmission(Ticket ticket) {
+        if (ticket.getSeatId() != null) {
+            return;
+        }
+        ticketTypeRepository.findByIdForUpdate(ticket.getTicketTypeId()).ifPresent(ticketType -> {
+            ticketType.setQuantityAvailable(ticketType.getQuantityAvailable() + 1);
+            ticketTypeRepository.save(ticketType);
+        });
+        waitlistService.notifyNextInLineIfAvailable(ticket.getEventId(), ticket.getTicketTypeId());
     }
 
     private long remainingRefundableAmount(Order order) {
