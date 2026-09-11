@@ -65,6 +65,10 @@ public class SecurityConfig {
                         // buyer's own order history, not an admin-only user-management
                         // endpoint, even though its path nests under /users/**.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/orders").authenticated()
+                        // Same reasoning: GET /users/me/waitlist-entries (Phase 9)
+                        // is any authenticated user's own waitlist history, not an
+                        // admin-only user-management endpoint.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me/waitlist-entries").authenticated()
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
