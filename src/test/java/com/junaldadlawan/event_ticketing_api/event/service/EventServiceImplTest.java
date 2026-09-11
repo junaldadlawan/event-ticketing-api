@@ -14,6 +14,7 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.refund.service.RefundService;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,13 +64,16 @@ class EventServiceImplTest {
     @Mock
     private OrganizationAccessGuard accessGuard;
 
+    @Mock
+    private RefundService refundService;
+
     private EventServiceImpl eventService;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard);
+        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService);
         orgId = UUID.randomUUID();
     }
 
@@ -621,6 +625,27 @@ class EventServiceImplTest {
         assertThat(result.getStatus()).isEqualTo(EventStatus.CANCELLED);
     }
 
+    /**
+     * BR-PAY-005 (Phase 8): cancelling an event must trigger the mandatory
+     * refund workflow for every ticket holder - proves the wiring exists,
+     * not {@code RefundServiceImpl}'s own internals (covered separately in
+     * {@code RefundServiceImplTest}).
+     */
+    @Test
+    void cancelEvent_success_triggersRefundAllForEventCancellation() {
+        UUID eventId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.PUBLISHED)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        eventService.cancelEvent(eventId);
+
+        verify(refundService).refundAllForEventCancellation(eventId, ownerId);
+    }
+
     @ParameterizedTest
     @EnumSource(value = EventStatus.class, names = {"CANCELLED", "COMPLETED"})
     void cancelEvent_nonCancellableStatus_throwsConflict(EventStatus currentStatus) {
@@ -650,14 +675,21 @@ class EventServiceImplTest {
     @Test
     void cancelEvent_admin_succeedsWithNoOrgRole() {
         UUID eventId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.PUBLISHED)));
         when(accessGuard.isAdmin()).thenReturn(true);
+        // Unlike other admin-bypass paths in this class, cancelEvent legitimately
+        // still needs the caller's own id post-authorization (Phase 8,
+        // BR-PAY-005) - it's who the triggered refunds get attributed to
+        // (Refund.initiatedBy), not an org-role check the admin bypasses.
+        when(accessGuard.currentUserId()).thenReturn(adminId);
         when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Event result = eventService.cancelEvent(eventId);
 
         assertThat(result.getStatus()).isEqualTo(EventStatus.CANCELLED);
-        verify(accessGuard, never()).currentUserId();
+        verify(accessGuard, never()).hasRole(any(), any(), any());
+        verify(refundService).refundAllForEventCancellation(eventId, adminId);
     }
 
     // ---- delete() : proving the second core fix (previously NO per-event auth check at all) ----
