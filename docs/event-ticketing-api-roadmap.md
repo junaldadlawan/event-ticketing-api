@@ -113,19 +113,20 @@ The core purchase flow — depends on `TicketType` existing.
   `payee_type`/`payee_id` split that later lets a resale purchase (Phase 7)
   reuse this same endpoint's machinery.
 
-## Phase 6 — Tickets, Templates & Artifacts
+## Phase 6 — Tickets, Templates & Artifacts ✅
 
 What checkout actually issues.
 
-- ⬜ `Ticket` entity — issued per cart item on successful checkout, with
+- ✅ `Ticket` entity — issued per cart item on successful checkout, with
   the signed QR/barcode credential and `ticket_number` (`BR-TICKET-001`/
-  `002`/`005`).
-- ⬜ `TicketTemplate` entity + `POST/GET /events/{id}/ticket-templates`,
-  `PATCH /ticket-templates/{id}` (`BR-TICKET-007`).
-- ⬜ `TicketArtifact` generation + `GET /tickets/{id}/artifact` — depends
-  on `TicketTemplate` existing to render against.
-- ⬜ `GET /orders/{id}`, `GET /orders/{id}/tickets`, `GET /tickets/{id}`,
-  `GET /users/me/orders`, `GET /events/{id}/orders`.
+  `002`/`005`). (Phase 6a, `feat/phase6a-tickets`)
+- ✅ `TicketTemplate` entity + `POST/GET /events/{id}/ticket-templates`,
+  `PATCH /ticket-templates/{id}` (`BR-TICKET-007`). (Phase 6b,
+  `feat/phase6b-templates-artifacts`)
+- ✅ `TicketArtifact` generation + `GET /tickets/{id}/artifact` — depends
+  on `TicketTemplate` existing to render against. (Phase 6b)
+- ✅ `GET /orders/{id}`, `GET /orders/{id}/tickets`, `GET /tickets/{id}`,
+  `GET /users/me/orders`, `GET /events/{id}/orders`. (Phase 6a)
 
 ## Phase 7 — Transfer & Resale
 
