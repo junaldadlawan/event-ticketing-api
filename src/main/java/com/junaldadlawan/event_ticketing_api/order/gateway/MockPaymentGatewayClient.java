@@ -27,4 +27,20 @@ public class MockPaymentGatewayClient implements PaymentGatewayClient {
         }
         return PaymentResult.success("mock_" + UUID.randomUUID());
     }
+
+    /**
+     * Deterministic for testability, same shape as {@link #charge}: a
+     * {@code gatewayRef} containing {@code "fail"} always fails (there's no
+     * natural analogue to a "declined card" for a refund reversal, so this
+     * is the hook tests use to exercise the failure path - see
+     * {@code Payment.gatewayRef}, which is otherwise never organizer/buyer
+     * controlled).
+     */
+    @Override
+    public PaymentResult refund(String gatewayRef, Money amount) {
+        if (gatewayRef != null && gatewayRef.contains("fail")) {
+            return PaymentResult.failure("Refund declined by gateway for gatewayRef " + gatewayRef);
+        }
+        return PaymentResult.success("mock_refund_" + UUID.randomUUID());
+    }
 }

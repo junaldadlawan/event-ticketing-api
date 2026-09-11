@@ -45,6 +45,12 @@ public class SecurityConfig {
                         // broader GET /api/v1/events/** permitAll matcher below.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/ticket-templates").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/ticket-templates").authenticated()
+                        // Same reasoning again: GET /events/{eventId}/refund-policy
+                        // (Phase 8) is organizer/admin/buyer-with-an-order-on-it only
+                        // per openapi.yaml's getRefundPolicy summary, NOT public
+                        // (unlike GET /events/{eventId}/resale-policy) - must precede
+                        // the broader GET /api/v1/events/** permitAll matcher below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/refund-policy").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or

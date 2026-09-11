@@ -49,4 +49,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
      */
     @Query("select distinct t.orderId from Ticket t where t.eventId = :eventId")
     List<UUID> findDistinctOrderIdsByEventId(@Param("eventId") UUID eventId);
+
+    /**
+     * Phase 8: {@code GET /events/{eventId}/refund-policy}'s "a buyer with
+     * an order on it" visibility branch - owning a ticket for the event
+     * implies having an order for it (tickets are only ever issued via a
+     * checkout/resale order), so this is equivalent to and cheaper than a
+     * two-step order lookup.
+     */
+    boolean existsByEventIdAndOwnerId(UUID eventId, UUID ownerId);
 }
