@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.cart.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.cart.dto.AppliedPromoCodeResponse;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemResponse;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartResponse;
@@ -49,6 +50,9 @@ class CartControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private CartResponse cartResponse(UUID id) {
         return new CartResponse(id, UUID.randomUUID(), List.of(), null, new MoneyDto(0L, "USD"), Instant.now(), Instant.now());

@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.waitlist.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -45,6 +46,9 @@ class WaitlistControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private WaitlistEntryResponse response(UUID eventId, UUID ticketTypeId, int position) {
         return new WaitlistEntryResponse(UUID.randomUUID(), eventId, ticketTypeId, UUID.randomUUID(), position, null, null, Instant.now());

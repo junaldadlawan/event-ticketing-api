@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.refund.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -46,6 +47,9 @@ class OrderRefundControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private RefundResponse response(UUID orderId, RefundStatus status) {
         return new RefundResponse(UUID.randomUUID(), orderId, new MoneyDto(500L, "USD"), "not as described",

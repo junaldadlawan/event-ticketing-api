@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.common.config;
 
 import tools.jackson.databind.ObjectMapper;
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +24,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                      JwtAuthenticationFilter jwtAuthenticationFilter,
+                                                     DeviceAuthenticationFilter deviceAuthenticationFilter,
                                                      ObjectMapper objectMapper) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -51,6 +53,13 @@ public class SecurityConfig {
                         // (unlike GET /events/{eventId}/resale-policy) - must precede
                         // the broader GET /api/v1/events/** permitAll matcher below.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/refund-policy").authenticated()
+                        // Same reasoning again: GET /events/{eventId}/check-in-config
+                        // (Phase 10) has no stated restriction in openapi.yaml at all
+                        // (unlike e.g. refund-policy's explicit visibility note) - read
+                        // as "any authenticated caller", which deliberately includes a
+                        // ROLE_SCANNER_DEVICE principal (UC-SCAN-04: a scanning client
+                        // needs to query its own event's mode/expiry), not just users.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/check-in-config").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or
@@ -87,6 +96,13 @@ public class SecurityConfig {
                         // No public GET exists for carts at all - buyer-only,
                         // always authenticated (Phase 5a).
                         .requestMatchers("/api/v1/carts", "/api/v1/carts/**").authenticated()
+                        // Phase 10: openapi.yaml's `security: [deviceAuth: []]` override
+                        // on these three - device-credential-only, a user JWT must NOT
+                        // work here (a user could otherwise validate/scan tickets it has
+                        // no business touching). ROLE_SCANNER_DEVICE is granted only by
+                        // DeviceAuthenticationFilter, never by JwtAuthenticationFilter.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/scanner-devices/*/dataset").hasRole("SCANNER_DEVICE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/check-in/validate", "/api/v1/check-in/fallback-scans").hasRole("SCANNER_DEVICE")
                         // /api/v1/orders/** and /api/v1/tickets/** (Phase 6a) need no
                         // explicit matcher of their own - neither prefix is touched by
                         // any permitAll/role-restricted matcher above, so both already
@@ -109,7 +125,8 @@ public class SecurityConfig {
                                     HttpStatus.FORBIDDEN, "You do not have permission to access this resource");
                             objectMapper.writeValue(response.getOutputStream(), problem);
                         }))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(deviceAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

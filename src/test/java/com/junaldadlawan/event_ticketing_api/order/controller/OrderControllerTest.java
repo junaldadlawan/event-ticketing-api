@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.order.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
@@ -49,6 +50,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private TicketResponse ticketResponse(UUID orderId) {
         return new TicketResponse(UUID.randomUUID(), orderId, UUID.randomUUID(), UUID.randomUUID(), null,

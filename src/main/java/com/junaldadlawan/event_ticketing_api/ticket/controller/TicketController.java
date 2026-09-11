@@ -1,5 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.ticket.controller;
 
+import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInRecordResponse;
+import com.junaldadlawan.event_ticketing_api.checkin.service.CheckInService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.ticket.artifact.RenderedTicketArtifact;
 import com.junaldadlawan.event_ticketing_api.ticket.artifact.TicketArtifactService;
@@ -34,6 +36,7 @@ public class TicketController {
     private final TicketService ticketService;
     private final TicketArtifactService ticketArtifactService;
     private final TicketTransferService ticketTransferService;
+    private final CheckInService checkInService;
 
     @GetMapping("/{ticketId}")
     public TicketResponse get(@PathVariable UUID ticketId) {
@@ -58,6 +61,11 @@ public class TicketController {
                 .contentType(MediaType.parseMediaType(artifact.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + artifact.filename() + "\"")
                 .body(artifact.content());
+    }
+
+    @GetMapping("/{ticketId}/check-in-records")
+    public List<CheckInRecordResponse> listCheckInRecords(@PathVariable UUID ticketId) {
+        return checkInService.listTicketCheckInRecords(ticketId);
     }
 
     private TicketTemplateFormat parseFormat(String format) {

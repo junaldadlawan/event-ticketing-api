@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.refundpolicy.controller;
 
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.refundpolicy.dto.RefundPolicyResponse;
@@ -42,6 +43,9 @@ class EventRefundPolicyControllerTest {
 
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockitoBean
+    private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     @Test
     void get_noPolicyYet_returns200_withNoRefundsDefault() throws Exception {
