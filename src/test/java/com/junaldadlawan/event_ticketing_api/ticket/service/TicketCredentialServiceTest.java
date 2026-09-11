@@ -34,7 +34,7 @@ class TicketCredentialServiceTest {
     }
 
     @Test
-    void generate_returnsTicketIdColonVersionDotBase64UrlSignature() {
+    void generate_returnsTicketIdDotBase64UrlSignature() {
         TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
         UUID ticketId = UUID.randomUUID();
 
@@ -42,8 +42,7 @@ class TicketCredentialServiceTest {
 
         String[] parts = credential.split("\\.", 2);
         assertThat(parts).hasSize(2);
-        // 1-arg convenience overload always issues version 0 (checkout issuance).
-        assertThat(parts[0]).isEqualTo(ticketId + ":0");
+        assertThat(parts[0]).isEqualTo(ticketId.toString());
         // Base64 URL-safe, no padding: only [A-Za-z0-9_-] characters.
         assertThat(parts[1]).matches("^[A-Za-z0-9_-]+$");
     }
@@ -54,29 +53,10 @@ class TicketCredentialServiceTest {
         TicketCredentialService service = new TicketCredentialService(secret);
         UUID ticketId = UUID.randomUUID();
 
-        String credential = service.generate(ticketId, 3);
-        String expectedSignature = hmacSign(secret, ticketId + ":3");
+        String credential = service.generate(ticketId);
+        String expectedSignature = hmacSign(secret, ticketId.toString());
 
-        assertThat(credential).isEqualTo(ticketId + ":3." + expectedSignature);
-    }
-
-    /**
-     * The whole point of Phase 7's version parameter (BR-TRANSFER-005): the
-     * SAME ticket id, at two different versions, must produce two different
-     * credentials — this is what lets a transfer/resale "invalidate the
-     * previous credential and issue a new one" for a ticket row that keeps
-     * the same id across its lifetime (see the ERD's "Ticket ||--o{
-     * TicketTransfer").
-     */
-    @Test
-    void generate_sameTicketIdDifferentVersion_producesDifferentCredential() {
-        TicketCredentialService service = new TicketCredentialService("dedicated-ticket-secret-for-this-test-0123456789");
-        UUID ticketId = UUID.randomUUID();
-
-        String credentialV0 = service.generate(ticketId, 0);
-        String credentialV1 = service.generate(ticketId, 1);
-
-        assertThat(credentialV0).isNotEqualTo(credentialV1);
+        assertThat(credential).isEqualTo(ticketId + "." + expectedSignature);
     }
 
     @Test
@@ -140,7 +120,7 @@ class TicketCredentialServiceTest {
         UUID ticketId = UUID.randomUUID();
 
         String credential = service.generate(ticketId);
-        String guessedSignature = hmacSign("a-wrong-guessed-secret-value", ticketId + ":0");
+        String guessedSignature = hmacSign("a-wrong-guessed-secret-value", ticketId.toString());
 
         assertThat(credential.split("\\.", 2)[1]).isNotEqualTo(guessedSignature);
     }

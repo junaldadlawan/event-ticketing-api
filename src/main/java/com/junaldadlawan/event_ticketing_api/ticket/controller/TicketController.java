@@ -16,13 +16,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -33,21 +30,10 @@ public class TicketController {
 
     private final TicketService ticketService;
     private final TicketArtifactService ticketArtifactService;
-    private final TicketTransferService ticketTransferService;
 
     @GetMapping("/{ticketId}")
     public TicketResponse get(@PathVariable UUID ticketId) {
         return TicketResponse.from(ticketService.getTicket(ticketId));
-    }
-
-    @PostMapping("/{ticketId}/transfer")
-    public TicketResponse transfer(@PathVariable UUID ticketId, @Valid @RequestBody TicketTransferRequest request) {
-        return TicketResponse.from(ticketTransferService.transfer(ticketId, request.toUserId()));
-    }
-
-    @GetMapping("/{ticketId}/transfers")
-    public List<TicketTransferResponse> listTransfers(@PathVariable UUID ticketId) {
-        return ticketTransferService.listTransfers(ticketId).stream().map(TicketTransferResponse::from).toList();
     }
 
     @GetMapping("/{ticketId}/artifact")
