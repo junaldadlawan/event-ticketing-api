@@ -8,5 +8,6 @@ import jakarta.validation.constraints.Size;
  * DTO for {@link User}
  */
 public record UserPasswordUpdateRequest(
-        @NotNull @Size(max = 255) String passwordHash) {
+        @NotNull @Size(max = 255) String currentPassword,
+        @NotNull @Size(max = 255) String newPassword) {
 }
