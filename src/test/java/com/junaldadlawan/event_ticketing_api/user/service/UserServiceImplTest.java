@@ -1,8 +1,12 @@
 package com.junaldadlawan.event_ticketing_api.user.service;
 
+import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
+import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
+import com.junaldadlawan.event_ticketing_api.user.dto.UserSelfUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 import com.junaldadlawan.event_ticketing_api.user.enums.Role;
@@ -23,6 +27,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -37,6 +42,9 @@ class UserServiceImplTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private OrganizationAccessGuard accessGuard;
+
     private UserServiceImpl userService;
 
     private UUID userId;
@@ -44,7 +52,7 @@ class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, passwordEncoder);
+        userService = new UserServiceImpl(userRepository, passwordEncoder, accessGuard);
         userId = UUID.randomUUID();
         existingUser = User.builder()
                 .id(userId)
@@ -53,6 +61,8 @@ class UserServiceImplTest {
                 .passwordHash("old-hash")
                 .role(Role.CUSTOMER)
                 .build();
+        lenient().when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -61,7 +71,6 @@ class UserServiceImplTest {
                 "Jane Doe", "jane@example.com", "plainTextPassword", Role.CUSTOMER,
                 OffsetDateTime.now(), OffsetDateTime.now(), null, null);
         when(passwordEncoder.encode("plainTextPassword")).thenReturn("hashed-value");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         User saved = userService.register(request);
 
@@ -97,17 +106,125 @@ class UserServiceImplTest {
         verify(userRepository, never()).findAll();
     }
 
+    // ---- update(): partial-update semantics (admin path) ----
+
     @Test
-    void update_updatesNameEmailRole() {
+    void update_allFieldsPresent_updatesNameEmailRole() {
         UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ADMIN);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         User updated = userService.update(userId, request);
 
         assertThat(updated.getName()).isEqualTo("New Name");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
         assertThat(updated.getRole()).isEqualTo(Role.ADMIN);
+    }
+
+    @Test
+    void update_nameOnly_leavesEmailAndRoleUnchanged() {
+        UserUpdateRequest request = new UserUpdateRequest("New Name", null, null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        User updated = userService.update(userId, request);
+
+        assertThat(updated.getName()).isEqualTo("New Name");
+        assertThat(updated.getEmail()).isEqualTo("jane@example.com");
+        assertThat(updated.getRole()).isEqualTo(Role.CUSTOMER);
+        verify(userRepository, never()).findByEmail(any());
+    }
+
+    @Test
+    void update_emailOnly_leavesNameAndRoleUnchanged() {
+        UserUpdateRequest request = new UserUpdateRequest(null, "new@example.com", null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
+
+        User updated = userService.update(userId, request);
+
+        assertThat(updated.getName()).isEqualTo("Jane Doe");
+        assertThat(updated.getEmail()).isEqualTo("new@example.com");
+        assertThat(updated.getRole()).isEqualTo(Role.CUSTOMER);
+    }
+
+    @Test
+    void update_roleOnly_leavesNameAndEmailUnchanged() {
+        UserUpdateRequest request = new UserUpdateRequest(null, null, Role.ADMIN);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        User updated = userService.update(userId, request);
+
+        assertThat(updated.getName()).isEqualTo("Jane Doe");
+        assertThat(updated.getEmail()).isEqualTo("jane@example.com");
+        assertThat(updated.getRole()).isEqualTo(Role.ADMIN);
+        verify(userRepository, never()).findByEmail(any());
+    }
+
+    @Test
+    void update_blankName_throwsBadRequest_doesNotSave() {
+        UserUpdateRequest request = new UserUpdateRequest("   ", null, null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        assertThatThrownBy(() -> userService.update(userId, request))
+                .isInstanceOf(BadRequestException.class);
+        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void update_blankEmail_throwsBadRequest_doesNotSave() {
+        UserUpdateRequest request = new UserUpdateRequest(null, "  ", null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        assertThatThrownBy(() -> userService.update(userId, request))
+                .isInstanceOf(BadRequestException.class);
+        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void update_emailAlreadyTakenByAnotherUser_throwsConflict_doesNotSave() {
+        UserUpdateRequest request = new UserUpdateRequest(null, "taken@example.com", null);
+        User anotherUser = User.builder().id(UUID.randomUUID()).email("taken@example.com").build();
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(userRepository.findByEmail("taken@example.com")).thenReturn(Optional.of(anotherUser));
+
+        assertThatThrownBy(() -> userService.update(userId, request))
+                .isInstanceOf(ConflictException.class);
+        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void update_emailUnchanged_settingToOwnCurrentEmail_noConflict() {
+        UserUpdateRequest request = new UserUpdateRequest("New Name", "jane@example.com", null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(existingUser));
+
+        User updated = userService.update(userId, request);
+
+        assertThat(updated.getEmail()).isEqualTo("jane@example.com");
+        assertThat(updated.getName()).isEqualTo("New Name");
+    }
+
+    /**
+     * Race backstop: {@code requireEmailNotTaken}'s pre-check is check-then-write,
+     * not itself race-proof - two concurrent updates to the same new email
+     * could both pass it before either saves. This proves the actual
+     * backstop: a real {@code uq_users_email} constraint violation
+     * surfacing from {@code saveAndFlush} (simulated here, since a unit
+     * test can't drive a genuine concurrent DB race) is translated to a
+     * clean {@code ConflictException}, not left as a raw exception.
+     */
+    @Test
+    void update_emailPreCheckPassesButSaveHitsRealConstraintViolation_stillThrowsConflict() {
+        UserUpdateRequest request = new UserUpdateRequest(null, "raced@example.com", null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(userRepository.findByEmail("raced@example.com")).thenReturn(Optional.empty());
+        when(userRepository.saveAndFlush(any(User.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("uq_users_email"));
+
+        assertThatThrownBy(() -> userService.update(userId, request))
+                .isInstanceOf(ConflictException.class);
     }
 
     @Test
@@ -119,6 +236,71 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> userService.update(unknownId, request))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    // ---- getSelf() / updateSelf(): self-service path ----
+
+    @Test
+    void getSelf_returnsCurrentUser() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        User result = userService.getSelf();
+
+        assertThat(result).isEqualTo(existingUser);
+    }
+
+    @Test
+    void updateSelf_nameOnly_leavesEmailUnchanged() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest("New Name", null);
+
+        User updated = userService.updateSelf(request);
+
+        assertThat(updated.getName()).isEqualTo("New Name");
+        assertThat(updated.getEmail()).isEqualTo("jane@example.com");
+        assertThat(updated.getRole()).isEqualTo(Role.CUSTOMER);
+    }
+
+    @Test
+    void updateSelf_emailOnly_leavesNameUnchanged() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "new@example.com");
+
+        User updated = userService.updateSelf(request);
+
+        assertThat(updated.getName()).isEqualTo("Jane Doe");
+        assertThat(updated.getEmail()).isEqualTo("new@example.com");
+    }
+
+    @Test
+    void updateSelf_emailAlreadyTakenByAnotherUser_throwsConflict() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        User anotherUser = User.builder().id(UUID.randomUUID()).email("taken@example.com").build();
+        when(userRepository.findByEmail("taken@example.com")).thenReturn(Optional.of(anotherUser));
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "taken@example.com");
+
+        assertThatThrownBy(() -> userService.updateSelf(request))
+                .isInstanceOf(ConflictException.class);
+        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateSelf_blankName_throwsBadRequest() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest(" ", null);
+
+        assertThatThrownBy(() -> userService.updateSelf(request))
+                .isInstanceOf(BadRequestException.class);
+        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -126,7 +308,6 @@ class UserServiceImplTest {
         UserPasswordUpdateRequest request = new UserPasswordUpdateRequest("newPlainTextPassword");
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
         when(passwordEncoder.encode("newPlainTextPassword")).thenReturn("new-hashed-value");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         User updated = userService.updatePassword(userId, request);
 
@@ -147,7 +328,6 @@ class UserServiceImplTest {
     @Test
     void delete_marksUserDeletedAndSaves() {
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         userService.delete(userId);
 
