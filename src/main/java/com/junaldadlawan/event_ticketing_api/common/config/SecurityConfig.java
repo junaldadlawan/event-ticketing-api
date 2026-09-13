@@ -82,6 +82,20 @@ public class SecurityConfig {
                         // (Phase 11) is any authenticated user's own
                         // notification history.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/notifications").authenticated()
+                        // GET/PATCH /users/me: any authenticated caller's own
+                        // profile - viewing/editing your own name or email is
+                        // not an admin-only user-management action, even
+                        // though it nests under /users/**. role is never
+                        // settable on this path (UserSelfUpdateRequest has no
+                        // role field at all), so this can't be used for
+                        // self-elevation.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/users/me").authenticated()
+                        // Same reasoning again: PATCH /users/me/change-password is any
+                        // authenticated caller changing their OWN password (verified via
+                        // their current password in UserServiceImpl#updateSelfPassword),
+                        // not an admin-only user-management action.
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/users/me/change-password").authenticated()
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
