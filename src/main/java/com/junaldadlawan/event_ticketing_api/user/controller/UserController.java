@@ -44,9 +44,9 @@ public class UserController {
         return UserResponse.from(userService.update(id, request));
     }
 
-    @PatchMapping("/{id}/password")
-    public UserResponse updatePassword(@PathVariable UUID id, @Valid @RequestBody UserPasswordUpdateRequest request) {
-        return UserResponse.from(userService.updatePassword(id, request));
+    @PatchMapping("/me/change-password")
+    public UserResponse updateSelfPassword(@Valid @RequestBody UserPasswordUpdateRequest request) {
+        return UserResponse.from(userService.updateSelfPassword(request));
     }
 
     @DeleteMapping("/{id}")

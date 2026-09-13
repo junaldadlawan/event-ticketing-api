@@ -227,57 +227,67 @@ class UserControllerTest {
     }
 
     @Test
-    void updatePassword_validRequest_returns200() throws Exception {
-        UUID id = UUID.randomUUID();
+    void updateSelfPassword_validRequest_returns200() throws Exception {
         User updated = User.builder()
-                .id(id)
+                .id(UUID.randomUUID())
                 .name("Jane Doe")
                 .email("jane@example.com")
                 .passwordHash("new-hash")
                 .role(Role.CUSTOMER)
                 .build();
-        when(userService.updatePassword(eq(id), any())).thenReturn(updated);
+        when(userService.updateSelfPassword(any())).thenReturn(updated);
 
-        mockMvc.perform(patch("/api/v1/users/{id}/password", id)
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
                         .contentType("application/json")
                         .content("""
-                                {"passwordHash":"newPlainTextPassword"}
+                                {"currentPassword":"oldPlainTextPassword","newPassword":"newPlainTextPassword"}
                                 """))
                 .andExpect(status().isOk());
     }
 
     @Test
-    void updatePassword_missingPasswordField_returns400() throws Exception {
-        UUID id = UUID.randomUUID();
-
-        mockMvc.perform(patch("/api/v1/users/{id}/password", id)
+    void updateSelfPassword_missingFields_returns400() throws Exception {
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void updateSelfPassword_incorrectCurrentPassword_returns400() throws Exception {
+        when(userService.updateSelfPassword(any()))
+                .thenThrow(new BadRequestException("Current password is incorrect"));
+
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
+                        .contentType("application/json")
+                        .content("""
+                                {"currentPassword":"wrongPassword","newPassword":"newPlainTextPassword"}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
     /**
-     * Known gap, not a regression: {@code UserPasswordUpdateRequest.passwordHash}
-     * is only {@code @NotNull}, not {@code @NotBlank} — an empty string
-     * currently passes validation and reaches the service. Documenting the
-     * real behavior rather than asserting the (currently false) ideal.
+     * Known gap, not a regression: {@code UserPasswordUpdateRequest}'s
+     * fields are only {@code @NotNull}, not {@code @NotBlank} — an empty
+     * string currently passes validation and reaches the service.
+     * Documenting the real behavior rather than asserting the (currently
+     * false) ideal.
      */
     @Test
-    void updatePassword_blankPassword_currentlyAcceptedByValidation() throws Exception {
-        UUID id = UUID.randomUUID();
+    void updateSelfPassword_blankFields_currentlyAcceptedByValidation() throws Exception {
         User updated = User.builder()
-                .id(id)
+                .id(UUID.randomUUID())
                 .name("Jane Doe")
                 .email("jane@example.com")
                 .passwordHash("hash-of-empty-string")
                 .role(Role.CUSTOMER)
                 .build();
-        when(userService.updatePassword(eq(id), any())).thenReturn(updated);
+        when(userService.updateSelfPassword(any())).thenReturn(updated);
 
-        mockMvc.perform(patch("/api/v1/users/{id}/password", id)
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
                         .contentType("application/json")
                         .content("""
-                                {"passwordHash":""}
+                                {"currentPassword":"","newPassword":""}
                                 """))
                 .andExpect(status().isOk());
     }

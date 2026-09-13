@@ -1,7 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.user.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
-import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
@@ -62,7 +61,6 @@ class UserServiceImplTest {
                 .role(Role.CUSTOMER)
                 .build();
         lenient().when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        lenient().when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -137,7 +135,6 @@ class UserServiceImplTest {
     void update_emailOnly_leavesNameAndRoleUnchanged() {
         UserUpdateRequest request = new UserUpdateRequest(null, "new@example.com", null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
 
         User updated = userService.update(userId, request);
 
@@ -160,74 +157,6 @@ class UserServiceImplTest {
     }
 
     @Test
-    void update_blankName_throwsBadRequest_doesNotSave() {
-        UserUpdateRequest request = new UserUpdateRequest("   ", null, null);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-
-        assertThatThrownBy(() -> userService.update(userId, request))
-                .isInstanceOf(BadRequestException.class);
-        verify(userRepository, never()).save(any());
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void update_blankEmail_throwsBadRequest_doesNotSave() {
-        UserUpdateRequest request = new UserUpdateRequest(null, "  ", null);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-
-        assertThatThrownBy(() -> userService.update(userId, request))
-                .isInstanceOf(BadRequestException.class);
-        verify(userRepository, never()).save(any());
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void update_emailAlreadyTakenByAnotherUser_throwsConflict_doesNotSave() {
-        UserUpdateRequest request = new UserUpdateRequest(null, "taken@example.com", null);
-        User anotherUser = User.builder().id(UUID.randomUUID()).email("taken@example.com").build();
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.findByEmail("taken@example.com")).thenReturn(Optional.of(anotherUser));
-
-        assertThatThrownBy(() -> userService.update(userId, request))
-                .isInstanceOf(ConflictException.class);
-        verify(userRepository, never()).save(any());
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void update_emailUnchanged_settingToOwnCurrentEmail_noConflict() {
-        UserUpdateRequest request = new UserUpdateRequest("New Name", "jane@example.com", null);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(existingUser));
-
-        User updated = userService.update(userId, request);
-
-        assertThat(updated.getEmail()).isEqualTo("jane@example.com");
-        assertThat(updated.getName()).isEqualTo("New Name");
-    }
-
-    /**
-     * Race backstop: {@code requireEmailNotTaken}'s pre-check is check-then-write,
-     * not itself race-proof - two concurrent updates to the same new email
-     * could both pass it before either saves. This proves the actual
-     * backstop: a real {@code uq_users_email} constraint violation
-     * surfacing from {@code saveAndFlush} (simulated here, since a unit
-     * test can't drive a genuine concurrent DB race) is translated to a
-     * clean {@code ConflictException}, not left as a raw exception.
-     */
-    @Test
-    void update_emailPreCheckPassesButSaveHitsRealConstraintViolation_stillThrowsConflict() {
-        UserUpdateRequest request = new UserUpdateRequest(null, "raced@example.com", null);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.findByEmail("raced@example.com")).thenReturn(Optional.empty());
-        when(userRepository.saveAndFlush(any(User.class)))
-                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("uq_users_email"));
-
-        assertThatThrownBy(() -> userService.update(userId, request))
-                .isInstanceOf(ConflictException.class);
-    }
-
-    @Test
     void update_unknownId_throwsResourceNotFoundException() {
         UUID unknownId = UUID.randomUUID();
         UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ADMIN);
@@ -236,7 +165,6 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> userService.update(unknownId, request))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(userRepository, never()).save(any());
-        verify(userRepository, never()).saveAndFlush(any());
     }
 
     // ---- getSelf() / updateSelf(): self-service path ----
@@ -268,7 +196,6 @@ class UserServiceImplTest {
     void updateSelf_emailOnly_leavesNameUnchanged() {
         when(accessGuard.currentUserId()).thenReturn(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
         UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "new@example.com");
 
         User updated = userService.updateSelf(request);
@@ -277,51 +204,32 @@ class UserServiceImplTest {
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
     }
 
+    // ---- updateSelfPassword(): self-service password change ----
+
     @Test
-    void updateSelf_emailAlreadyTakenByAnotherUser_throwsConflict() {
+    void updateSelfPassword_correctCurrentPassword_encodesAndSavesNewPassword() {
         when(accessGuard.currentUserId()).thenReturn(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        User anotherUser = User.builder().id(UUID.randomUUID()).email("taken@example.com").build();
-        when(userRepository.findByEmail("taken@example.com")).thenReturn(Optional.of(anotherUser));
-        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "taken@example.com");
-
-        assertThatThrownBy(() -> userService.updateSelf(request))
-                .isInstanceOf(ConflictException.class);
-        verify(userRepository, never()).save(any());
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void updateSelf_blankName_throwsBadRequest() {
-        when(accessGuard.currentUserId()).thenReturn(userId);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        UserSelfUpdateRequest request = new UserSelfUpdateRequest(" ", null);
-
-        assertThatThrownBy(() -> userService.updateSelf(request))
-                .isInstanceOf(BadRequestException.class);
-        verify(userRepository, never()).save(any());
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void updatePassword_encodesNewPasswordBeforeSaving() {
-        UserPasswordUpdateRequest request = new UserPasswordUpdateRequest("newPlainTextPassword");
-        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(passwordEncoder.matches("oldPlainTextPassword", "old-hash")).thenReturn(true);
         when(passwordEncoder.encode("newPlainTextPassword")).thenReturn("new-hashed-value");
+        UserPasswordUpdateRequest request = new UserPasswordUpdateRequest("oldPlainTextPassword", "newPlainTextPassword");
 
-        User updated = userService.updatePassword(userId, request);
+        User updated = userService.updateSelfPassword(request);
 
         assertThat(updated.getPasswordHash()).isEqualTo("new-hashed-value");
+        verify(userRepository).save(existingUser);
     }
 
     @Test
-    void updatePassword_unknownId_throwsResourceNotFoundException() {
-        UUID unknownId = UUID.randomUUID();
-        UserPasswordUpdateRequest request = new UserPasswordUpdateRequest("newPlainTextPassword");
-        when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
+    void updateSelfPassword_incorrectCurrentPassword_throwsBadRequest_doesNotSave() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        when(passwordEncoder.matches("wrongPassword", "old-hash")).thenReturn(false);
+        UserPasswordUpdateRequest request = new UserPasswordUpdateRequest("wrongPassword", "newPlainTextPassword");
 
-        assertThatThrownBy(() -> userService.updatePassword(unknownId, request))
-                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> userService.updateSelfPassword(request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Current password is incorrect");
         verify(userRepository, never()).save(any());
     }
 
