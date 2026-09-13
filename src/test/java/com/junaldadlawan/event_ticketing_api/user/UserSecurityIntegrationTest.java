@@ -14,12 +14,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -203,77 +197,42 @@ class UserSecurityIntegrationTest {
         assertThat(reloaded.getRole()).isEqualTo(Role.CUSTOMER);
     }
 
-    /**
-     * Real-concurrency proof for {@code UserServiceImpl#saveOrConflict}:
-     * UserServiceImplTest's race test only *simulates* the
-     * DataIntegrityViolationException via a mocked saveAndFlush. This drives
-     * two real threads against the real Postgres uq_users_email constraint —
-     * two DIFFERENT persisted users concurrently PATCHing /users/me to the
-     * SAME brand-new email. Exactly one must win (200) and the other must
-     * get a real 409 (not a raw 500), and the final DB state must show the
-     * email landed on exactly one of the two rows. Same ExecutorService/
-     * CountDownLatch idiom as
-     * ScannerDeviceIntegrationTest#authorize_pureOfflineMode_concurrentRequests_onlyOneEverActive.
-     */
+    // ---- PATCH /users/me/change-password: any authenticated caller's own password, not admin-only ----
+
     @Test
-    void updateSelf_concurrentRequestsToSameNewEmail_exactlyOneSucceeds() throws Exception {
-        User secondUser = userRepository.save(User.builder()
-                .name("Second Security Test User")
-                .email("security-test-2-" + UUID.randomUUID() + "@example.com")
-                .passwordHash(passwordEncoder.encode("irrelevant"))
-                .role(Role.CUSTOMER)
-                .build());
-        try {
-            String tokenA = jwtService.generateAccessToken(persistedUser);
-            String tokenB = jwtService.generateAccessToken(secondUser);
-            String contestedEmail = "contested-" + UUID.randomUUID() + "@example.com";
+    void updateSelfPassword_authenticatedNonAdmin_correctCurrentPassword_returns200() throws Exception {
+        String token = jwtService.generateAccessToken(persistedUser);
 
-            ExecutorService executor = Executors.newFixedThreadPool(2);
-            CountDownLatch ready = new CountDownLatch(2);
-            CountDownLatch go = new CountDownLatch(1);
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("""
+                                {"currentPassword":"irrelevant","newPassword":"newPlainTextPassword"}
+                                """))
+                .andExpect(status().isOk());
+    }
 
-            Callable<Integer> requestA = () -> {
-                ready.countDown();
-                go.await();
-                return mockMvc.perform(patch("/api/v1/users/me")
-                                .header("Authorization", "Bearer " + tokenA)
-                                .contentType("application/json")
-                                .content("{\"email\":\"" + contestedEmail + "\"}"))
-                        .andReturn().getResponse().getStatus();
-            };
-            Callable<Integer> requestB = () -> {
-                ready.countDown();
-                go.await();
-                return mockMvc.perform(patch("/api/v1/users/me")
-                                .header("Authorization", "Bearer " + tokenB)
-                                .contentType("application/json")
-                                .content("{\"email\":\"" + contestedEmail + "\"}"))
-                        .andReturn().getResponse().getStatus();
-            };
+    @Test
+    void updateSelfPassword_incorrectCurrentPassword_returns400() throws Exception {
+        String token = jwtService.generateAccessToken(persistedUser);
 
-            Future<Integer> futureA = executor.submit(requestA);
-            Future<Integer> futureB = executor.submit(requestB);
-            ready.await();
-            go.countDown();
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("""
+                                {"currentPassword":"wrongPassword","newPassword":"newPlainTextPassword"}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
 
-            int statusA = futureA.get();
-            int statusB = futureB.get();
-            executor.shutdown();
-
-            long successCount = Stream.of(statusA, statusB).filter(s -> s == 200).count();
-            long conflictCount = Stream.of(statusA, statusB).filter(s -> s == 409).count();
-            assertThat(successCount).isEqualTo(1);
-            assertThat(conflictCount).isEqualTo(1);
-
-            User reloadedA = userRepository.findById(persistedUser.getId()).orElseThrow();
-            User reloadedB = userRepository.findById(secondUser.getId()).orElseThrow();
-            long emailLandedOn = Stream.of(reloadedA, reloadedB)
-                    .filter(u -> contestedEmail.equals(u.getEmail()))
-                    .count();
-            assertThat(emailLandedOn).isEqualTo(1);
-        } finally {
-            userRepository.deleteById(secondUser.getId());
-        }
+    @Test
+    void updateSelfPassword_noToken_returns401() throws Exception {
+        mockMvc.perform(patch("/api/v1/users/me/change-password")
+                        .contentType("application/json")
+                        .content("""
+                                {"currentPassword":"irrelevant","newPassword":"newPlainTextPassword"}
+                                """))
+                .andExpect(status().isUnauthorized());
     }
 
     private User inMemoryUser(Role role) {

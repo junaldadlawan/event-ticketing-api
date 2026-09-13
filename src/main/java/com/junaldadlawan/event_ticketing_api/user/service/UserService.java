@@ -14,13 +14,10 @@ import java.util.UUID;
 public interface UserService {
     User register(UserRequest request);
     List<User> getUsers();
-    User update(UUID id, UserUpdateRequest request);
-    User updatePassword(UUID id, UserPasswordUpdateRequest request);
-    void delete(UUID id);
-
-    /** {@code GET /users/me} - the caller's own profile. */
     User getSelf();
-
-    /** {@code PATCH /users/me} - the caller's own profile; no {@code role} field exists on this path. */
+    User update(UUID id, UserUpdateRequest request);
+    User updateSelfPassword(UserPasswordUpdateRequest request);
+    void delete(UUID id);
     User updateSelf(UserSelfUpdateRequest request);
+
 }
