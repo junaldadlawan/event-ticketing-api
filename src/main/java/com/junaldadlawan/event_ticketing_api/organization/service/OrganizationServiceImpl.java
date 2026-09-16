@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.organization.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -30,6 +31,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     public Organization apply(OrganizationCreateRequest request) {
@@ -138,7 +140,12 @@ public class OrganizationServiceImpl implements OrganizationService {
             }
         }
 
-        return grantRole(targetUserId, orgId, request.role());
+        OrganizationMember member = grantRole(targetUserId, orgId, request.role());
+        // BR-NFR-005 (Phase 13): sensitive-action audit trail. targetId is
+        // the organization whose membership changed - OrganizationMember has
+        // no standalone id of its own callers would find useful to look up.
+        auditLogService.record(callerId, "organization_member.assigned", "OrganizationMember", orgId);
+        return member;
     }
 
     /**

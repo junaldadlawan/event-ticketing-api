@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -77,13 +78,16 @@ class EventServiceImplTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     private EventServiceImpl eventService;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService);
+        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService, auditLogService);
         orgId = UUID.randomUUID();
     }
 

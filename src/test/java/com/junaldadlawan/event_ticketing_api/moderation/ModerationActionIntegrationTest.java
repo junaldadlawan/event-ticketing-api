@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.moderation;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -57,15 +58,22 @@ class ModerationActionIntegrationTest {
     private ModerationActionRepository moderationActionRepository;
     @Autowired
     private NotificationRepository notificationRepository;
+    @Autowired
+    private AuditLogEntryRepository auditLogEntryRepository;
 
     private final List<UUID> createdOrgIds = new ArrayList<>();
     private final List<UUID> createdEventIds = new ArrayList<>();
     private final List<UUID> createdUserIds = new ArrayList<>();
     private final List<UUID> createdActionIds = new ArrayList<>();
     private final List<UUID> createdNotificationIds = new ArrayList<>();
+    private final List<UUID> createdAuditLogEntryIds = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
+        for (UUID id : createdAuditLogEntryIds) {
+            auditLogEntryRepository.deleteById(id);
+        }
+        createdAuditLogEntryIds.clear();
         for (UUID id : createdActionIds) {
             moderationActionRepository.deleteById(id);
         }
@@ -170,6 +178,12 @@ class ModerationActionIntegrationTest {
         createdActionIds.add(UUID.fromString(new tools.jackson.databind.ObjectMapper().readTree(suspendResult.getResponse().getContentAsString()).get("id").asText()));
 
         assertThat(organizationRepository.findById(orgId).orElseThrow().getStatus()).isEqualTo(OrganizationStatus.SUSPENDED);
+
+        // BR-NFR-005 (Phase 13): moderation actions (suspend/reinstate/remove) are audit-logged.
+        var auditPage = auditLogEntryRepository.findByActorId(admin.getId(), org.springframework.data.domain.PageRequest.of(0, 20));
+        auditPage.getContent().forEach(e -> createdAuditLogEntryIds.add(e.getId()));
+        assertThat(auditPage.getContent())
+                .anyMatch(e -> e.getAction().equals("moderation.suspend") && e.getTargetId().equals(orgId));
 
         var reinstateResult = mockMvc.perform(post("/api/v1/admin/moderation-actions")
                         .header("Authorization", "Bearer " + token)

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.organization.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -54,6 +55,9 @@ class OrganizationServiceImplTest {
     @Mock
     private OrganizationAccessGuard accessGuard;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     private OrganizationServiceImpl organizationService;
 
     private UUID orgId;
@@ -61,7 +65,7 @@ class OrganizationServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        organizationService = new OrganizationServiceImpl(organizationRepository, organizationMemberRepository, accessGuard);
+        organizationService = new OrganizationServiceImpl(organizationRepository, organizationMemberRepository, accessGuard, auditLogService);
         orgId = UUID.randomUUID();
         applicantId = UUID.randomUUID();
     }
