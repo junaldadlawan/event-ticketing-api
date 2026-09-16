@@ -12,4 +12,7 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
     boolean existsByTicketPrefix(String ticketPrefix);
 
     Optional<Event> findByIdAndDeletedAtIsNull(UUID id);
+
+    /** Phase 14 (BR-ANALYTICS-002): "event volume" - total events ever created, platform-wide, not just currently-published ones. */
+    long countByDeletedAtIsNull();
 }
