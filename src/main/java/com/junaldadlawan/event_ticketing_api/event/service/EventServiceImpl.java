@@ -122,6 +122,14 @@ public class EventServiceImpl implements EventService {
         Event event = getOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 
+        // Phase 12 (BR-ADMIN-002): an admin-suspended event is frozen -
+        // even its own owner/organizer can't edit it out from under the
+        // suspension. REINSTATE (ModerationActionServiceImpl) is the only
+        // way back to an editable status.
+        if (event.getStatus() == EventStatus.SUSPENDED) {
+            throw new ConflictException("A suspended event cannot be updated");
+        }
+
         if (request.title() != null) {
             if (request.title().isBlank()) {
                 throw new BadRequestException("Event title must not be blank");

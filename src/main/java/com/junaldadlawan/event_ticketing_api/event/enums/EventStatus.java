@@ -6,5 +6,7 @@ public enum EventStatus {
     ON_SALE,
     SOLD_OUT,
     CANCELLED,
-    COMPLETED
+    COMPLETED,
+    /** Phase 12 (BR-ADMIN-002) - admin moderation action, see {@code ModerationActionServiceImpl}. */
+    SUSPENDED
 }
