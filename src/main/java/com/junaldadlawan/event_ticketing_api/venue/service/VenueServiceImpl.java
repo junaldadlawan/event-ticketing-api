@@ -3,7 +3,9 @@ package com.junaldadlawan.event_ticketing_api.venue.service;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.venue.dto.VenueCreateRequest;
@@ -26,8 +28,13 @@ public class VenueServiceImpl implements VenueService {
 
     @Override
     public Venue create(UUID orgId, VenueCreateRequest request) {
-        if (!organizationRepository.existsById(orgId)) {
-            throw new ResourceNotFoundException("Organization " + orgId + " not found");
+        Organization organization = organizationRepository.findById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization " + orgId + " not found"));
+        // Phase 12 (BR-ADMIN-002): matches EventServiceImpl.createEvent's
+        // existing APPROVED-only gate - a suspended/pending/rejected
+        // organization can't stand up new venues either.
+        if (organization.getStatus() != OrganizationStatus.APPROVED) {
+            throw new ForbiddenException("Organization is not approved");
         }
         UUID callerId = accessGuard.currentUserId();
         requireOwnerOrOrganizer(callerId, orgId);

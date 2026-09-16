@@ -104,6 +104,8 @@ public class NotificationServiceImpl implements NotificationService {
             case EVENT_CANCELLATION -> "Event cancelled";
             case WAITLIST_AVAILABILITY -> "A spot opened up on your waitlist";
             case REFUND_CONFIRMATION -> "Your refund has been issued";
+            case DISPUTE_RESOLVED -> "Your dispute has been resolved";
+            case ACCOUNT_MODERATION_ACTION -> "An action has been taken on your account";
         };
     }
 
@@ -117,6 +119,8 @@ public class NotificationServiceImpl implements NotificationService {
             case WAITLIST_AVAILABILITY -> "A ticket has become available for the waitlist you joined. "
                     + "You have a limited time to complete your purchase before the offer passes to the next person in line.";
             case REFUND_CONFIRMATION -> "Your refund has been issued and should reflect in your original payment method soon.";
+            case DISPUTE_RESOLVED -> "The dispute you raised has been resolved. Please review the outcome.";
+            case ACCOUNT_MODERATION_ACTION -> "An administrator has taken a moderation action on your account. Please review your account status.";
         };
     }
 }

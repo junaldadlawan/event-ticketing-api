@@ -3,7 +3,9 @@ package com.junaldadlawan.event_ticketing_api.venue.service;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.venue.dto.VenueCreateRequest;
@@ -58,6 +60,10 @@ class VenueServiceImplTest {
         orgId = UUID.randomUUID();
     }
 
+    private Organization organization(UUID organizationId, OrganizationStatus status) {
+        return Organization.builder().id(organizationId).name("Org").status(status).build();
+    }
+
     private Venue venue(UUID venueId, UUID organizationId) {
         return Venue.builder()
                 .id(venueId)
@@ -74,7 +80,7 @@ class VenueServiceImplTest {
     @Test
     void create_owner_succeeds() {
         UUID ownerId = UUID.randomUUID();
-        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
         when(accessGuard.currentUserId()).thenReturn(ownerId);
         when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
         when(venueRepository.save(any(Venue.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -92,7 +98,7 @@ class VenueServiceImplTest {
     @Test
     void create_organizer_succeeds() {
         UUID organizerId = UUID.randomUUID();
-        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
@@ -108,7 +114,7 @@ class VenueServiceImplTest {
     @Test
     void create_virtualVenue_noAddress_succeeds() {
         UUID ownerId = UUID.randomUUID();
-        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
         when(accessGuard.currentUserId()).thenReturn(ownerId);
         when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
         when(venueRepository.save(any(Venue.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -124,7 +130,7 @@ class VenueServiceImplTest {
     @Test
     void create_nonOwnerNonOrganizer_throwsForbidden() {
         UUID checkInStaffId = UUID.randomUUID();
-        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
         when(accessGuard.currentUserId()).thenReturn(checkInStaffId);
         when(accessGuard.hasRole(checkInStaffId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasRole(checkInStaffId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
@@ -138,7 +144,7 @@ class VenueServiceImplTest {
 
     @Test
     void create_nonExistentOrganization_throwsResourceNotFound() {
-        when(organizationRepository.existsById(orgId)).thenReturn(false);
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.empty());
 
         VenueCreateRequest request = new VenueCreateRequest("Main Hall", null, null, null);
 
@@ -146,6 +152,19 @@ class VenueServiceImplTest {
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(venueRepository, never()).save(any());
         // Must fail fast on the missing org before ever touching the access guard.
+        verifyNoInteractions(accessGuard);
+    }
+
+    /** Phase 12 (BR-ADMIN-002): mirrors EventServiceImpl.createEvent's APPROVED-only gate. */
+    @Test
+    void create_organizationNotApproved_throwsForbidden_beforeTouchingAccessGuard() {
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.SUSPENDED)));
+
+        VenueCreateRequest request = new VenueCreateRequest("Main Hall", null, null, null);
+
+        assertThatThrownBy(() -> venueService.create(orgId, request))
+                .isInstanceOf(ForbiddenException.class);
+        verify(venueRepository, never()).save(any());
         verifyNoInteractions(accessGuard);
     }
 
