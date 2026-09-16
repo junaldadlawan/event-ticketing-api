@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,4 +57,36 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * matching Orders through this method.
      */
     Page<Order> findByIdIn(List<UUID> ids, Pageable pageable);
+
+    /**
+     * Phase 14 (BR-ANALYTICS-001): per-event revenue. A cart (and therefore
+     * an order) can only ever hold items from a single event
+     * (BR-CART-equivalent constraint enforced in {@code CartServiceImpl}),
+     * so every order tied to any of the event's tickets is entirely
+     * attributable to that one event - no cross-event split risk. Gross,
+     * i.e. before refunds (same "value of tickets sold" definition as
+     * {@code total_gmv}'s glossary entry) - refunds are a separate,
+     * unmodeled metric here, matching the spec's named metric list.
+     */
+    @Query("select coalesce(sum(o.total.amount), 0) from Order o where o.id in :orderIds")
+    long sumTotalAmountByIdIn(@Param("orderIds") Collection<UUID> orderIds);
+
+    /** Phase 14: per-day revenue for {@code sales_over_time}, for a known set of order ids (see {@link #sumTotalAmountByIdIn}). */
+    @Query("select cast(o.createdAt as date), coalesce(sum(o.total.amount), 0) from Order o where o.id in :orderIds group by cast(o.createdAt as date) order by cast(o.createdAt as date)")
+    List<Object[]> sumTotalGroupedByDayForOrderIds(@Param("orderIds") Collection<UUID> orderIds);
+
+    /** Phase 14 (BR-ANALYTICS-002): platform-wide GMV - gross, before refunds, every order ever placed. */
+    @Query("select coalesce(sum(o.total.amount), 0) from Order o")
+    long sumTotalAmount();
+
+    /**
+     * Phase 14: this schema has no platform-currency setting and no
+     * multi-currency reconciliation precedent anywhere in this codebase
+     * (every existing sum assumes one currency per aggregation scope) - used
+     * to pick a real currency for {@code total_gmv} when at least one order
+     * exists, falling back to "USD" otherwise. See {@code
+     * AnalyticsServiceImpl.getPlatformAnalytics}.
+     */
+    @Query("select distinct o.total.currency from Order o")
+    List<String> findDistinctCurrencies();
 }

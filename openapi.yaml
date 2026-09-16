@@ -835,7 +835,13 @@ paths:
     get:
       operationId: getEventAnalytics
       tags: [Analytics]
-      summary: Sales analytics for one event (owning organizer)
+      summary: >
+        Sales analytics for one event (owning organizer/owner or admin -
+        the spec previously omitted admin here, unlike sibling
+        owner/organizer-gated endpoints; BR-AUTH-004 grants admins
+        platform-wide access with no stated exceptions, so this was
+        corrected to match every other implemented endpoint in this
+        category)
       responses:
         "200":
           description: OK

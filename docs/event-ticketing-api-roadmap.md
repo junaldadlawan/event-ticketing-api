@@ -378,13 +378,52 @@ dependents of its own.
   with a real-Postgres assertion that the corresponding `AuditLogEntry` row
   now exists, rather than duplicating coverage in new dedicated tests.
 
-## Phase 14 — Analytics
+## Phase 14 — Analytics ✅
 
 Depends on `Order`/`Ticket`/`Payout` data existing to aggregate — build
-last since there's nothing to report on before then.
+last since there's nothing to report on before then. Final roadmap phase.
 
-- ⬜ `GET /events/{id}/analytics` (`BR-ANALYTICS-001`).
-- ⬜ `GET /analytics/platform` (`BR-ANALYTICS-002`).
+- ✅ `GET /events/{eventId}/analytics` (`BR-ANALYTICS-001`) — new
+  `analytics/` module (`EventAnalyticsController`,
+  `AnalyticsService`/`Impl`, no entity/repository/migration of its own —
+  pure aggregation over existing `Order`/`Ticket`/`TicketType` data via new
+  query methods added to their existing repositories). Owning
+  organizer/owner, **or admin** — a confirmed judgment call: openapi.yaml's
+  summary for this one endpoint says only "(owning organizer)", unlike
+  sibling owner/organizer-gated endpoints elsewhere in the same spec that
+  explicitly add "or admin" (refund issuance, event-orders listing,
+  ticket check-in-record history) — read as a spec omission rather than a
+  deliberate restriction, since BR-AUTH-004's general "admins have
+  platform-wide access, unscoped by organization or event" already governs
+  every other owner/organizer-gated endpoint in this codebase with zero
+  exceptions (`PayoutServiceImpl`/`RefundServiceImpl`'s identical
+  `requireOwnerOrOrganizerOrAdmin` idiom, replicated here too — still no
+  shared guard method for this exact combination). `tickets_sold` = every
+  `Ticket` row ever issued for the event (a later transfer/refund doesn't
+  undo that a sale happened). `revenue`/`sales_over_time` are gross,
+  before refunds (same "value of tickets sold" definition as `total_gmv`'s
+  glossary entry) — a cart/order can only ever hold items from one event,
+  so every order tied to any of the event's tickets is entirely
+  attributable to it, no cross-event split risk. `remaining_inventory` =
+  sum of `quantityAvailable` across the event's non-deleted ticket types.
+  `sales_over_time` unions (not intersects) the per-day ticket-count and
+  per-day revenue queries, so a day with tickets but a different order-post
+  day (or vice versa) still shows up correctly with a `0` on the missing
+  side, rather than silently dropping that day.
+- ✅ `GET /analytics/platform` (`BR-ANALYTICS-002`) — new
+  `PlatformAnalyticsController`, admin-only at the `SecurityConfig` layer
+  (`hasRole("ADMIN")`, same idiom as the audit-log matcher, since there's
+  no per-resource ownership branch to justify a service-layer-only check).
+  `total_gmv` = every order ever placed, gross; `active_organizers` =
+  `Organization` rows with `status = APPROVED` and not soft-deleted;
+  `event_volume` = total non-deleted `Event` rows platform-wide (all
+  statuses, not just currently-published ones — "volume" read as total
+  throughput). This schema has no platform-currency setting and no
+  multi-currency reconciliation precedent anywhere in this codebase (every
+  existing sum already assumes one currency per aggregation scope) — both
+  endpoints pick a real currency from an actual order when at least one
+  exists, falling back to `"USD"` otherwise; documented as a judgment call,
+  not a fixed platform setting.
 
 ---
 

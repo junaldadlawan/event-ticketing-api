@@ -81,7 +81,15 @@ class AuditLogIntegrationTest {
         UUID actorId = UUID.randomUUID();
         persistEntry(actorId, "refund.issued");
 
-        mockMvc.perform(get("/api/v1/audit-log").header("Authorization", "Bearer " + token))
+        // Filtered by this test's own actorId, not the unsorted default
+        // page - production code across the WHOLE suite writes real
+        // audit_log_entries rows on every refund/event-cancel/role-
+        // assignment/dispute-resolution/moderation-action test everywhere,
+        // not just this module's own tests, so an unfiltered first page of
+        // 20 is not guaranteed to contain this row once the table has
+        // accumulated more than that from unrelated tests.
+        mockMvc.perform(get("/api/v1/audit-log").param("actorId", actorId.toString())
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.actorId=='" + actorId + "')]").exists());
     }
