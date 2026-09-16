@@ -60,6 +60,11 @@ public class SecurityConfig {
                         // ROLE_SCANNER_DEVICE principal (UC-SCAN-04: a scanning client
                         // needs to query its own event's mode/expiry), not just users.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/check-in-config").authenticated()
+                        // Same reasoning again: GET /events/{eventId}/analytics (Phase 14)
+                        // is owning-organizer/admin-only per BR-ANALYTICS-001, not public -
+                        // must precede the broader GET /api/v1/events/** permitAll matcher
+                        // below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/analytics").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or
@@ -133,6 +138,10 @@ public class SecurityConfig {
                         // openapi.yaml's literal /audit-log path, so it needs
                         // its own matcher.
                         .requestMatchers(HttpMethod.GET, "/api/v1/audit-log").hasRole("ADMIN")
+                        // Phase 14 (BR-ANALYTICS-002): platform-wide analytics, unconditionally
+                        // admin-only, no per-resource owner/organizer branch - same idiom as
+                        // audit-log above.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/analytics/platform").hasRole("ADMIN")
                         // Phase 10: openapi.yaml's `security: [deviceAuth: []]` override
                         // on these three - device-credential-only, a user JWT must NOT
                         // work here (a user could otherwise validate/scan tickets it has
