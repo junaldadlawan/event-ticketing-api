@@ -61,4 +61,21 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     /** Phase 10: {@code GET /scanner-devices/{deviceId}/dataset} - the full pre-fetch for offline validation. */
     List<Ticket> findByEventId(UUID eventId);
+
+    /**
+     * Phase 14 (BR-ANALYTICS-001): "tickets sold" - every {@code Ticket} row
+     * for the event, regardless of its current status (a later transfer/
+     * refund doesn't undo the fact that a sale happened - {@code Ticket}
+     * rows are only ever created on a successful checkout).
+     */
+    long countByEventId(UUID eventId);
+
+    /**
+     * Phase 14: per-day ticket counts for {@code sales_over_time}. Each row
+     * is {@code [LocalDate, Long]}. {@code cast(... as date)} is an ANSI SQL
+     * function Hibernate translates directly (no native query needed, so no
+     * risk of a wrong hand-typed column name).
+     */
+    @Query("select cast(t.createdAt as date), count(t) from Ticket t where t.eventId = :eventId group by cast(t.createdAt as date) order by cast(t.createdAt as date)")
+    List<Object[]> countGroupedByDayForEvent(@Param("eventId") UUID eventId);
 }
