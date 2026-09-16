@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refund;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -85,7 +86,10 @@ class RefundIntegrationTest {
     private RefundRepository refundRepository;
     @Autowired
     private RefundPolicyRepository refundPolicyRepository;
+    @Autowired
+    private AuditLogEntryRepository auditLogEntryRepository;
 
+    private final List<UUID> createdAuditLogEntryIds = new ArrayList<>();
     private final List<UUID> createdOrgIds = new ArrayList<>();
     private final List<OrganizationMember> createdMembers = new ArrayList<>();
     private final List<UUID> createdEventIds = new ArrayList<>();
@@ -98,6 +102,10 @@ class RefundIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        for (UUID id : createdAuditLogEntryIds) {
+            auditLogEntryRepository.deleteById(id);
+        }
+        createdAuditLogEntryIds.clear();
         for (UUID id : createdRefundIds) {
             refundRepository.deleteById(id);
         }
@@ -273,6 +281,13 @@ class RefundIntegrationTest {
         assertThat(refreshedTicket.getStatus()).isEqualTo(TicketStatus.REFUNDED);
         assertThat(refundRepository.findByOrderId(order.getId())).hasSize(1);
         assertThat(refundRepository.findByOrderId(order.getId()).get(0).getStatus().name()).isEqualTo("COMPLETED");
+
+        // BR-NFR-005 (Phase 13): refund issuance is audit-logged.
+        UUID refundId = refundRepository.findByOrderId(order.getId()).get(0).getId();
+        var auditPage = auditLogEntryRepository.findByActorId(owner.getId(), org.springframework.data.domain.PageRequest.of(0, 20));
+        auditPage.getContent().forEach(e -> createdAuditLogEntryIds.add(e.getId()));
+        assertThat(auditPage.getContent())
+                .anyMatch(e -> e.getAction().equals("refund.issued") && e.getTargetId().equals(refundId));
     }
 
     @Test

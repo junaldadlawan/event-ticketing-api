@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.moderation.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -49,6 +50,7 @@ public class ModerationActionServiceImpl implements ModerationActionService {
     private final UserService userService;
     private final OrganizationAccessGuard accessGuard;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
 
     @Override
     public ModerationActionResponse create(ModerationActionCreateRequest request) {
@@ -69,7 +71,13 @@ public class ModerationActionServiceImpl implements ModerationActionService {
                 .previousStatus(previousStatus)
                 .performedBy(adminId)
                 .build();
-        return ModerationActionResponse.from(moderationActionRepository.save(action));
+        ModerationAction saved = moderationActionRepository.save(action);
+        // BR-NFR-005 (Phase 13): sensitive-action audit trail, for every
+        // action (SUSPEND/REINSTATE/REMOVE are all "admin interventions" per
+        // BR-NFR-005's framing, not just suspend). Never throws.
+        auditLogService.record(adminId, "moderation." + saved.getAction().name().toLowerCase(),
+                saved.getTargetType().name(), saved.getTargetId());
+        return ModerationActionResponse.from(saved);
     }
 
     @Override

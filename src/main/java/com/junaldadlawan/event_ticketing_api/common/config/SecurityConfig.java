@@ -127,6 +127,12 @@ public class SecurityConfig {
                         // raiser/owner visibility branch to justify pushing the
                         // check down into the service layer alone.
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // Phase 13 (BR-NFR-005): admin-only audit log, same
+                        // unconditional hasRole restriction as the moderation
+                        // action log above - not nested under /admin/** per
+                        // openapi.yaml's literal /audit-log path, so it needs
+                        // its own matcher.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/audit-log").hasRole("ADMIN")
                         // Phase 10: openapi.yaml's `security: [deviceAuth: []]` override
                         // on these three - device-credential-only, a user JWT must NOT
                         // work here (a user could otherwise validate/scan tickets it has

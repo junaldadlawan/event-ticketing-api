@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.moderation.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -73,13 +74,15 @@ class ModerationActionServiceImplTest {
     private OrganizationAccessGuard accessGuard;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private AuditLogService auditLogService;
 
     private ModerationActionServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new ModerationActionServiceImpl(moderationActionRepository, organizationRepository, eventRepository,
-                eventService, userRepository, userService, accessGuard, notificationService);
+                eventService, userRepository, userService, accessGuard, notificationService, auditLogService);
         lenient().when(moderationActionRepository.save(any(ModerationAction.class))).thenAnswer(inv -> {
             ModerationAction action = inv.getArgument(0);
             action.setId(UUID.randomUUID());

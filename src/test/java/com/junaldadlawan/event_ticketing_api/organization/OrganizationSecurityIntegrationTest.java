@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.organization;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
@@ -57,10 +58,18 @@ class OrganizationSecurityIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private AuditLogEntryRepository auditLogEntryRepository;
+
     private final List<UUID> createdOrgIds = new ArrayList<>();
+    private final List<UUID> createdAuditLogEntryIds = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
+        for (UUID id : createdAuditLogEntryIds) {
+            auditLogEntryRepository.deleteById(id);
+        }
+        createdAuditLogEntryIds.clear();
         for (UUID orgId : createdOrgIds) {
             List<OrganizationMember> members = organizationMemberRepository.findByOrganizationId(orgId);
             organizationMemberRepository.deleteAll(members);
@@ -128,6 +137,12 @@ class OrganizationSecurityIntegrationTest {
                                 """.formatted(applicant.getId())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.roles", containsInAnyOrder("OWNER", "ORGANIZER")));
+
+        // BR-NFR-005 (Phase 13): role assignment is audit-logged.
+        var auditPage = auditLogEntryRepository.findByActorId(applicant.getId(), org.springframework.data.domain.PageRequest.of(0, 20));
+        auditPage.getContent().forEach(e -> createdAuditLogEntryIds.add(e.getId()));
+        org.assertj.core.api.Assertions.assertThat(auditPage.getContent())
+                .anyMatch(e -> e.getAction().equals("organization_member.assigned") && e.getTargetId().equals(orgId));
 
         // Step 5 (UC-OWNER-01 / BR-AUTH-005/006): owner assigns a second user CHECK_IN_STAFF.
         mockMvc.perform(post("/api/v1/organizations/{orgId}/members", orgId)
