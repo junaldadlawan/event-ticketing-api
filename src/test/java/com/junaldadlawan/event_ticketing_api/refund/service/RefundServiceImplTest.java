@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refund.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
@@ -94,6 +95,8 @@ class RefundServiceImplTest {
     private WaitlistService waitlistService;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private AuditLogService auditLogService;
 
     private RefundServiceImpl service;
 
@@ -106,7 +109,7 @@ class RefundServiceImplTest {
     void setUp() {
         service = new RefundServiceImpl(refundRepository, refundPolicyRepository, orderRepository,
                 paymentRepository, ticketRepository, eventRepository, paymentGatewayClient, accessGuard,
-                ticketTypeRepository, waitlistService, notificationService);
+                ticketTypeRepository, waitlistService, notificationService, auditLogService);
         orgId = UUID.randomUUID();
         eventId = UUID.randomUUID();
         orderId = UUID.randomUUID();

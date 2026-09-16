@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.dispute.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
@@ -65,12 +66,14 @@ class DisputeServiceImplTest {
     private OrganizationAccessGuard accessGuard;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private AuditLogService auditLogService;
 
     private DisputeServiceImpl disputeService;
 
     @BeforeEach
     void setUp() {
-        disputeService = new DisputeServiceImpl(disputeRepository, orderRepository, ticketRepository, accessGuard, notificationService);
+        disputeService = new DisputeServiceImpl(disputeRepository, orderRepository, ticketRepository, accessGuard, notificationService, auditLogService);
     }
 
     private Order order(UUID id, UUID buyerId) {

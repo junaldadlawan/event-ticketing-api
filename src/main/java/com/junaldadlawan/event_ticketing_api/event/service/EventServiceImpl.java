@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -53,6 +54,7 @@ public class EventServiceImpl implements EventService {
     private final RefundService refundService;
     private final TicketRepository ticketRepository;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -204,6 +206,9 @@ public class EventServiceImpl implements EventService {
                 .map(Ticket::getOwnerId)
                 .distinct()
                 .forEach(ownerId -> notificationService.notify(ownerId, NotificationType.EVENT_CANCELLATION, "Event", eventId));
+
+        // BR-NFR-005 (Phase 13): sensitive-action audit trail. Never throws.
+        auditLogService.record(accessGuard.currentUserId(), "event.cancelled", "Event", eventId);
 
         return saved;
     }

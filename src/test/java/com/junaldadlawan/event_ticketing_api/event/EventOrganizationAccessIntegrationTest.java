@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.event;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
@@ -85,13 +86,21 @@ class EventOrganizationAccessIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private AuditLogEntryRepository auditLogEntryRepository;
+
     private final List<UUID> createdOrgIds = new ArrayList<>();
     private final List<OrganizationMember> createdMembers = new ArrayList<>();
     private final List<UUID> createdVenueIds = new ArrayList<>();
     private final List<UUID> createdEventIds = new ArrayList<>();
+    private final List<UUID> createdAuditLogEntryIds = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
+        for (UUID id : createdAuditLogEntryIds) {
+            auditLogEntryRepository.deleteById(id);
+        }
+        createdAuditLogEntryIds.clear();
         for (UUID eventId : createdEventIds) {
             eventRepository.deleteById(eventId);
         }
@@ -272,6 +281,12 @@ class EventOrganizationAccessIntegrationTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        // BR-NFR-005 (Phase 13): event cancellation is audit-logged.
+        var auditPage = auditLogEntryRepository.findByActorId(owner.getId(), org.springframework.data.domain.PageRequest.of(0, 20));
+        auditPage.getContent().forEach(e -> createdAuditLogEntryIds.add(e.getId()));
+        org.assertj.core.api.Assertions.assertThat(auditPage.getContent())
+                .anyMatch(e -> e.getAction().equals("event.cancelled") && e.getTargetId().equals(eventId));
 
         // Step 13: cancelling an already-cancelled event returns 409.
         mockMvc.perform(post("/api/v1/events/{eventId}/cancel", eventId)

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.dispute;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.dispute.entity.Dispute;
@@ -60,14 +61,21 @@ class DisputeIntegrationTest {
     private NotificationRepository notificationRepository;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private AuditLogEntryRepository auditLogEntryRepository;
 
     private final List<UUID> createdOrderIds = new ArrayList<>();
     private final List<UUID> createdTicketIds = new ArrayList<>();
     private final List<UUID> createdDisputeIds = new ArrayList<>();
     private final List<UUID> createdNotificationIds = new ArrayList<>();
+    private final List<UUID> createdAuditLogEntryIds = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
+        for (UUID id : createdAuditLogEntryIds) {
+            auditLogEntryRepository.deleteById(id);
+        }
+        createdAuditLogEntryIds.clear();
         for (UUID id : createdDisputeIds) {
             disputeRepository.deleteById(id);
         }
@@ -306,6 +314,12 @@ class DisputeIntegrationTest {
         var notifications = notificationRepository.findByUserIdOrderByCreatedAtDesc(buyer.getId());
         assertThat(notifications).isNotEmpty();
         notifications.forEach(n -> createdNotificationIds.add(n.getId()));
+
+        // BR-NFR-005 (Phase 13): dispute resolution is audit-logged.
+        var auditPage = auditLogEntryRepository.findByActorId(admin.getId(), org.springframework.data.domain.PageRequest.of(0, 20));
+        auditPage.getContent().forEach(e -> createdAuditLogEntryIds.add(e.getId()));
+        assertThat(auditPage.getContent())
+                .anyMatch(e -> e.getAction().equals("dispute.resolved") && e.getTargetId().equals(disputeId));
     }
 
     @Test
