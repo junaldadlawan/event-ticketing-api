@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.dispute.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -42,6 +43,7 @@ public class DisputeServiceImpl implements DisputeService {
     private final TicketRepository ticketRepository;
     private final OrganizationAccessGuard accessGuard;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
 
     @Override
     public DisputeResponse create(DisputeCreateRequest request) {
@@ -117,6 +119,10 @@ public class DisputeServiceImpl implements DisputeService {
         // a terminal state. Best-effort, never throws (NFR 5.2).
         if (TERMINAL_STATUSES.contains(saved.getStatus())) {
             notificationService.notify(saved.getRaisedBy(), NotificationType.DISPUTE_RESOLVED, "Dispute", saved.getId());
+            // BR-NFR-005 (Phase 13): sensitive-action audit trail, same
+            // terminal-status condition as the notification above. Never throws.
+            String auditAction = saved.getStatus() == DisputeStatus.DISMISSED ? "dispute.dismissed" : "dispute.resolved";
+            auditLogService.record(saved.getUpdatedBy(), auditAction, "Dispute", saved.getId());
         }
 
         return DisputeResponse.from(saved);

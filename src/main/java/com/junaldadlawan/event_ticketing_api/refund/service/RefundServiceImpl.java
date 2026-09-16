@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refund.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
@@ -85,6 +86,7 @@ public class RefundServiceImpl implements RefundService {
     private final TicketTypeRepository ticketTypeRepository;
     private final WaitlistService waitlistService;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -222,6 +224,10 @@ public class RefundServiceImpl implements RefundService {
             // refund - either way the buyer was just refunded money and
             // should be told. Never throws (NFR 5.2).
             notificationService.notify(order.getBuyerId(), NotificationType.REFUND_CONFIRMATION, "Refund", saved.getId());
+            // BR-NFR-005 (Phase 13): sensitive-action audit trail. initiatedBy
+            // is the admin/organizer who issued it, or the system itself on a
+            // mandatory event-cancellation refund - never throws.
+            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId());
         }
 
         return saved;

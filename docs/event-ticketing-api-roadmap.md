@@ -328,17 +328,55 @@ underlying delivery mechanism (email at minimum) should exist.
   extra lookups, per the confirmed design — "keep this part minimal, it's a
   nice-to-have not the core requirement").
 
-## Phase 13 — Audit Log
+## Phase 13 — Audit Log ✅
 
 Ideally wired into each sensitive action as it's built (refunds, role
 changes, cancellations, admin interventions — `BR-NFR-005`) rather than
 retrofitted at the end, but listed last since it has no functional
 dependents of its own.
 
-- ⬜ `AuditLogEntry` entity + `GET /audit-log` (admin only).
-- ⬜ Wire writes into: refund issuance (Phase 8), role assignment (Phase
-  1), event cancellation (Phase 3), dispute resolution (Phase 12),
-  account suspension (Phase 12).
+- ✅ `AuditLogEntry` entity + `GET /api/v1/audit-log` (admin only) —
+  new `auditlog/` module, migration `V23__add_audit_log_table.sql`.
+  Append-only (no `updatedAt`/`updatedBy`/`deletedAt`, per the ERD's stated
+  philosophy — same reasoning already applied to `ModerationAction` in
+  Phase 12). `action` is a free-text `"<resource>.<past_tense_verb>"`
+  string (matching `openapi.yaml`'s own `"refund.issued"` example) rather
+  than an enum, so a new sensitive action can be logged without a schema
+  change. `AuditLogService.record(...)` mirrors
+  `NotificationServiceImpl.notify`'s exact idiom —
+  `@Transactional(propagation = REQUIRES_NEW)` and never rethrows, so a
+  failure writing an audit row can never roll back the sensitive action
+  it's logging (same NFR 5.2 reasoning, applied to audit logging instead
+  of notification delivery). `GET`'s `actorId` query param is camelCase,
+  not `openapi.yaml`'s `actor_id` — matches this codebase's own
+  established convention (`EventController.search`'s `startsAfter`), not
+  the spec's snake_case; same pre-existing, codebase-wide deviation as
+  every other paginated endpoint returning `PageResponse` instead of the
+  spec's cursor/array shape (already left undocumented in `openapi.yaml`
+  for Phase 12's own `moderation-actions` list, not something new here).
+- ✅ Wired `auditLogService.record(...)` into exactly the five points the
+  roadmap named, no more: **refund issuance**
+  (`RefundServiceImpl.issueRefund`, `action="refund.issued"`, only on a
+  successful gateway result — same condition already guarding the
+  `REFUND_CONFIRMATION` notification there); **role assignment**
+  (`OrganizationServiceImpl.assignMember`,
+  `action="organization_member.assigned"`, `targetType="OrganizationMember"`/
+  `targetId=<organizationId>` since `OrganizationMember` has no standalone
+  id of its own — a composite `(userId, organizationId)` key); **event
+  cancellation** (`EventServiceImpl.cancelEvent`,
+  `action="event.cancelled"`); **dispute resolution**
+  (`DisputeServiceImpl.update`, `action="dispute.resolved"` or
+  `"dispute.dismissed"` depending on which terminal status, same
+  `RESOLVED`/`DISMISSED` condition already guarding `DISPUTE_RESOLVED`);
+  **account suspension** (`ModerationActionServiceImpl.create`,
+  `action="moderation.<suspend|reinstate|remove>"` — logs all three
+  action types, not just suspend, since `SUSPEND`/`REINSTATE`/`REMOVE` are
+  all "admin interventions" per `BR-NFR-005`'s own framing). Each of the
+  five existing integration tests for these features (`RefundIntegrationTest`,
+  `OrganizationSecurityIntegrationTest`, `EventOrganizationAccessIntegrationTest`,
+  `DisputeIntegrationTest`, `ModerationActionIntegrationTest`) was extended
+  with a real-Postgres assertion that the corresponding `AuditLogEntry` row
+  now exists, rather than duplicating coverage in new dedicated tests.
 
 ## Phase 14 — Analytics
 
