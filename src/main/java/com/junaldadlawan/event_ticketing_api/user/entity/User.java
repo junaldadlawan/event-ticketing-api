@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.user.entity;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
+import com.junaldadlawan.event_ticketing_api.user.enums.AccountStatus;
 import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
@@ -42,5 +43,12 @@ public class User extends Auditable {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     private Role role;
+
+    /** Phase 12 (BR-ADMIN-002) - real, enforced account state; see {@code AuthServiceImpl.login}. */
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "account_status", nullable = false, length = 20)
+    private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
 }

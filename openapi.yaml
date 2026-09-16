@@ -8,8 +8,8 @@ info:
     admin approval) and org-scoped roles, events & ticket types, cart &
     checkout (with promo codes), orders & tickets, ticket transfer &
     organizer-controlled resale, waitlists, refunds & payouts, ticket
-    templates, check-in/scanning, notifications, disputes, audit log, and
-    analytics. Aligned to requirements.md v1.0, business-rules.md v1.0,
+    templates, check-in/scanning, notifications, disputes, admin
+    moderation actions, audit log, and analytics. Aligned to requirements.md v1.0, business-rules.md v1.0,
     and use-cases.md v1.0. Genuinely open/undecided items (target
     markets, resale opt-in/out default, mid-event check-in mode
     switching, etc.) are tracked in requirements.md section 7, not
@@ -40,6 +40,7 @@ tags:
   - name: CheckIn
   - name: Notifications
   - name: Disputes
+  - name: Moderation
   - name: Audit
   - name: Analytics
 
@@ -1498,6 +1499,59 @@ paths:
               schema: { $ref: "#/components/schemas/Dispute" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/moderation-actions:
+    get:
+      operationId: listModerationActions
+      tags: [Moderation]
+      summary: >
+        List admin moderation actions (admin only). Not in the original
+        design docs (BR-ADMIN-002) - added in Phase 12 as a single unified,
+        append-only audit trail for suspend/reinstate/remove actions against
+        an Organization, Event, or User.
+      parameters:
+        - name: target_type
+          in: query
+          schema: { type: string, enum: [organization, event, user] }
+        - name: target_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ModerationAction" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createModerationAction
+      tags: [Moderation]
+      summary: >
+        Suspend, reinstate, or remove an Organization/Event/User (admin
+        only). Every call is recorded as its own immutable row, doubling as
+        the reason/audit trail BR-ADMIN-002 calls for.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModerationActionCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModerationAction" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >
+            The target is already in the requested state (e.g. SUSPEND on an
+            already-suspended target, REINSTATE on a non-suspended one,
+            REMOVE on an already-removed one).
+
   /audit-log:
     get:
       operationId: listAuditLog
@@ -2261,6 +2315,38 @@ components:
       properties:
         status: { type: string, enum: [open, investigating, resolved, dismissed] }
         resolution: { type: string }
+
+    ModerationAction:
+      type: object
+      description: >
+        BR-ADMIN-002. Original design (not in the ERD/business-rules docs) -
+        confirmed and added in Phase 12. Append-only: a row is never edited
+        after creation, mirroring AuditLogEntry's own "a mutable audit trail
+        would defeat its own purpose" philosophy.
+      properties:
+        id: { type: string, format: uuid }
+        target_type: { type: string, enum: [organization, event, user] }
+        target_id: { type: string, format: uuid }
+        action: { type: string, enum: [suspend, reinstate, remove] }
+        reason: { type: string }
+        previous_status:
+          type: [string, "null"]
+          description: >
+            The target's status/state immediately before this action, so a
+            later REINSTATE knows exactly what to restore. Free-form string
+            since Organization/Event/User each have their own distinct
+            status enum.
+        performed_by: { type: string, format: uuid, description: The admin who took this action. }
+        created_at: { type: string, format: date-time }
+
+    ModerationActionCreate:
+      type: object
+      required: [target_type, target_id, action, reason]
+      properties:
+        target_type: { type: string, enum: [organization, event, user] }
+        target_id: { type: string, format: uuid }
+        action: { type: string, enum: [suspend, reinstate, remove] }
+        reason: { type: string }
 
     AuditLogEntry:
       type: object
