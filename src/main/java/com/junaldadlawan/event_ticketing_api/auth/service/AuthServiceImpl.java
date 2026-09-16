@@ -7,8 +7,10 @@ import com.junaldadlawan.event_ticketing_api.auth.dto.RefreshRequest;
 import com.junaldadlawan.event_ticketing_api.auth.dto.TokenPairResponse;
 import com.junaldadlawan.event_ticketing_api.auth.entity.RefreshToken;
 import com.junaldadlawan.event_ticketing_api.auth.repository.RefreshTokenRepository;
+import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.InvalidCredentialsException;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
+import com.junaldadlawan.event_ticketing_api.user.enums.AccountStatus;
 import com.junaldadlawan.event_ticketing_api.user.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -35,6 +37,15 @@ public class AuthServiceImpl implements AuthService {
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new InvalidCredentialsException();
+        }
+
+        // Phase 12 (BR-ADMIN-002): checked AFTER password verification
+        // succeeds, deliberately - a suspended account with a WRONG
+        // password must still get a generic 401 invalid-credentials, not a
+        // 403 that would leak account-existence/suspension info to an
+        // unauthenticated attacker.
+        if (user.getAccountStatus() == AccountStatus.SUSPENDED) {
+            throw new ForbiddenException("Account is suspended");
         }
 
         String refreshToken = issueRefreshToken(user);

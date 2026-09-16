@@ -268,13 +268,65 @@ underlying delivery mechanism (email at minimum) should exist.
   unpaginated `List`, matching the existing `GET /users/me/waitlist-entries`
   gap rather than fixing it in isolation for only the newest endpoint.
 
-## Phase 12 — Disputes & Admin Moderation
+## Phase 12 — Disputes & Admin Moderation ✅
 
-- ⬜ `Dispute` entity + `POST /disputes`, `GET /disputes`, `GET/PATCH
-  /disputes/{id}` (`BR-ADMIN-003`).
-- ⬜ Admin suspend/remove action for an organizer, event, or user account
-  (`BR-ADMIN-002`) — beyond the generic soft-delete already built for
-  users, this needs a reason/audit trail per action.
+- ✅ `Dispute` entity (transactional/status-bearing tier per the ERD, but
+  WITH `updatedBy` — the ERD's one explicit exception, "only where an admin
+  actively edits it after creation") + `POST /disputes`, `GET /disputes`,
+  `GET/PATCH /disputes/{id}` (`BR-ADMIN-003`) — new `dispute/` module,
+  migration `V20__add_disputes_table.sql`. `reason` is required on create
+  (a deliberate deviation from the ERD's `disputes` table, which has no
+  `reason` column at all — same documented-gap category as
+  `TicketTypeCreateRequest.quantityTotal`, see the field-level comment on
+  `Dispute.reason`). Raise-authorization: the order's buyer / ticket's
+  owner, or admin; `GET`/`PATCH` visibility: raiser or admin;
+  `list`/`update` are admin-only; `update` rejects an already-`RESOLVED`/
+  `DISMISSED` dispute with 409 (terminal-state guard, same idiom as
+  `ResaleListingController.cancel`) and fires a new
+  `NotificationType.DISPUTE_RESOLVED` to the raiser on `RESOLVED`/
+  `DISMISSED`.
+- ✅ Admin suspend/reinstate/remove action for an Organization, Event, or
+  User (`BR-ADMIN-002`) — new `moderation/` module (not in
+  `openapi.yaml`/the ERD; original design confirmed and implemented this
+  phase), `POST/GET /api/v1/admin/moderation-actions`
+  (`ModerationActionController`), migrations
+  `V21__add_moderation_actions_table.sql` +
+  `V22__add_suspension_support.sql`. A single unified, append-only
+  `ModerationAction` log (mirrors `AuditLogEntry`'s "a mutable audit trail
+  would defeat its own purpose" philosophy) doubles as the reason/audit
+  trail the roadmap calls for — no separate per-action-type table. `
+  SUSPENDED` is a REAL status other code now checks, not just a log entry:
+  added to `EventStatus`/`OrganizationStatus` (plain enum values, no
+  migration needed — this schema has no DB CHECK constraints) and a new
+  `AccountStatus{ACTIVE,SUSPENDED}` + `users.account_status` column
+  (`V22`). `REINSTATE` restores an Organization/Event to the status
+  captured in its most recent `SUSPEND` action's `previousStatus` (falling
+  back to `APPROVED`/`DRAFT` respectively if somehow no prior `SUSPEND` row
+  exists); a User's `REINSTATE` always restores `ACTIVE` (only two
+  possible states, no history lookup needed). `REMOVE` reuses each
+  target's own existing soft-delete rather than duplicating it
+  (`EventServiceImpl.delete`, `UserServiceImpl.delete`,
+  `Organization.markDeleted()` inherited from `Auditable`) — there was no
+  prior organization-removal endpoint at all, confirmed before adding this
+  path. Enforcement wired into exactly four points, each documented at the
+  call site: `EventServiceImpl.updateEvent` (new `ConflictException` on a
+  suspended event), `VenueServiceImpl.create` (new organization-`APPROVED`
+  gate, matching `EventServiceImpl.createEvent`'s existing one),
+  `AuthServiceImpl.login` (new 403 for a suspended account, checked only
+  *after* password verification succeeds, so a wrong password on a
+  suspended account still 401s rather than leaking account-existence/
+  suspension info) — `EventServiceImpl.publishEvent`'s `status == DRAFT`
+  check, `CartServiceImpl`'s `{PUBLISHED,ON_SALE,SOLD_OUT}` allow-list, and
+  `EventServiceImpl.listEvents`'s `PUBLISHED`-only public filter were all
+  verified to already correctly exclude `SUSPENDED` with no code change
+  needed. Out of scope, explicitly not touched per the confirmed design:
+  ticket-type creation, checkout, and refunds — no suspension checks added
+  there.
+- Best-effort `NotificationType.ACCOUNT_MODERATION_ACTION` notification on
+  every `USER` action and every `ORGANIZATION` action with an `ownerId` set;
+  deliberately skipped for `EVENT` (no single obvious recipient without
+  extra lookups, per the confirmed design — "keep this part minimal, it's a
+  nice-to-have not the core requirement").
 
 ## Phase 13 — Audit Log
 

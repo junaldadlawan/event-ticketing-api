@@ -114,6 +114,19 @@ public class SecurityConfig {
                         // No public GET exists for carts at all - buyer-only,
                         // always authenticated (Phase 5a).
                         .requestMatchers("/api/v1/carts", "/api/v1/carts/**").authenticated()
+                        // Phase 12 (BR-ADMIN-003): no public GET exists for
+                        // disputes either - raiser/admin visibility and
+                        // admin-only list/update are enforced in
+                        // DisputeServiceImpl, same idiom as carts/organizations
+                        // above.
+                        .requestMatchers("/api/v1/disputes", "/api/v1/disputes/**").authenticated()
+                        // Phase 12 (BR-ADMIN-002): admin-only moderation-action
+                        // log - unlike disputes above, this one IS restricted at
+                        // the HTTP layer (hasRole) since every operation under
+                        // this prefix is unconditionally admin-only, with no
+                        // raiser/owner visibility branch to justify pushing the
+                        // check down into the service layer alone.
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // Phase 10: openapi.yaml's `security: [deviceAuth: []]` override
                         // on these three - device-credential-only, a user JWT must NOT
                         // work here (a user could otherwise validate/scan tickets it has
