@@ -21,6 +21,13 @@ Java 21, Spring Boot 4.1.1, Maven (with wrapper), PostgreSQL via Docker
 Compose, Flyway, Lombok, Spring Data JPA, Bean Validation, Spring Security
 (currently permissive, see Known gaps below).
 
+## Git workflow
+
+Never commit automatically without being explicitly asked to. When work needs
+to be persisted/pushed, create a new branch (never commit directly to `main`)
+and push that branch — do not open a PR or merge without being asked
+separately.
+
 ## Commands
 
 - Start local Postgres: `docker compose up -d` (db `event_ticketing`,
