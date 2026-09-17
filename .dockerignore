@@ -1,0 +1,12 @@
+target/
+.idea/
+.vscode/
+.git/
+.gitignore
+*.md
+docs/
+testing/
+postman/
+docs/postman/
+.claude/
+compose.yml
