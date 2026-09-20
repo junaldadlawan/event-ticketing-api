@@ -44,6 +44,11 @@ resource "aws_ecs_task_definition" "app" {
       }]
 
       environment = [
+        # Activates application-prod.properties, which is what actually
+        # reads every other env var below via ${...} placeholders - without
+        # this, the app runs the default (dev-labeled) profile in
+        # production regardless of what's injected here.
+        { name = "SPRING_PROFILES_ACTIVE", value = "prod" },
         { name = "SERVER_PORT", value = tostring(var.container_port) },
         { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.main.address}:${aws_db_instance.main.port}/${var.db_name}" },
         { name = "SPRING_DATASOURCE_USERNAME", value = var.db_username },

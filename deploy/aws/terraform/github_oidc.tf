@@ -26,16 +26,17 @@ variable "github_deploy_branch" {
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  # GitHub's current + previous root CA thumbprints (both accepted at
-  # once is the standard pattern AWS/GitHub's own docs recommend, since
-  # GitHub has rotated this before) - re-verify against AWS's GitHub OIDC
-  # guide if this resource's `apply` ever fails token validation.
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
-  ]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+  # AWS no longer actually validates this value for well-known OIDC
+  # providers like GitHub's - it verifies against the provider's real TLS
+  # certificate chain instead, and per aws-actions/configure-aws-credentials'
+  # own docs, "the thumbprint, if specified, will be ignored." Terraform's
+  # aws_iam_openid_connect_provider resource still requires a syntactically
+  # valid (40 hex char) entry here regardless, so this is just a
+  # placeholder satisfying that schema constraint, not a real security
+  # control - confirmed via WebFetch against AWS's current docs.
+  thumbprint_list = ["1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
 
   tags = local.common_tags
 }
