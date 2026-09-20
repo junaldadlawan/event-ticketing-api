@@ -1,0 +1,100 @@
+name: Deploy to ECS Fargate
+
+# Builds the image, pushes it to ECR tagged with the commit SHA, then runs
+# the same `terraform apply -var container_image=...` a human would run
+# manually (see deploy/aws/README.md) so there's exactly one place
+# (Terraform) that owns the ECS task definition's shape.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - "mvnw"
+      - "mvnw.cmd"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "deploy/aws/terraform/**"
+      - ".github/workflows/deploy.yml"
+
+# One-time setup required before this workflow can run - see "Continuous
+# deployment" in deploy/aws/README.md:
+#   - Repo variable AWS_DEPLOY_ROLE_ARN  (github_actions_role_arn output)
+#   - Repo variable AWS_REGION           (defaults to us-east-1 below if unset)
+#   - Repo variable TFSTATE_BUCKET       (bootstrap's bucket_name output)
+#   - Repo variable TFSTATE_DYNAMODB_TABLE (bootstrap's dynamodb_table_name output)
+
+permissions:
+  id-token: write # required to mint the OIDC token for configure-aws-credentials
+  contents: read
+
+concurrency:
+  group: deploy-ecs-fargate
+  cancel-in-progress: false # never cancel an in-flight `terraform apply` - could leave state/infra half-applied
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  TF_DIR: deploy/aws/terraform
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform init (S3 backend)
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="dynamodb_table=${{ vars.TFSTATE_DYNAMODB_TABLE }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="key=event-ticketing-api/terraform.tfstate"
+
+      - name: Write backend.auto.tfvars
+        # Scopes github_oidc.tf's IAM policy to this one state bucket/table
+        # (not committed - see .gitignore - generated here from the same
+        # repo variables the backend init above already used).
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          cat > backend.auto.tfvars <<EOF
+          tfstate_bucket         = "${{ vars.TFSTATE_BUCKET }}"
+          tfstate_dynamodb_table = "${{ vars.TFSTATE_DYNAMODB_TABLE }}"
+          EOF
+
+      - name: Read ECR repository URL from state
+        id: ecr
+        working-directory: ${{ env.TF_DIR }}
+        run: echo "url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ steps.ecr.outputs.url }}:${{ github.sha }}
+        run: |
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          IMAGE: ${{ steps.ecr.outputs.url }}:${{ github.sha }}
+        run: terraform apply -auto-approve -var "container_image=$IMAGE"
+
+      - name: Show the live URL
+        working-directory: ${{ env.TF_DIR }}
+        run: echo "Deployed - http://$(terraform output -raw alb_dns_name)/api/v1/events"
