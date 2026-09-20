@@ -30,7 +30,7 @@ terraform {
   # See "Continuous deployment" in ../README.md - CI runs this same init
   # (with the same flags, no -migrate-state) on every workflow run.
   #
-  # backend "s3" {}
+  backend "s3" {}
 }
 
 provider "aws" {
