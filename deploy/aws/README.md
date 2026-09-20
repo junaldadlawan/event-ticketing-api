@@ -98,13 +98,95 @@ drains the old one. `desired_count` defaults to 1, so there's a brief gap
 with only one healthy task during the swap; bump `desired_count` to 2+ in
 `variables.tf` to avoid that if the app needs to stay up through deploys.
 
-## Setting up CI to do steps 2–3 for you
+## Continuous deployment
 
-If you want a GitHub Actions workflow that builds, pushes, and applies on
-every push to `main`, say so and I'll add one — it needs an
-`AWS_ROLE_ARN` (via OIDC, no long-lived AWS keys in GitHub) with the same
-permissions your local `aws configure` identity has for this stack. Not
-included here since it wasn't asked for.
+`.github/workflows/deploy.yml` runs steps 2–3 automatically on every push
+to `main` that touches `src/**`, `pom.xml`, `Dockerfile`, or
+`deploy/aws/terraform/**`: build → push to ECR tagged with the commit SHA
+→ `terraform apply -var container_image=...`. It authenticates to AWS via
+OIDC (GitHub mints a short-lived token, no AWS access key ever stored in
+GitHub) using a role scoped to exactly this repo and the `main` branch —
+see `deploy/aws/terraform/github_oidc.tf` for exactly what it can and
+can't do (broad read for `terraform plan`/refresh, narrow write limited to
+pushing this one ECR repo and redeploying this one ECS service — it
+cannot touch the VPC/RDS/IAM or any other stack).
+
+This needs two one-time steps first, **in order**, before the workflow can
+run — both are things only a human should do (they change what has write
+access to your AWS account):
+
+**1. Move Terraform state off your laptop and into S3**, so CI's
+`terraform apply` and yours share the same state instead of silently
+diverging:
+
+```bash
+cd deploy/aws/terraform-bootstrap
+terraform init
+terraform apply   # creates an S3 bucket + a DynamoDB lock table, nothing else
+```
+
+Note the three outputs (`bucket_name`, `dynamodb_table_name`,
+`aws_region`), then migrate the main config's existing state into them:
+
+```bash
+cd ../terraform
+# uncomment the `backend "s3" {}` block in versions.tf first (see the
+# comment right above it), then:
+terraform init -migrate-state \
+  -backend-config="bucket=<bucket_name output>" \
+  -backend-config="dynamodb_table=<dynamodb_table_name output>" \
+  -backend-config="region=<aws_region output>" \
+  -backend-config="key=event-ticketing-api/terraform.tfstate"
+```
+
+Answer `yes` when it asks to copy existing state into S3.
+
+Then persist those same two values for every future `apply` (local or CI)
+to pick up automatically — create `deploy/aws/terraform/backend.auto.tfvars`
+(gitignored: it's not secret, but the bucket name embeds your AWS account
+id, so it isn't committed):
+
+```hcl
+tfstate_bucket         = "<bucket_name output>"
+tfstate_dynamodb_table = "<dynamodb_table_name output>"
+```
+
+This scopes `github_oidc.tf`'s IAM policy to exactly this one state
+bucket/table, not any other in the account. Without this file, that
+scoping resolves to an empty/broken ARN instead of silently granting
+broader access — the `apply` below will make that obvious if you skip it.
+
+**2. Create the GitHub OIDC role** (one more manual `apply` — this is the
+run that creates the role CI will use from then on; CI can't create its
+own trust relationship):
+
+```bash
+terraform apply
+```
+
+Note the `github_actions_role_arn` output, then in the GitHub repo's
+**Settings → Secrets and variables → Actions → Variables**, add four
+repository variables (these are plain **variables**, not secrets — none of
+them are sensitive on their own, the OIDC trust policy is what actually
+gates access):
+
+| Variable | Value |
+|---|---|
+| `AWS_DEPLOY_ROLE_ARN` | the `github_actions_role_arn` output |
+| `AWS_REGION` | `us-east-1` (or whatever `var.aws_region` was set to) |
+| `TFSTATE_BUCKET` | the bootstrap's `bucket_name` output |
+| `TFSTATE_DYNAMODB_TABLE` | the bootstrap's `dynamodb_table_name` output |
+
+From here on, pushing to `main` deploys automatically. Manual deploys
+(steps 2–3 above) still work fine too — they share the same state, so pick
+whichever's convenient for a given change.
+
+**If this AWS account already has a GitHub OIDC provider** (from another
+project's CI setup), `terraform apply` will fail on
+`aws_iam_openid_connect_provider.github` with `EntityAlreadyExists` — see
+the comment at the top of `github_oidc.tf` for the two ways to handle
+that (import the existing one, or point the role's trust policy at it
+directly).
 
 ## Adding HTTPS
 
@@ -137,10 +219,10 @@ to `0` and stop the RDS instance (`aws rds stop-db-instance`) between uses
   cost-conscious default. Flip `multi_az = true` in `rds.tf` and add a NAT
   gateway per AZ in `vpc.tf` for production HA (roughly doubles NAT +
   RDS cost).
-- **A remote Terraform state backend** — state defaults to a local
-  `terraform.tfstate` file in this directory. Fine solo; switch to the S3
-  backend commented in `versions.tf` the moment more than one person or
-  machine runs `terraform apply` against this.
+- **A remote Terraform state backend, by default** — state starts as a
+  local `terraform.tfstate` file in this directory, fine solo. Moving it
+  to S3 is covered in "Continuous deployment" above and is required
+  before CI (or a second person) ever runs `apply` against this stack.
 - **`spring.mail`/SMTP config** — this codebase's notification system uses
   a `MockEmailSender` (no real provider wired in yet, per
   `docs/event-ticketing-api-roadmap.md` Phase 11), so there's nothing to
