@@ -14,7 +14,7 @@
 # provider's ARN directly.
 
 variable "github_repo" {
-  description = "GitHub \"owner/repo\" allowed to assume the deploy role - scopes the OIDC trust policy."
+  description = "GitHub \"owner/repo\" allowed to assume the deploy role - human-readable half of the OIDC trust policy's sub condition (see github_owner_id/github_repo_id below for the other half)."
   type        = string
   default     = "junaldadlawan/event-ticketing-api"
 }
@@ -23,6 +23,28 @@ variable "github_deploy_branch" {
   description = "Branch the deploy role's trust policy is restricted to - pushes from any other branch/PR/fork cannot assume it."
   type        = string
   default     = "main"
+}
+
+# GitHub appends these immutable numeric ids to the `sub` claim's owner and
+# repo names (anti-spoofing after a rename - the plain "owner/repo" string
+# alone is no longer what's actually presented). Confirmed via a real
+# rejected AssumeRoleWithWebIdentity CloudTrail event for this exact repo:
+# the actual sub was "repo:junaldadlawan@53169688/event-ticketing-api@1346135711:ref:refs/heads/main",
+# not the plain "repo:junaldadlawan/event-ticketing-api:ref:..." this trust
+# policy originally assumed. Get these for a different repo from GitHub's
+# own OIDC token claims (a workflow step printing the decoded token, or a
+# CloudTrail AssumeRoleWithWebIdentity event like the one that surfaced
+# these) - there's no public API lookup for them.
+variable "github_owner_id" {
+  description = "GitHub's immutable numeric id for the account/org in github_repo."
+  type        = string
+  default     = "53169688"
+}
+
+variable "github_repo_id" {
+  description = "GitHub's immutable numeric id for the repo in github_repo."
+  type        = string
+  default     = "1346135711"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -56,7 +78,10 @@ data "aws_iam_policy_document" "github_actions_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/${var.github_deploy_branch}"]
+      # Format confirmed against a real CloudTrail event, not GitHub's
+      # (outdated for this account) plain "owner/repo" docs - see the
+      # comment on github_owner_id above.
+      values = ["repo:${split("/", var.github_repo)[0]}@${var.github_owner_id}/${split("/", var.github_repo)[1]}@${var.github_repo_id}:ref:refs/heads/${var.github_deploy_branch}"]
     }
   }
 }
