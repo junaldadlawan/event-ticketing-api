@@ -31,3 +31,15 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Terraform ###
+# Local plan/state files (deploy/aws/terraform/ uses a local backend until
+# "Continuous deployment" in deploy/aws/README.md moves it to S3).
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+# Not secret, but reveals the AWS account id via the state-bucket name
+# (deploy/aws/terraform/github_oidc.tf's tfstate_bucket/tfstate_dynamodb_table
+# vars) - generated locally per README.md, and by CI from repo variables.
+**/backend.auto.tfvars
