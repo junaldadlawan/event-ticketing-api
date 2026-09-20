@@ -152,6 +152,23 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
     resources = ["arn:aws:dynamodb:${var.aws_region}:*:table/${var.tfstate_dynamodb_table}"]
   }
+  statement {
+    # ReadOnlyAccess (attached below) deliberately excludes GetSecretValue -
+    # it reveals actual secret content, not just metadata. Terraform still
+    # needs it to refresh/diff these aws_secretsmanager_secret_version
+    # resources during plan/apply. Scoped to exactly this stack's 4 secrets,
+    # same pattern as iam.tf's ecs_execution_secrets policy.
+    sid = "ReadThisStacksSecretValues"
+    actions = [
+      "secretsmanager:GetSecretValue",
+    ]
+    resources = [
+      aws_secretsmanager_secret.db_password.arn,
+      aws_secretsmanager_secret.jwt_secret.arn,
+      aws_secretsmanager_secret.ticket_credential_secret.arn,
+      aws_secretsmanager_secret.device_credential_secret.arn,
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions_deploy" {
