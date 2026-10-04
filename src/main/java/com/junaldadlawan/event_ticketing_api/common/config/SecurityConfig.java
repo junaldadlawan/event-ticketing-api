@@ -29,7 +29,12 @@ public class SecurityConfig {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // refresh/logout are public on purpose: a client calls refresh
+                        // precisely because its access token has expired, so it has no
+                        // valid bearer token to send. Both are guarded by possession of
+                        // a signed, stored, unrevoked refresh token in the request body.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
+                                "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
                         // Must precede the broader GET /api/v1/events/** permitAll
                         // matcher below (Spring Security matches in declaration
                         // order, first match wins) - promo-code listing is
