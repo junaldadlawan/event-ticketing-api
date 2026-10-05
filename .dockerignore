@@ -10,3 +10,4 @@ postman/
 docs/postman/
 .claude/
 compose.yml
+logs/

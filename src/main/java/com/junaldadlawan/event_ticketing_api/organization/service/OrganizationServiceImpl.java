@@ -4,6 +4,7 @@ import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.dto.DocumentDto;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
@@ -40,7 +41,9 @@ public class OrganizationServiceImpl implements OrganizationService {
                 .status(OrganizationStatus.PENDING)
                 .documents(request.documents().stream().map(DocumentDto::toEntity).toList())
                 .build();
-        return organizationRepository.save(organization);
+        Organization saved = organizationRepository.save(organization);
+        BusinessAuditLogger.record("organization.applied", "Organization", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        return saved;
     }
 
     @Override
@@ -93,6 +96,8 @@ public class OrganizationServiceImpl implements OrganizationService {
         organizationRepository.save(organization);
 
         grantRole(applicantId, orgId, OrganizationRole.OWNER);
+        BusinessAuditLogger.record("organization.approved", "Organization", orgId,
+                BusinessAuditLogger.Outcome.SUCCESS, "owner=" + applicantId);
 
         return organization;
     }
@@ -106,7 +111,9 @@ public class OrganizationServiceImpl implements OrganizationService {
         }
         organization.setStatus(OrganizationStatus.REJECTED);
         organization.setRejectionReason(request != null ? request.reason() : null);
-        return organizationRepository.save(organization);
+        Organization saved = organizationRepository.save(organization);
+        BusinessAuditLogger.record("organization.rejected", "Organization", orgId, BusinessAuditLogger.Outcome.SUCCESS);
+        return saved;
     }
 
     @Override
