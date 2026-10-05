@@ -43,3 +43,6 @@ build/
 # (deploy/aws/terraform/github_oidc.tf's tfstate_bucket/tfstate_dynamodb_table
 # vars) - generated locally per README.md, and by CI from repo variables.
 **/backend.auto.tfvars
+
+### Local application log files (see src/main/resources/logback-spring.xml) ###
+/logs/

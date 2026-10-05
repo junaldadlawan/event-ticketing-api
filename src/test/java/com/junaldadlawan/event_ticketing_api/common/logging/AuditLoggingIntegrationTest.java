@@ -182,14 +182,21 @@ class AuditLoggingIntegrationTest {
                 .containsEntry("requestId", result.getResponse().getHeader(RequestIdFilter.HEADER));
     }
 
+    /** Everything logged during the test: the root logger's lines plus the audit logger's own (additivity=false keeps those off root). */
+    private List<ILoggingEvent> everythingLogged() {
+        List<ILoggingEvent> all = new ArrayList<>(allLogs.list);
+        all.addAll(appender.list);
+        return all;
+    }
+
     private void assertNoSecrets(String responseBody) {
-        for (ILoggingEvent event : allLogs.list) {
+        for (ILoggingEvent event : everythingLogged()) {
             assertThat(event.getFormattedMessage()).doesNotContain(PASSWORD);
             assertThat(event.getMDCPropertyMap().values()).noneMatch(value -> value.contains(PASSWORD));
         }
         assertThat(responseBody).contains("accessToken");
         String token = responseBody.replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
-        for (ILoggingEvent event : allLogs.list) {
+        for (ILoggingEvent event : everythingLogged()) {
             assertThat(event.getFormattedMessage()).doesNotContain(token);
         }
     }
@@ -201,10 +208,19 @@ class AuditLoggingIntegrationTest {
         login(user.getEmail(), "attempted-wrong-password-9");
 
         assertThat(allLogs.list).isNotEmpty();
-        for (ILoggingEvent event : allLogs.list) {
+        for (ILoggingEvent event : everythingLogged()) {
             assertThat(event.getFormattedMessage())
                     .doesNotContain(PASSWORD)
                     .doesNotContain("attempted-wrong-password-9");
         }
+    }
+
+    /** With the local split, audit lines must not also land in the application log. */
+    @Test
+    void auditLines_doNotPropagateToTheRootLogger_soTheyStayOutOfTheApplicationFile() throws Exception {
+        login(user.getEmail(), PASSWORD);
+
+        assertThat(appender.list).isNotEmpty();
+        assertThat(allLogs.list).noneMatch(event -> BusinessAuditLogger.LOGGER_NAME.equals(event.getLoggerName()));
     }
 }
