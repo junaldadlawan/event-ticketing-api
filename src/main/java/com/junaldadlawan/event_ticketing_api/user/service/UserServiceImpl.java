@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.user.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
@@ -27,7 +28,12 @@ public class UserServiceImpl implements UserService {
     @Override
     public User register(UserRequest request) {
         User newUser = User.builder().name(request.name()).email(request.email()).passwordHash(passwordEncoder.encode(request.passwordHash())).role(request.role()).build();
-        return userRepository.save(newUser);
+        User saved = userRepository.save(newUser);
+        // The role is logged on purpose: self-registration currently accepts
+        // any role from the request body, so this line makes that visible.
+        BusinessAuditLogger.recordAs(saved.getId(), "user.registered", "User", saved.getId(),
+                BusinessAuditLogger.Outcome.SUCCESS, "role=" + saved.getRole());
+        return saved;
     }
 
     @Override
@@ -57,10 +63,14 @@ public class UserServiceImpl implements UserService {
     public User updateSelfPassword(UserPasswordUpdateRequest request) {
         User user = getOrThrow(accessGuard.currentUserId());
         if(!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            BusinessAuditLogger.record("user.password_changed", "User", user.getId(),
+                    BusinessAuditLogger.Outcome.FAILURE, "current password incorrect");
             throw new BadRequestException("Current password is incorrect");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        BusinessAuditLogger.record("user.password_changed", "User", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        return saved;
     }
 
     @Override
@@ -68,6 +78,7 @@ public class UserServiceImpl implements UserService {
         User user = getOrThrow(id);
         user.markDeleted();
         userRepository.save(user);
+        BusinessAuditLogger.record("user.deleted", "User", id, BusinessAuditLogger.Outcome.SUCCESS);
     }
 
     @Override
