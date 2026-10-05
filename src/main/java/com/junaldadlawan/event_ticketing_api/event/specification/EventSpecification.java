@@ -7,13 +7,16 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.UUID;
 
 @NoArgsConstructor
 public final class EventSpecification {
 
     public static Specification<Event> hasStatus(EventStatus status) {
-        return (root,
-                criteriaQuery, criteriaBuilder) -> criteriaBuilder.equal(root.get("status"), status);
+        return (root, criteriaQuery, criteriaBuilder) -> status != null
+                ? criteriaBuilder.equal(root.get("status"), status)
+                : null;
     }
 
     public static Specification<Event> hasCategory(String category) {
@@ -34,6 +37,18 @@ public final class EventSpecification {
 
     public static Specification<Event> startBefore(Instant to) {
         return (root, query, criteriaBuilder) -> to != null ? criteriaBuilder.lessThanOrEqualTo(root.get("startAt"), to) : null;
+    }
+
+    /** null = no restriction; empty = matches nothing. */
+    public static Specification<Event> inOrganizations(Collection<UUID> organizationIds) {
+        return (root, query, criteriaBuilder) -> {
+            if (organizationIds == null) {
+                return null;
+            }
+            return organizationIds.isEmpty()
+                    ? criteriaBuilder.disjunction()
+                    : root.get("organizationId").in(organizationIds);
+        };
     }
 
     public static Specification<Event> notDeleted() {

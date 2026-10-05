@@ -416,7 +416,7 @@ class EventServiceImplTest {
     private void mockOwnerAccess(UUID eventId, EventStatus status) {
         UUID ownerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, status)));
-        when(accessGuard.isAdmin()).thenReturn(false);
+        org.mockito.Mockito.lenient().when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(ownerId);
         when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
         // lenient: not every caller of this helper exercises the save path
@@ -518,7 +518,6 @@ class EventServiceImplTest {
         UUID eventId = UUID.randomUUID();
         UUID strangerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
-        when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
@@ -540,7 +539,6 @@ class EventServiceImplTest {
         UUID otherOrgId = UUID.randomUUID();
         UUID otherOrgOwnerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
-        when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
@@ -552,17 +550,31 @@ class EventServiceImplTest {
         verify(eventRepository, never()).save(any());
     }
 
+    /** An admin may view/cancel/delete an event but NOT edit it: no admin bypass on update. */
     @Test
-    void updateEvent_admin_succeedsWithNoOrgRole() {
+    void updateEvent_adminWithNoOrgRole_throwsForbidden() {
         UUID eventId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
-        when(accessGuard.isAdmin()).thenReturn(true);
-        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accessGuard.currentUserId()).thenReturn(adminId);
+        when(accessGuard.hasRole(adminId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        when(accessGuard.hasRole(adminId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
 
-        Event result = eventService.updateEvent(eventId, new EventUpdateRequest("Renamed By Admin", null, null, null));
+        assertThatThrownBy(() -> eventService.updateEvent(eventId, new EventUpdateRequest("Renamed By Admin", null, null, null)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(accessGuard, never()).isAdmin();
+        verify(eventRepository, never()).save(any());
+    }
 
-        assertThat(result.getTitle()).isEqualTo("Renamed By Admin");
-        verify(accessGuard, never()).currentUserId();
+    /** An admin who is ALSO the organization's own owner is still just an owner here: allowed. */
+    @Test
+    void updateEvent_ownerWhoIsAlsoAdmin_succeeds() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerAccess(eventId, EventStatus.DRAFT);
+
+        Event result = eventService.updateEvent(eventId, new EventUpdateRequest("Owner Rename", null, null, null));
+
+        assertThat(result.getTitle()).isEqualTo("Owner Rename");
     }
 
     @Test
@@ -616,7 +628,6 @@ class EventServiceImplTest {
         UUID eventId = UUID.randomUUID();
         UUID otherOrgOwnerId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
-        when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
@@ -624,6 +635,108 @@ class EventServiceImplTest {
         assertThatThrownBy(() -> eventService.publishEvent(eventId))
                 .isInstanceOf(ForbiddenException.class);
         verify(eventRepository, never()).save(any());
+    }
+
+    /** An admin may not publish: no admin bypass on publish. */
+    @Test
+    void publishEvent_adminWithNoOrgRole_throwsForbidden() {
+        UUID eventId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.currentUserId()).thenReturn(adminId);
+        when(accessGuard.hasRole(adminId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        when(accessGuard.hasRole(adminId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+
+        assertThatThrownBy(() -> eventService.publishEvent(eventId))
+                .isInstanceOf(ForbiddenException.class);
+        verify(accessGuard, never()).isAdmin();
+        verify(eventRepository, never()).save(any());
+    }
+
+    // ---- listEvents() (public) and listManagedEvents() (admin / owner / organizer) ----
+
+    private static final org.springframework.data.domain.Pageable FIRST_PAGE = org.springframework.data.domain.PageRequest.of(0, 20);
+
+    @SuppressWarnings("unchecked")
+    private void stubFindAll() {
+        when(eventRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void verifyFindAllCalled(int times) {
+        verify(eventRepository, times(times)).findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class));
+    }
+
+    /** The public listing has no caller-dependent behavior at all: it never even consults the access guard. */
+    @Test
+    void listEvents_public_neverConsultsAccessGuard() {
+        stubFindAll();
+
+        eventService.listEvents(null, null, null, null, FIRST_PAGE);
+
+        verifyFindAllCalled(1);
+        verifyNoInteractions(accessGuard);
+    }
+
+    @Test
+    void listManagedEvents_admin_noOrganization_succeedsWithoutOrgLookup() {
+        when(accessGuard.isAdmin()).thenReturn(true);
+        stubFindAll();
+
+        eventService.listManagedEvents(null, null, null, null, null, null, FIRST_PAGE);
+
+        verifyFindAllCalled(1);
+        verify(accessGuard, never()).managedOrganizationIds(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(EventStatus.class)
+    void listManagedEvents_admin_anyStatus_succeeds(EventStatus status) {
+        when(accessGuard.isAdmin()).thenReturn(true);
+        stubFindAll();
+
+        eventService.listManagedEvents(null, null, status, UUID.randomUUID(), null, null, FIRST_PAGE);
+
+        verifyFindAllCalled(1);
+    }
+
+    @Test
+    void listManagedEvents_ownerOrOrganizer_ofManagedOrg_succeeds() {
+        UUID callerId = UUID.randomUUID();
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(callerId);
+        when(accessGuard.managedOrganizationIds(callerId)).thenReturn(java.util.Set.of(orgId));
+        stubFindAll();
+
+        eventService.listManagedEvents(null, null, EventStatus.DRAFT, null, null, null, FIRST_PAGE);
+        eventService.listManagedEvents(null, null, null, orgId, null, null, FIRST_PAGE);
+
+        verifyFindAllCalled(2);
+    }
+
+    @Test
+    void listManagedEvents_userWithNoManagedOrganizations_throwsForbidden() {
+        UUID callerId = UUID.randomUUID();
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(callerId);
+        when(accessGuard.managedOrganizationIds(callerId)).thenReturn(java.util.Set.of());
+
+        assertThatThrownBy(() -> eventService.listManagedEvents(null, null, null, null, null, null, FIRST_PAGE))
+                .isInstanceOf(ForbiddenException.class);
+        verifyFindAllCalled(0);
+    }
+
+    @Test
+    void listManagedEvents_organizationTheCallerDoesNotManage_throwsForbidden() {
+        UUID callerId = UUID.randomUUID();
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(callerId);
+        when(accessGuard.managedOrganizationIds(callerId)).thenReturn(java.util.Set.of(orgId));
+
+        assertThatThrownBy(() -> eventService.listManagedEvents(null, null, null, UUID.randomUUID(), null, null, FIRST_PAGE))
+                .isInstanceOf(ForbiddenException.class);
+        verifyFindAllCalled(0);
     }
 
     // ---- cancelEvent() : status-transition matrix ----

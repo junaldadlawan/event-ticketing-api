@@ -410,11 +410,12 @@ class EventOrganizationAccessIntegrationTest {
     }
 
     /**
-     * update/publish/cancel/delete all explicitly allow an admin to act
-     * regardless of org membership (same as create, per BR-AUTH-004).
+     * An admin with no org role may NOT update or publish an event (those
+     * stay with the organization's owner/organizer), but may still cancel
+     * it - the admin bypass is kept only on cancel/delete/create/get.
      */
     @Test
-    void admin_canUpdateAndCancelEventWithNoOrgRole() throws Exception {
+    void admin_cannotUpdateOrPublish_butCanCancelEvent() throws Exception {
         User owner = inMemoryUser(Role.CUSTOMER);
         User admin = inMemoryUser(Role.ADMIN);
         UUID orgId = persistOrganization(owner.getId(), OrganizationStatus.APPROVED);
@@ -430,12 +431,133 @@ class EventOrganizationAccessIntegrationTest {
                         .content("""
                                 {"title":"Renamed By Admin"}
                                 """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/events/{eventId}/publish", eventId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isForbidden());
+
+        // Neither forbidden call changed anything: still the owner's DRAFT.
+        mockMvc.perform(get("/api/v1/events/{eventId}", eventId)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Renamed By Admin"));
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.title").value(org.hamcrest.Matchers.not("Renamed By Admin")));
 
         mockMvc.perform(post("/api/v1/events/{eventId}/cancel", eventId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isAccepted());
+    }
+
+    private static String idIn(UUID id) {
+        return "$.content[?(@.id == '" + id + "')]";
+    }
+
+    /** The public listing is PUBLISHED-only for everyone - an admin token changes nothing, and `status` is not a parameter. */
+    @Test
+    void publicList_isPublishedOnly_evenForAdmin() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User admin = inMemoryUser(Role.ADMIN);
+        UUID orgId = persistOrganization(owner.getId(), OrganizationStatus.APPROVED);
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        String ownerToken = jwtService.generateAccessToken(owner);
+        String adminToken = jwtService.generateAccessToken(admin);
+
+        UUID draftId = trackCreatedEvent(createEvent(orgId, null, ownerToken));
+        UUID publishedId = trackCreatedEvent(createEvent(orgId, null, ownerToken));
+        mockMvc.perform(post("/api/v1/events/{eventId}/publish", publishedId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        for (String token : new String[]{null, ownerToken, adminToken}) {
+            var request = get("/api/v1/events").param("size", "200").param("status", "DRAFT");
+            if (token != null) {
+                request = request.header("Authorization", "Bearer " + token);
+            }
+            mockMvc.perform(request)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(idIn(publishedId)).isNotEmpty())
+                    .andExpect(jsonPath(idIn(draftId)).isEmpty());
+        }
+    }
+
+    /**
+     * GET /events/managed: admin sees every organization; an owner/organizer
+     * sees only the organizations they manage; anonymous is 401; a user with
+     * no owner/organizer role (or asking for someone else's organization) is 403.
+     */
+    @Test
+    void managedList_scopedByRole() throws Exception {
+        User ownerA = inMemoryUser(Role.CUSTOMER);
+        User organizerA = inMemoryUser(Role.CUSTOMER);
+        User ownerB = inMemoryUser(Role.CUSTOMER);
+        User plainCustomer = inMemoryUser(Role.CUSTOMER);
+        User admin = inMemoryUser(Role.ADMIN);
+        UUID orgA = persistOrganization(ownerA.getId(), OrganizationStatus.APPROVED);
+        UUID orgB = persistOrganization(ownerB.getId(), OrganizationStatus.APPROVED);
+        grantOrgRole(ownerA.getId(), orgA, OrganizationRole.OWNER);
+        grantOrgRole(organizerA.getId(), orgA, OrganizationRole.ORGANIZER);
+        grantOrgRole(ownerB.getId(), orgB, OrganizationRole.OWNER);
+        String ownerAToken = jwtService.generateAccessToken(ownerA);
+        String organizerAToken = jwtService.generateAccessToken(organizerA);
+        String ownerBToken = jwtService.generateAccessToken(ownerB);
+        String plainToken = jwtService.generateAccessToken(plainCustomer);
+        String adminToken = jwtService.generateAccessToken(admin);
+
+        UUID draftA = trackCreatedEvent(createEvent(orgA, null, ownerAToken));
+        UUID publishedA = trackCreatedEvent(createEvent(orgA, null, ownerAToken));
+        mockMvc.perform(post("/api/v1/events/{eventId}/publish", publishedA)
+                        .header("Authorization", "Bearer " + ownerAToken))
+                .andExpect(status().isOk());
+        UUID draftB = trackCreatedEvent(createEvent(orgB, null, ownerBToken));
+
+        // anonymous: blocked at the HTTP layer
+        mockMvc.perform(get("/api/v1/events/managed"))
+                .andExpect(status().isUnauthorized());
+
+        // a plain customer with no owner/organizer role anywhere: 403
+        mockMvc.perform(get("/api/v1/events/managed").header("Authorization", "Bearer " + plainToken))
+                .andExpect(status().isForbidden());
+
+        // owner and organizer of org A: org A's events in every status, never org B's
+        for (String token : new String[]{ownerAToken, organizerAToken}) {
+            mockMvc.perform(get("/api/v1/events/managed").param("size", "200")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(idIn(draftA)).isNotEmpty())
+                    .andExpect(jsonPath(idIn(publishedA)).isNotEmpty())
+                    .andExpect(jsonPath(idIn(draftB)).isEmpty());
+        }
+
+        // status filter narrows it
+        mockMvc.perform(get("/api/v1/events/managed").param("size", "200").param("status", "DRAFT")
+                        .header("Authorization", "Bearer " + ownerAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(idIn(draftA)).isNotEmpty())
+                .andExpect(jsonPath(idIn(publishedA)).isEmpty());
+
+        // asking for an organization they don't manage: 403
+        mockMvc.perform(get("/api/v1/events/managed").param("organizationId", orgB.toString())
+                        .header("Authorization", "Bearer " + ownerAToken))
+                .andExpect(status().isForbidden());
+
+        // admin: everything, and can narrow by organization
+        mockMvc.perform(get("/api/v1/events/managed").param("size", "200")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(idIn(draftA)).isNotEmpty())
+                .andExpect(jsonPath(idIn(publishedA)).isNotEmpty())
+                .andExpect(jsonPath(idIn(draftB)).isNotEmpty());
+        mockMvc.perform(get("/api/v1/events/managed").param("size", "200").param("organizationId", orgB.toString())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(idIn(draftB)).isNotEmpty())
+                .andExpect(jsonPath(idIn(draftA)).isEmpty());
+
+        // bogus status: 400
+        mockMvc.perform(get("/api/v1/events/managed").param("status", "NOT_A_STATUS")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

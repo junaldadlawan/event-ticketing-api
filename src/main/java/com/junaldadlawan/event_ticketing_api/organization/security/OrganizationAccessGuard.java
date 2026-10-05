@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.organization.security;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
+import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Imperative, service-layer authorization helper for the organization module.
@@ -46,6 +50,15 @@ public class OrganizationAccessGuard {
 
     public boolean hasRole(UUID userId, UUID organizationId, OrganizationRole role) {
         return organizationMemberRepository.existsByUserIdAndOrganizationIdAndRolesContaining(userId, organizationId, role);
+    }
+
+    /** Ids of every organization where the user is an OWNER or an ORGANIZER. */
+    public Set<UUID> managedOrganizationIds(UUID userId) {
+        return organizationMemberRepository
+                .findDistinctByUserIdAndRolesIn(userId, EnumSet.of(OrganizationRole.OWNER, OrganizationRole.ORGANIZER))
+                .stream()
+                .map(OrganizationMember::getOrganizationId)
+                .collect(Collectors.toSet());
     }
 
     public boolean isMember(UUID userId, UUID organizationId) {

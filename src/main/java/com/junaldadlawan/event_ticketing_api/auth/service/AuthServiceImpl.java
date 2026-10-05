@@ -71,6 +71,17 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findById(UUID.fromString(claims.getSubject()))
                 .orElseThrow(InvalidCredentialsException::new);
 
+        // Same account-state rules login enforces: a refresh token must not
+        // outlive a suspension or soft-delete. 403 (not 401) is safe here
+        // because the caller already proved possession of a valid refresh
+        // token, so nothing about account existence is being leaked.
+        if (user.getDeletedAt() != null) {
+            throw new InvalidCredentialsException();
+        }
+        if (user.getAccountStatus() == AccountStatus.SUSPENDED) {
+            throw new ForbiddenException("Account is suspended");
+        }
+
         return new AccessTokenResponse(
                 jwtService.generateAccessToken(user),
                 jwtService.getAccessTokenExpirySeconds());

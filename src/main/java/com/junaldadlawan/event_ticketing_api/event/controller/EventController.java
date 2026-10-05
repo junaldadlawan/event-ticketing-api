@@ -5,6 +5,7 @@ import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
+import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.service.EventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,28 @@ public class EventController {
     ) {
         return PageResponse.from(
                 eventService.listEvents(category, keyword, startsAfter, startsBefore, pageable)
+                        .map(this::toResponse)
+        );
+    }
+
+    /**
+     * Management listing for admin / organization owner / organizer: every
+     * status, scoped to the organizations the caller manages (an admin sees
+     * all). Authenticated at the HTTP layer (SecurityConfig), unlike the
+     * public {@link #search} above.
+     */
+    @GetMapping("/managed")
+    public PageResponse<EventResponse> managed(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) EventStatus status,
+            @RequestParam(required = false) UUID organizationId,
+            @RequestParam(required = false) Instant startsAfter,
+            @RequestParam(required = false) Instant startsBefore,
+            @PageableDefault(size = 20) Pageable pageable
+    ) {
+        return PageResponse.from(
+                eventService.listManagedEvents(category, keyword, status, organizationId, startsAfter, startsBefore, pageable)
                         .map(this::toResponse)
         );
     }
