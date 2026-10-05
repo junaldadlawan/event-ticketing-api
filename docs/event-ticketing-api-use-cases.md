@@ -200,6 +200,10 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
      `published`, or → `cancelled`).
   2. If cancelled, API triggers an automated refund/credit workflow for
      every ticket holder.
+- **Note:** publishing and updating are for the owning organization's
+  owner/organizer only; a platform admin cannot do either (an admin can
+  view every event's status, cancel or delete it, or moderate it - see
+  UC-ADMIN-02 and BR-AUTH-004).
 - **Related rules:** BR-EVENT-001, BR-PAY-005
 
 ### UC-EVENT-04: Create a Ticket Type

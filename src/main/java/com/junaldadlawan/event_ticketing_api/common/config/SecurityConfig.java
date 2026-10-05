@@ -29,7 +29,12 @@ public class SecurityConfig {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // refresh/logout are public on purpose: a client calls refresh
+                        // precisely because its access token has expired, so it has no
+                        // valid bearer token to send. Both are guarded by possession of
+                        // a signed, stored, unrevoked refresh token in the request body.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
+                                "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
                         // Must precede the broader GET /api/v1/events/** permitAll
                         // matcher below (Spring Security matches in declaration
                         // order, first match wins) - promo-code listing is
@@ -65,6 +70,12 @@ public class SecurityConfig {
                         // must precede the broader GET /api/v1/events/** permitAll matcher
                         // below.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/analytics").authenticated()
+                        // Same reasoning again: GET /events/managed is the management
+                        // listing (admin / org owner / organizer, any status) - NOT
+                        // public, unlike GET /events - must precede the broader
+                        // GET /api/v1/events/** permitAll matcher below. Which events a
+                        // given caller sees is enforced in EventServiceImpl.listManagedEvents.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/managed").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or
