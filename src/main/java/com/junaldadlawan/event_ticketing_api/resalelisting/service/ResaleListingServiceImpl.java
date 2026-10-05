@@ -6,6 +6,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.PaymentFailedException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
@@ -108,7 +109,10 @@ public class ResaleListingServiceImpl implements ResaleListingService {
                 .status(ResaleListingStatus.ACTIVE)
                 .build();
         try {
-            return ResaleListingResponse.from(resaleListingRepository.save(listing));
+            ResaleListing savedListing = resaleListingRepository.save(listing);
+            BusinessAuditLogger.record("resale_listing.created", "ResaleListing", savedListing.getId(),
+                    BusinessAuditLogger.Outcome.SUCCESS, "ticket=" + ticketId);
+            return ResaleListingResponse.from(savedListing);
         } catch (DataIntegrityViolationException e) {
             // Lost a race to a concurrent create for the same ticket - V14's
             // partial unique index (ticket_id WHERE status='ACTIVE') is the
@@ -152,6 +156,7 @@ public class ResaleListingServiceImpl implements ResaleListingService {
         listing.setStatus(ResaleListingStatus.CANCELLED);
         listing.setResolvedAt(Instant.now());
         resaleListingRepository.save(listing);
+        BusinessAuditLogger.record("resale_listing.cancelled", "ResaleListing", listingId, BusinessAuditLogger.Outcome.SUCCESS);
     }
 
     @Override
@@ -219,6 +224,8 @@ public class ResaleListingServiceImpl implements ResaleListingService {
         if (!result.successful()) {
             // No Order/Payment/listing/ticket state touched on this path -
             // listing remains ACTIVE for retry, same shape as checkout's 402.
+            BusinessAuditLogger.recordAs(buyerId, "resale.payment_failed", "ResaleListing", listingId,
+                    BusinessAuditLogger.Outcome.FAILURE, result.failureReason());
             throw new PaymentFailedException(result.failureReason() != null ? result.failureReason() : "Payment failed");
         }
 
@@ -253,6 +260,11 @@ public class ResaleListingServiceImpl implements ResaleListingService {
             key.setOrderId(savedOrder.getId());
             idempotencyKeyRepository.save(key);
         });
+
+        BusinessAuditLogger.recordAs(buyerId, "resale.purchased", "Order", savedOrder.getId(),
+                BusinessAuditLogger.Outcome.SUCCESS,
+                "listing=" + listingId + " total=" + listing.getAskingPrice().getAmount()
+                        + " " + listing.getAskingPrice().getCurrency());
 
         return OrderResponse.from(savedOrder, List.of(transferredTicket));
     }

@@ -75,7 +75,7 @@ each item can be re-verified rather than taken on faith.
 |---|---|---|---|---|---|
 | O-1 | **Spring Boot Actuator** with separate liveness/readiness probes; point the ALB/ECS health check at it instead of a DB-backed business endpoint | P1 | ⬜ | No Actuator in `pom.xml`; ALB and Docker `HEALTHCHECK` hit `/api/v1/events`. | §5.5 |
 | O-2 | **Metrics** (Micrometer → CloudWatch/Prometheus): request latency by endpoint, checkout success/failure, inventory holds, payment gateway errors | P1 | ⬜ | Not present. | §5.5 |
-| O-3 | **Structured JSON logging with correlation IDs** (request id in MDC, propagated in responses) | P1 | ⬜ | No log configuration or MDC usage; `show-sql=true` in base config is also noisy. | §5.5 |
+| O-3 | **Structured JSON logging with correlation IDs** (request id in MDC, propagated in responses) | P1 | ✅ | Done: `RequestIdFilter` (`X-Request-Id`), JSON logs in the `prod` profile, a dedicated `AUDIT` logger for business transactions, dev/prod log levels. See `docs/event-ticketing-api-logging.md`. Remaining: alarms on the logs (O-4). | §5.5 |
 | O-4 | **CloudWatch alarms + SNS paging** — 5xx rate, unhealthy targets, task restarts, RDS CPU/storage/connections, payment failures | P1 | ⬜ | No alarms, dashboards, or SNS topics in Terraform. | §5.5 |
 | O-5 | **Distributed tracing** (OpenTelemetry) across API → DB → payment gateway | P3 | ⬜ | Not present. | §5.5 |
 | O-6 | **Business dashboards** over the existing analytics endpoints | P3 | ⬜ | `GET /events/{id}/analytics` and `/analytics/platform` exist (Phase 14) but nothing visualizes them. | — |

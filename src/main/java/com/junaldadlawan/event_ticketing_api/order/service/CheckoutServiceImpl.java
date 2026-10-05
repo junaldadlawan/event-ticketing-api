@@ -11,6 +11,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.GoneException;
 import com.junaldadlawan.event_ticketing_api.common.exception.PaymentFailedException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -202,6 +203,8 @@ public class CheckoutServiceImpl implements CheckoutService {
             // BR-CART-002: no Order/Payment row is ever persisted on this
             // path. Cart and holds remain fully intact - nothing above this
             // point touched CartItem/TicketType/Seat state.
+            BusinessAuditLogger.recordAs(buyerId, "checkout.payment_failed", "Cart", cart.getId(),
+                    BusinessAuditLogger.Outcome.FAILURE, result.failureReason());
             throw new PaymentFailedException(
                     result.failureReason() != null ? result.failureReason() : "Payment failed");
         }
@@ -272,6 +275,10 @@ public class CheckoutServiceImpl implements CheckoutService {
         // (NFR 5.2) so this can't fail an otherwise-successful checkout.
         notificationService.notify(buyerId, NotificationType.ORDER_CONFIRMATION, "Order", savedOrder.getId());
         notificationService.notify(buyerId, NotificationType.PAYMENT_RECEIPT, "Order", savedOrder.getId());
+
+        BusinessAuditLogger.recordAs(buyerId, "checkout.completed", "Order", savedOrder.getId(),
+                BusinessAuditLogger.Outcome.SUCCESS,
+                "total=" + total.getAmount() + " " + total.getCurrency() + " tickets=" + issuedTickets.size());
 
         return OrderResponse.from(savedOrder, issuedTickets);
     }

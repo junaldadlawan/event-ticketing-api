@@ -9,6 +9,7 @@ import com.junaldadlawan.event_ticketing_api.auth.entity.RefreshToken;
 import com.junaldadlawan.event_ticketing_api.auth.repository.RefreshTokenRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.InvalidCredentialsException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 import com.junaldadlawan.event_ticketing_api.user.enums.AccountStatus;
 import com.junaldadlawan.event_ticketing_api.user.repository.UserRepository;
@@ -32,10 +33,16 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public TokenPairResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email())
-                .orElseThrow(InvalidCredentialsException::new);
+        User user = userRepository.findByEmail(request.email()).orElse(null);
+        if (user == null) {
+            BusinessAuditLogger.recordAs(null, "auth.login", "User", null, BusinessAuditLogger.Outcome.FAILURE,
+                    "unknown email " + BusinessAuditLogger.maskEmail(request.email()));
+            throw new InvalidCredentialsException();
+        }
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            BusinessAuditLogger.recordAs(user.getId(), "auth.login", "User", user.getId(),
+                    BusinessAuditLogger.Outcome.FAILURE, "wrong password");
             throw new InvalidCredentialsException();
         }
 
@@ -45,10 +52,14 @@ public class AuthServiceImpl implements AuthService {
         // 403 that would leak account-existence/suspension info to an
         // unauthenticated attacker.
         if (user.getAccountStatus() == AccountStatus.SUSPENDED) {
+            BusinessAuditLogger.recordAs(user.getId(), "auth.login", "User", user.getId(),
+                    BusinessAuditLogger.Outcome.FAILURE, "account suspended");
             throw new ForbiddenException("Account is suspended");
         }
 
         String refreshToken = issueRefreshToken(user);
+        BusinessAuditLogger.recordAs(user.getId(), "auth.login", "User", user.getId(),
+                BusinessAuditLogger.Outcome.SUCCESS, null);
 
         return new TokenPairResponse(
                 jwtService.generateAccessToken(user),

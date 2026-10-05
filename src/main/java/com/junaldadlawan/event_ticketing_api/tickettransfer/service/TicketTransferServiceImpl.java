@@ -4,6 +4,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.resalelisting.enums.ResaleListingStatus;
 import com.junaldadlawan.event_ticketing_api.resalelisting.repository.ResaleListingRepository;
@@ -108,6 +109,8 @@ public class TicketTransferServiceImpl implements TicketTransferService {
                 .source(source)
                 .build();
         ticketTransferRepository.save(transfer);
+        BusinessAuditLogger.record("ticket.transferred", "Ticket", ticket.getId(), BusinessAuditLogger.Outcome.SUCCESS,
+                "from=" + fromUserId + " to=" + toUserId + " source=" + source);
 
         return saved;
     }

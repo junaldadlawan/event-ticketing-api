@@ -5,6 +5,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.dispute.dto.DisputeCreateRequest;
 import com.junaldadlawan.event_ticketing_api.dispute.dto.DisputeResponse;
 import com.junaldadlawan.event_ticketing_api.dispute.dto.DisputeUpdateRequest;
@@ -76,7 +77,9 @@ public class DisputeServiceImpl implements DisputeService {
                 .status(DisputeStatus.OPEN)
                 .reason(request.reason())
                 .build();
-        return DisputeResponse.from(disputeRepository.save(dispute));
+        Dispute saved = disputeRepository.save(dispute);
+        BusinessAuditLogger.record("dispute.raised", "Dispute", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        return DisputeResponse.from(saved);
     }
 
     @Override
