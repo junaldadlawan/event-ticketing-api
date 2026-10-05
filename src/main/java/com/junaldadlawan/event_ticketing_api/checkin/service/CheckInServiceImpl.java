@@ -24,6 +24,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
@@ -113,6 +114,11 @@ public class CheckInServiceImpl implements CheckInService {
                     .result(outcome.result())
                     .build());
         }
+        BusinessAuditLogger.record("checkin.validated", "Ticket", outcome.ticketId(),
+                outcome.result() == CheckInResult.VALID
+                        ? BusinessAuditLogger.Outcome.SUCCESS
+                        : BusinessAuditLogger.Outcome.FAILURE,
+                "result=" + outcome.result() + " device=" + device.getId());
         return new ValidationResultResponse(outcome.ticketId(), outcome.result(), scannedAt, buildSummary(outcome.ticket()));
     }
 
@@ -152,6 +158,11 @@ public class CheckInServiceImpl implements CheckInService {
                     .result(outcome.result())
                     .build());
         }
+        BusinessAuditLogger.record("checkin.fallback_scan", "Ticket", outcome.ticketId(),
+                outcome.result() == CheckInResult.VALID
+                        ? BusinessAuditLogger.Outcome.SUCCESS
+                        : BusinessAuditLogger.Outcome.FAILURE,
+                "result=" + outcome.result() + " device=" + device.getId());
         return new ValidationResultResponse(outcome.ticketId(), outcome.result(), savedRecord.getSyncedAt(), buildSummary(outcome.ticket()));
     }
 
