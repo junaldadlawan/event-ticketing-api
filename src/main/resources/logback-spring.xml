@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging layout:
+    - prod: JSON on stdout ONLY. The ECS awslogs driver ships stdout to
+      CloudWatch, and files inside a Fargate container are lost on restart.
+    - every other profile (dev, and the default local run):
+        * console: readable text (logging.pattern.console) - easy to read in
+          the IDE;
+        * two rolling log files in JSON (same format and fields as prod), in
+          one folder per day, each with a size cap per file:
+
+              logs/2026-10-05/application.0.log   <- everything except audit
+              logs/2026-10-05/application.1.log   <- started when .0 hits the cap
+              logs/2026-10-05/audit.0.log         <- audit log only
+              logs/2026-10-06/application.0.log   <- new day, new folder
+
+          The folder, per-file size cap, retention, total cap and JSON format
+          are configurable with app.logging.file.* (see application.properties).
+  Log LEVELS are not set here - they come from logging.level.* in the
+  profile's properties file, exactly as before.
+
+  Spring Boot only switches to its JSON encoder in its OWN default setup; with
+  a custom file like this one the StructuredLogEncoder must be declared
+  explicitly, or the output silently falls back to plain text.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="LOG_DIR" source="app.logging.file.dir" defaultValue="logs"/>
+    <springProperty scope="context" name="LOG_MAX_FILE_SIZE" source="app.logging.file.max-size" defaultValue="10MB"/>
+    <springProperty scope="context" name="LOG_MAX_HISTORY_DAYS" source="app.logging.file.max-history-days" defaultValue="14"/>
+    <springProperty scope="context" name="LOG_TOTAL_SIZE_CAP" source="app.logging.file.total-size-cap" defaultValue="500MB"/>
+    <springProperty scope="context" name="LOG_FILE_FORMAT" source="app.logging.file.format" defaultValue="logstash"/>
+
+    <springProfile name="!prod">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+        <!-- Two separate files in the same dated folder:
+               application.<n>.log  everything EXCEPT the audit log
+               audit.<n>.log        only the AUDIT logger (business transactions)
+             No <file> element on purpose: the active file IS the dated path
+             below, so today's log is already inside today's folder (a fixed
+             <file> would sit outside it until the first rollover). -->
+        <appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <encoder class="org.springframework.boot.logging.logback.StructuredLogEncoder">
+                <format>${LOG_FILE_FORMAT}</format>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/%d{yyyy-MM-dd}/application.%i.log</fileNamePattern>
+                <maxFileSize>${LOG_MAX_FILE_SIZE}</maxFileSize>
+                <maxHistory>${LOG_MAX_HISTORY_DAYS}</maxHistory>
+                <totalSizeCap>${LOG_TOTAL_SIZE_CAP}</totalSizeCap>
+                <cleanHistoryOnStart>true</cleanHistoryOnStart>
+            </rollingPolicy>
+        </appender>
+
+        <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <encoder class="org.springframework.boot.logging.logback.StructuredLogEncoder">
+                <format>${LOG_FILE_FORMAT}</format>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/%d{yyyy-MM-dd}/audit.%i.log</fileNamePattern>
+                <maxFileSize>${LOG_MAX_FILE_SIZE}</maxFileSize>
+                <maxHistory>${LOG_MAX_HISTORY_DAYS}</maxHistory>
+                <totalSizeCap>${LOG_TOTAL_SIZE_CAP}</totalSizeCap>
+                <cleanHistoryOnStart>true</cleanHistoryOnStart>
+            </rollingPolicy>
+        </appender>
+
+        <!-- additivity=false keeps audit lines OUT of the root logger's
+             appenders (so out of the application file); they go to their own
+             file and still show on the console. The level comes from
+             logging.level.AUDIT. In prod there is no such split: audit lines
+             stay on stdout, tagged log_type=audit, for CloudWatch. -->
+        <logger name="AUDIT" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="AUDIT_FILE"/>
+        </logger>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="APP_FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <springProperty scope="context" name="CONSOLE_STRUCTURED_FORMAT"
+                        source="logging.structured.format.console" defaultValue="logstash"/>
+        <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="org.springframework.boot.logging.logback.StructuredLogEncoder">
+                <format>${CONSOLE_STRUCTURED_FORMAT}</format>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
+    </springProfile>
+</configuration>

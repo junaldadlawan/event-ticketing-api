@@ -42,6 +42,41 @@ The `dev` profile also prints bound SQL parameter values
 (`org.hibernate.orm.jdbc.bind=TRACE`), which can include password hashes and
 token ids. That is for local use only; never enable it outside dev.
 
+## Where the logs go
+
+| | Console | File |
+|---|---|---|
+| `dev` / default local run | Readable text (application and audit lines together) | **Two JSON files** per day (same format and fields as prod): `logs/<yyyy-MM-dd>/application.<n>.log` (everything except audit) and `logs/<yyyy-MM-dd>/audit.<n>.log` (audit log only) |
+| `prod` (ECS) | JSON | None. stdout only, shipped to CloudWatch |
+
+Local files (never in prod, where container files vanish on restart):
+- **One folder per day**; today's log is already inside today's folder.
+- **Size cap per file**: when a file reaches `app.logging.file.max-size`
+  (default 10MB) the next numbered file starts (`.0.log`, `.1.log`, ...). A file
+  can end a few hundred bytes over the cap, because it rolls after the line that
+  crosses it.
+- **Retention**: `max-history-days` (14) and `total-size-cap` (500MB) delete
+  the oldest.
+- Settings: `app.logging.file.dir|max-size|max-history-days|total-size-cap|format`
+  (`format` is `logstash` or `ecs`). `logs/` is git-ignored; test runs write to
+  `target/test-logs` instead.
+
+Audit lines are kept out of the application file locally (the `AUDIT` logger
+has `additivity="false"` in `logback-spring.xml`), so each file is its own
+stream. In prod there is no split: both stay on stdout and you filter on
+`log_type` in CloudWatch.
+
+Finding things locally (each line is one JSON object):
+
+```
+type logs\2026-10-05\audit.0.log
+findstr /c:"3f2a9c1e-request-id" logs\2026-10-05\*.log
+```
+
+(`cat logs/2026-10-05/audit.*.log` and `grep -h "<request-id>" logs/2026-10-05/*.log`
+in Git Bash.) The same request id appears in both files, so a request can be
+followed across them.
+
 ## Correlation ids
 
 `RequestIdFilter` gives every request an id, returned in the `X-Request-Id`
