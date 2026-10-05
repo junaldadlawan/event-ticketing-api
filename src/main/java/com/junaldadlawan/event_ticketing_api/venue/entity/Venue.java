@@ -1,8 +1,10 @@
 package com.junaldadlawan.event_ticketing_api.venue.entity;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
+import com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -16,6 +18,7 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
+@EntityListeners(PublicEventCacheEvictionListener.class)
 @Table(name = "venues")
 @Getter
 @Setter
