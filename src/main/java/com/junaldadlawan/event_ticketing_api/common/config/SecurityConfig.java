@@ -70,6 +70,12 @@ public class SecurityConfig {
                         // must precede the broader GET /api/v1/events/** permitAll matcher
                         // below.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/analytics").authenticated()
+                        // Same reasoning again: GET /events/managed is the management
+                        // listing (admin / org owner / organizer, any status) - NOT
+                        // public, unlike GET /events - must precede the broader
+                        // GET /api/v1/events/** permitAll matcher below. Which events a
+                        // given caller sees is enforced in EventServiceImpl.listManagedEvents.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/managed").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or

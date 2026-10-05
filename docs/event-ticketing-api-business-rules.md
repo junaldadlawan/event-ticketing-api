@@ -22,7 +22,7 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-AUTH-001 | Roles are not mutually exclusive at the account level — a single account may be an organizer on some events and an attendee on others. (§3) |
 | BR-AUTH-002 | An organizer may only manage their own events, not another organizer's. (§4.1) |
 | BR-AUTH-003 | Check-in staff may only validate tickets for events they are assigned to. (§4.1) |
-| BR-AUTH-004 | Admins have platform-wide access, unscoped by organization or event. (§4.1) |
+| BR-AUTH-004 | Admins have platform-wide access, unscoped by organization or event. Exception for events: an admin may view any event in any status, cancel or delete it, and moderate it (suspend/reinstate/remove), but may **not** update or publish an event - those stay with the owning organization's owner/organizer. (§4.1) |
 | BR-AUTH-005 | Only an organization's owner — not an organizer it has assigned — may assign *other users* the organizer or scanner/check-in-staff role within that organization. (§3, §4.1) |
 | BR-AUTH-006 | An assigned role (organizer or scanner/check-in staff) is scoped to that one organization's own events. (§4.1) |
 | BR-AUTH-007 | Roles within an organization are independently combinable, not mutually exclusive or hierarchical — an owner may also be an organizer and/or a scanner/check-in staff for that same organization; an organizer may also be a scanner. (§3) |

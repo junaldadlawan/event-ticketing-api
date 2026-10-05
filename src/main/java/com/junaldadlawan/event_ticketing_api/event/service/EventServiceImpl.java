@@ -111,6 +111,35 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
+    public Page<Event> listManagedEvents(String category, String keyword, EventStatus status, UUID organizationId,
+                                         Instant from, Instant to, Pageable pageable) {
+        // null scope = unrestricted (admin, no organization filter)
+        Set<UUID> scope;
+        if (accessGuard.isAdmin()) {
+            scope = organizationId == null ? null : Set.of(organizationId);
+        } else {
+            Set<UUID> managed = accessGuard.managedOrganizationIds(accessGuard.currentUserId());
+            if (managed.isEmpty()) {
+                throw new ForbiddenException("Only admins and organization owners or organizers may list managed events");
+            }
+            if (organizationId != null && !managed.contains(organizationId)) {
+                throw new ForbiddenException("You do not manage that organization");
+            }
+            scope = organizationId == null ? managed : Set.of(organizationId);
+        }
+
+        Specification<Event> specification =
+                Specification.where(EventSpecification.notDeleted())
+                .and(EventSpecification.inOrganizations(scope))
+                .and(EventSpecification.hasStatus(status))
+                .and(EventSpecification.hasCategory(category))
+                .and(EventSpecification.titleContains(keyword))
+                .and(EventSpecification.startsAfter(from))
+                .and(EventSpecification.startBefore(to));
+        return eventRepository.findAll(specification, pageable);
+    }
+
+    @Override
     public Event getEvent(UUID eventId) {
         Event event = getOrThrow(eventId);
         if (event.getStatus() == EventStatus.DRAFT) {
@@ -122,7 +151,7 @@ public class EventServiceImpl implements EventService {
     @Override
     public Event updateEvent(UUID eventId, EventUpdateRequest request) {
         Event event = getOrThrow(eventId);
-        requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        requireOwnerOrOrganizer(event.getOrganizationId());
 
         // Phase 12 (BR-ADMIN-002): an admin-suspended event is frozen -
         // even its own owner/organizer can't edit it out from under the
@@ -160,7 +189,7 @@ public class EventServiceImpl implements EventService {
     @Override
     public Event publishEvent(UUID eventId) {
         Event event = getOrThrow(eventId);
-        requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        requireOwnerOrOrganizer(event.getOrganizationId());
 
         Organization organization = organizationRepository.findById(event.getOrganizationId())
                 .orElseThrow(() -> new ResourceNotFoundException("Organization " + event.getOrganizationId() + " not found"));
@@ -249,6 +278,18 @@ public class EventServiceImpl implements EventService {
         UUID callerId = accessGuard.currentUserId();
         if (!isOwnerOrOrganizer(callerId, organizationId)) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event");
+        }
+    }
+
+    /**
+     * Same org-role check as above but with NO admin bypass: an admin may
+     * view, cancel and delete an event (and moderate it), but may not edit
+     * or publish it - those stay with the organization's owner/organizer.
+     */
+    private void requireOwnerOrOrganizer(UUID organizationId) {
+        UUID callerId = accessGuard.currentUserId();
+        if (!isOwnerOrOrganizer(callerId, organizationId)) {
+            throw new ForbiddenException("Only the organization's owner or organizer may update or publish this event");
         }
     }
 
