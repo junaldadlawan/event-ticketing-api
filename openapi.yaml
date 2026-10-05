@@ -433,7 +433,7 @@ paths:
       operationId: listEvents
       tags: [Events]
       security: []
-      summary: Search/list published events (public)
+      summary: Search/list published events (public - PUBLISHED only for every caller; see /events/managed for other statuses)
       parameters:
         - name: q
           in: query
@@ -490,6 +490,58 @@ paths:
               schema: { $ref: "#/components/schemas/Event" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /events/managed:
+    get:
+      operationId: listManagedEvents
+      tags: [Events]
+      summary: List events in any status (admin, or owner/organizer of the organizations they manage)
+      description: >
+        Not public (requires a bearer token). An admin sees every organization's
+        events and may narrow by organizationId; an owner or organizer sees only
+        events of organizations where they hold that role. Soft-deleted events are
+        excluded. A caller who owns/organizes no organization, or who asks for an
+        organization they do not manage, gets 403. The public GET /events always
+        returns PUBLISHED events only.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, PUBLISHED, ON_SALE, SOLD_OUT, CANCELLED, COMPLETED, SUSPENDED]
+        - name: organizationId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: keyword
+          in: query
+          schema: { type: string }
+        - name: startsAfter
+          in: query
+          schema: { type: string, format: date-time }
+        - name: startsBefore
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: A page of events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /events/{eventId}:
     parameters:
       - $ref: "#/components/parameters/EventId"
@@ -508,7 +560,7 @@ paths:
     patch:
       operationId: updateEvent
       tags: [Events]
-      summary: Update an Event (organizer or owner of the owning organization)
+      summary: Update an Event (organizer or owner of the owning organization only - an admin gets 403)
       requestBody:
         required: true
         content:
@@ -527,7 +579,7 @@ paths:
     post:
       operationId: publishEvent
       tags: [Events]
-      summary: Transition an Event draft -> published
+      summary: Transition an Event draft -> published (organizer or owner only - an admin gets 403)
       responses:
         "200":
           description: Published
@@ -546,7 +598,7 @@ paths:
     post:
       operationId: cancelEvent
       tags: [Events]
-      summary: Cancel an Event; triggers async refunds for all issued tickets
+      summary: Cancel an Event (organizer, owner, or admin); triggers refunds for all issued tickets
       responses:
         "202":
           description: Cancellation accepted; refund workflow runs asynchronously
