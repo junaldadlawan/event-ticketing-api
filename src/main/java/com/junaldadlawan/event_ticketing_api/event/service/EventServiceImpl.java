@@ -6,6 +6,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -95,7 +96,9 @@ public class EventServiceImpl implements EventService {
                 .status(EventStatus.DRAFT)
                 .ticketPrefix(generateUniqueTicketPrefix())
                 .build();
-        return eventRepository.save(newEvent);
+        Event created = eventRepository.save(newEvent);
+        BusinessAuditLogger.record("event.created", "Event", created.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        return created;
     }
 
     @Override
@@ -201,7 +204,9 @@ public class EventServiceImpl implements EventService {
         }
 
         event.setStatus(EventStatus.PUBLISHED);
-        return eventRepository.save(event);
+        Event published = eventRepository.save(event);
+        BusinessAuditLogger.record("event.published", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
+        return published;
     }
 
     @Override
@@ -248,6 +253,7 @@ public class EventServiceImpl implements EventService {
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         event.markDeleted();
         eventRepository.save(event);
+        BusinessAuditLogger.record("event.deleted", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
     }
 
     @Override

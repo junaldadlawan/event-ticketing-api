@@ -8,12 +8,14 @@ name: CI
 # This is deliberately separate from deploy.yml (which builds/pushes/
 # deploys on push to main): deploy.yml's own Docker build runs with
 # -DskipTests, so this workflow is currently the ONLY place tests actually
-# run in CI. It runs on every branch push and every PR so failures surface
-# before a merge to main, not after.
+# run in CI.
+#
+# Runs ONLY when something is pushed to main (which includes the push a
+# merged pull request creates) - not on feature branches or on pull requests.
+# Run the suite locally before merging; this workflow then verifies main.
 on:
   push:
-    branches: ["**"]
-  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -49,7 +51,12 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: ./mvnw -B clean test
+        # mvnw is committed without the executable bit (created on Windows,
+        # git mode 100644), so a bare ./mvnw fails with exit code 126 on the
+        # Linux runner. The Dockerfile does the same chmod.
+        run: |
+          chmod +x ./mvnw
+          ./mvnw -B clean test
 
       - name: Upload test reports on failure
         if: failure()

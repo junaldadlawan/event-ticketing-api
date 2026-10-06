@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.auditlog.service;
 
 import com.junaldadlawan.event_ticketing_api.auditlog.entity.AuditLogEntry;
 import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
+import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,10 @@ public class AuditLogServiceImpl implements AuditLogService {
             log.error("Failed to record audit log entry (actorId={}, action={}, targetType={}, targetId={})",
                     actorId, action, targetType, targetId, e);
         }
+        // The audit LOG line is emitted either way (it is the independent
+        // stream), so every action the DB audit trail already records
+        // also appears in the log - no extra call sites needed for those.
+        BusinessAuditLogger.recordAs(actorId, action, targetType, targetId, BusinessAuditLogger.Outcome.SUCCESS, null);
     }
 
     @Override

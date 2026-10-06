@@ -50,6 +50,11 @@ class EventControllerTest {
     @MockitoBean
     private EventService eventService;
 
+    // Returns null by default = "not a cacheable public event", so the controller
+    // falls through to the (mocked) EventService path these tests already stub.
+    @MockitoBean
+    private com.junaldadlawan.event_ticketing_api.event.service.EventQueryService eventQueryService;
+
     @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 

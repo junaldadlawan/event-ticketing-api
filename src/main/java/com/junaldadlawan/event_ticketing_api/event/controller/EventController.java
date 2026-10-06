@@ -6,6 +6,7 @@ import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
+import com.junaldadlawan.event_ticketing_api.event.service.EventQueryService;
 import com.junaldadlawan.event_ticketing_api.event.service.EventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import java.util.UUID;
 public class EventController {
 
     private final EventService eventService;
+    private final EventQueryService eventQueryService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -40,10 +42,8 @@ public class EventController {
             @RequestParam(required = false) Instant startsBefore,
             @PageableDefault(size = 20) Pageable pageable
     ) {
-        return PageResponse.from(
-                eventService.listEvents(category, keyword, startsAfter, startsBefore, pageable)
-                        .map(this::toResponse)
-        );
+        // Cached (see EventQueryService): the public list is the same for every caller.
+        return eventQueryService.searchPublic(category, keyword, startsAfter, startsBefore, pageable);
     }
 
     /**
@@ -70,6 +70,13 @@ public class EventController {
 
     @GetMapping("/{eventId}")
     public EventResponse get(@PathVariable UUID eventId) {
+        // Cached for non-draft events (public anyway). A DRAFT returns null here and
+        // falls through to the normal authorized path, so a draft is never cached or
+        // served from the cache.
+        EventResponse publicEvent = eventQueryService.findPublic(eventId);
+        if (publicEvent != null) {
+            return publicEvent;
+        }
         return toResponse(eventService.getEvent(eventId));
     }
 

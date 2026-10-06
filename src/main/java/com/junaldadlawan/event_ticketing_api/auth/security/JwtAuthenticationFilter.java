@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -42,6 +43,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     var authentication =
                             new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authentication);
+                    // Picked up by every log line for the rest of this request
+                    // (removed by RequestIdFilter when the request ends).
+                    MDC.put("userId", claims.getSubject());
                 }
             } catch (JwtException e) {
                 // Code-reviewer MEDIUM (Phase 10 review): deliberately does

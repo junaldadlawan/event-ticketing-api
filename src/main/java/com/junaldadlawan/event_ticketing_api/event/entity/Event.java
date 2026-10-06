@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.event.entity;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
+import com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
+@EntityListeners(PublicEventCacheEvictionListener.class)
 @Table(name = "events")
 @Getter
 @Setter
