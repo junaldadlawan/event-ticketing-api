@@ -178,9 +178,10 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
   (conceptually) approved organization.
 - **Main flow:**
   1. Organizer submits event details: title, description, category,
-     venue/location, start/end date-time, timezone, images.
+     venue/location, start/end date-time, timezone, images. The category
+     must be an active category from `GET /api/v1/categories` (BR-EVENT-004).
   2. API creates the event in `draft` status.
-- **Related rules:** BR-EVENT-001, BR-EVENT-002
+- **Related rules:** BR-EVENT-001, BR-EVENT-002, BR-EVENT-004
 
 ### UC-EVENT-02: Update an Event
 

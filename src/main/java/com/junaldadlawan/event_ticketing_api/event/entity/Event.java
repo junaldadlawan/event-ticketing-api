@@ -35,7 +35,7 @@ public class Event extends Auditable {
     @Column(name = "description",nullable = false, length = 2000)
     private String description;
 
-    @Column(name = "category", nullable = false, length = 20)
+    @Column(name = "category", nullable = false, length = 100)
     private String category;
 
     @Column(name = "venue_id")
