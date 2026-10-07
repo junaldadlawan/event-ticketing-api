@@ -35,17 +35,21 @@ public class CacheConfig {
 
     public static final String PUBLIC_EVENT = "publicEvent";
     public static final String PUBLIC_EVENT_SEARCH = "publicEventSearch";
+    /** Public category list; evicted by CategoryServiceImpl on every admin write. */
+    public static final String CATEGORIES = "categories";
 
     @Bean
     public CacheManager cacheManager(
             @Value("${app.cache.event.ttl-seconds:30}") long eventTtlSeconds,
             @Value("${app.cache.event.max-size:1000}") long eventMaxSize,
             @Value("${app.cache.event-search.ttl-seconds:30}") long searchTtlSeconds,
-            @Value("${app.cache.event-search.max-size:500}") long searchMaxSize) {
+            @Value("${app.cache.event-search.max-size:500}") long searchMaxSize,
+            @Value("${app.cache.category.ttl-seconds:60}") long categoryTtlSeconds) {
         SimpleCacheManager manager = new SimpleCacheManager();
         manager.setCaches(List.of(
                 build(PUBLIC_EVENT, eventTtlSeconds, eventMaxSize),
-                build(PUBLIC_EVENT_SEARCH, searchTtlSeconds, searchMaxSize)));
+                build(PUBLIC_EVENT_SEARCH, searchTtlSeconds, searchMaxSize),
+                build(CATEGORIES, categoryTtlSeconds, 10)));
         return manager;
     }
 

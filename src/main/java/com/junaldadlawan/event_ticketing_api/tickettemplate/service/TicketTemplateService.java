@@ -14,4 +14,7 @@ public interface TicketTemplateService {
     List<TicketTemplate> list(UUID eventId);
 
     TicketTemplate update(UUID templateId, TicketTemplateUpdateRequest request);
+
+    /** Soft-deletes the template: it disappears from the list and tickets fall back to the next template or the built-in layout. */
+    void delete(UUID templateId);
 }

@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.user.service;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserSelfUpdateRequest;
@@ -44,6 +45,9 @@ class UserServiceImplTest {
     @Mock
     private OrganizationAccessGuard accessGuard;
 
+    @Mock
+    private UploadedFileUrls uploadedFileUrls;
+
     private UserServiceImpl userService;
 
     private UUID userId;
@@ -51,7 +55,7 @@ class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, passwordEncoder, accessGuard);
+        userService = new UserServiceImpl(userRepository, passwordEncoder, accessGuard, uploadedFileUrls);
         userId = UUID.randomUUID();
         existingUser = User.builder()
                 .id(userId)
@@ -183,7 +187,7 @@ class UserServiceImplTest {
     void updateSelf_nameOnly_leavesEmailUnchanged() {
         when(accessGuard.currentUserId()).thenReturn(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        UserSelfUpdateRequest request = new UserSelfUpdateRequest("New Name", null);
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest("New Name", null, null);
 
         User updated = userService.updateSelf(request);
 
@@ -196,12 +200,107 @@ class UserServiceImplTest {
     void updateSelf_emailOnly_leavesNameUnchanged() {
         when(accessGuard.currentUserId()).thenReturn(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "new@example.com");
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "new@example.com", null);
 
         User updated = userService.updateSelf(request);
 
         assertThat(updated.getName()).isEqualTo("Jane Doe");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
+    }
+
+    // ---- updateSelf(): profile picture ----
+
+    private static final String AVATAR_A = "http://localhost:8081/api/v1/uploads/files/11111111-1111-1111-1111-111111111111.jpg";
+    private static final String AVATAR_B = "http://localhost:8081/api/v1/uploads/files/22222222-2222-2222-2222-222222222222.png";
+
+    private void signedIn() {
+        when(accessGuard.currentUserId()).thenReturn(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+    }
+
+    private UserSelfUpdateRequest avatar(String url) {
+        return new UserSelfUpdateRequest(null, null, url);
+    }
+
+    @Test
+    void updateSelf_ownUploadedImage_becomesTheAvatar_andNothingIsCleanedUpTheFirstTime() {
+        signedIn();
+        when(uploadedFileUrls.ownFileName(AVATAR_A)).thenReturn(Optional.of("11111111-1111-1111-1111-111111111111.jpg"));
+
+        User updated = userService.updateSelf(avatar(AVATAR_A));
+
+        assertThat(updated.getAvatarUrl()).isEqualTo(AVATAR_A);
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced(any());
+    }
+
+    @Test
+    void updateSelf_aLinkThatIsNotOneOfOurUploads_throwsBadRequest_andChangesNothing() {
+        signedIn();
+        existingUser.setAvatarUrl(AVATAR_A);
+        when(uploadedFileUrls.ownFileName("https://evil.example.com/pixel.png")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.updateSelf(avatar("https://evil.example.com/pixel.png")))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(existingUser.getAvatarUrl()).isEqualTo(AVATAR_A);
+        verify(userRepository, never()).save(any());
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced(any());
+    }
+
+    @Test
+    void updateSelf_replacingTheAvatar_cleansUpTheOldFileIfNothingElseUsesIt() {
+        signedIn();
+        existingUser.setAvatarUrl(AVATAR_A);
+        when(uploadedFileUrls.ownFileName(AVATAR_B)).thenReturn(Optional.of("22222222-2222-2222-2222-222222222222.png"));
+
+        User updated = userService.updateSelf(avatar(AVATAR_B));
+
+        assertThat(updated.getAvatarUrl()).isEqualTo(AVATAR_B);
+        verify(uploadedFileUrls).deleteIfUnreferenced(AVATAR_A);
+    }
+
+    @Test
+    void updateSelf_anEmptyAvatarUrl_removesThePicture_andCleansUpTheFile() {
+        signedIn();
+        existingUser.setAvatarUrl(AVATAR_A);
+
+        User updated = userService.updateSelf(avatar(""));
+
+        assertThat(updated.getAvatarUrl()).isNull();
+        verify(uploadedFileUrls).deleteIfUnreferenced(AVATAR_A);
+        verify(uploadedFileUrls, never()).ownFileName(any());
+    }
+
+    @Test
+    void updateSelf_noAvatarUrlInTheRequest_leavesThePictureAlone() {
+        signedIn();
+        existingUser.setAvatarUrl(AVATAR_A);
+
+        User updated = userService.updateSelf(new UserSelfUpdateRequest("New Name", null, null));
+
+        assertThat(updated.getAvatarUrl()).isEqualTo(AVATAR_A);
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced(any());
+    }
+
+    @Test
+    void updateSelf_sendingTheCurrentAvatarAgain_doesNotDeleteIt() {
+        signedIn();
+        existingUser.setAvatarUrl(AVATAR_A);
+        when(uploadedFileUrls.ownFileName(AVATAR_A)).thenReturn(Optional.of("11111111-1111-1111-1111-111111111111.jpg"));
+
+        userService.updateSelf(avatar(AVATAR_A));
+
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced(any());
+    }
+
+    @Test
+    void updateSelf_removingWhenThereIsNoPicture_isANoOp() {
+        signedIn();
+
+        User updated = userService.updateSelf(avatar(""));
+
+        assertThat(updated.getAvatarUrl()).isNull();
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced(any());
     }
 
     // ---- updateSelfPassword(): self-service password change ----

@@ -56,7 +56,7 @@ class CartCheckoutControllerTest {
 
     private OrderResponse orderResponse(UUID orderId) {
         return new OrderResponse(orderId, UUID.randomUUID(), PayeeType.ORGANIZATION, UUID.randomUUID(),
-                OrderStatus.PAID, null, new MoneyDto(1000L, "USD"), List.of(), Instant.now(),
+                OrderStatus.PAID, null, new MoneyDto(0L, "USD"), new MoneyDto(1000L, "USD"), List.of(), Instant.now(),
                 UUID.randomUUID().toString(), Instant.now());
     }
 

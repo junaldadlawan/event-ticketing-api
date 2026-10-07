@@ -13,11 +13,11 @@ import java.io.IOException;
 
 /**
  * Renders the {@code format=digital} ticket artifact (Phase 6b confirmed
- * decisions #2/#3) as a fixed-size PNG: event title, ticket type name,
- * seat-or-"General Admission", the ticket number, and the QR code — plus a
- * {@code primaryColor}-based accent bar if the resolved template has one.
- * Intentionally minimal/functional per {@code requirements.md} §4.10, not
- * visually polished.
+ * decisions #2/#3) as a PNG. Without designer content it is the built-in fixed-size
+ * layout: event title, ticket type name, seat-or-"General Admission", the ticket number,
+ * and the QR code — plus a {@code primaryColor}-based accent bar if the resolved template
+ * has one. Intentionally minimal/functional per {@code requirements.md} §4.10. A template
+ * laid out in the ticket designer is drawn by {@link TicketCanvasRenderer} instead.
  */
 @Component
 public class PngTicketRenderer {
@@ -27,7 +27,22 @@ public class PngTicketRenderer {
     private static final int QR_SIZE = 260;
     private static final Color DEFAULT_ACCENT = new Color(0x2B, 0x3A, 0x67);
 
+    private final TicketCanvasRenderer canvasRenderer = new TicketCanvasRenderer();
+
     public byte[] render(TicketArtifactFields fields) {
+        BufferedImage image = fields.design() != null
+                ? canvasRenderer.render(fields, 1.0)
+                : renderBuiltInLayout(fields);
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", outputStream);
+            return outputStream.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to encode ticket artifact PNG", e);
+        }
+    }
+
+    private BufferedImage renderBuiltInLayout(TicketArtifactFields fields) {
         BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
         try {
@@ -54,23 +69,21 @@ public class PngTicketRenderer {
             g.setFont(new Font("SansSerif", Font.BOLD, 22));
             g.drawString("Ticket #" + fields.ticketNumber(), textX, y);
 
-            // Nearest-neighbor only for the QR rescale: bilinear/bicubic
-            // smoothing would blend black/white module edges into gray,
-            // which is worse for any barcode reader (phone camera or
-            // otherwise) than the crisp edges nearest-neighbor preserves.
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-            g.drawImage(fields.qrCodeImage(), WIDTH - QR_SIZE - 24, HEIGHT - QR_SIZE - 24, QR_SIZE, QR_SIZE, null);
+            if (fields.codePlacement() == null) {
+                // Nearest-neighbor only for the QR rescale: bilinear/bicubic
+                // smoothing would blend black/white module edges into gray,
+                // which is worse for any barcode reader (phone camera or
+                // otherwise) than the crisp edges nearest-neighbor preserves.
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                g.drawImage(fields.codeImage(), WIDTH - QR_SIZE - 24, HEIGHT - QR_SIZE - 24, QR_SIZE, QR_SIZE, null);
+            } else {
+                // Organizer-chosen position from the ticket template.
+                CodeDrawer.draw(g, fields.codeImage(), fields.codePlacement().resolve(WIDTH, HEIGHT));
+            }
         } finally {
             g.dispose();
         }
-
-        try {
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            ImageIO.write(image, "png", outputStream);
-            return outputStream.toByteArray();
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to encode ticket artifact PNG", e);
-        }
+        return image;
     }
 
     private Color resolveColor(String hex) {

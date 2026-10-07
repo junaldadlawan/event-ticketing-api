@@ -33,6 +33,12 @@ public class OrganizationController {
         return organizationService.list(status).stream().map(OrganizationResponse::from).toList();
     }
 
+    // Declared before "/{orgId}" so "mine" is never read as an id.
+    @GetMapping("/mine")
+    public List<OrganizationResponse> mine() {
+        return organizationService.mine().stream().map(OrganizationResponse::from).toList();
+    }
+
     @GetMapping("/{orgId}")
     public OrganizationResponse get(@PathVariable UUID orgId) {
         return OrganizationResponse.from(organizationService.get(orgId));

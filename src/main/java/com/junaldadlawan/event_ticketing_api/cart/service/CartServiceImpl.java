@@ -17,6 +17,7 @@ import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
 import com.junaldadlawan.event_ticketing_api.promocode.entity.PromoCode;
 import com.junaldadlawan.event_ticketing_api.promocode.enums.DiscountType;
 import com.junaldadlawan.event_ticketing_api.promocode.repository.PromoCodeRepository;
@@ -71,6 +72,7 @@ public class CartServiceImpl implements CartService {
     private final PromoCodeUsageLimitGuard promoCodeUsageLimitGuard;
     private final OrganizationAccessGuard accessGuard;
     private final EntityManager entityManager;
+    private final PlatformFeeService platformFeeService;
 
     @Override
     @Transactional
@@ -118,6 +120,10 @@ public class CartServiceImpl implements CartService {
         // silently become purchasable by omission.
         if (!PURCHASABLE_EVENT_STATUSES.contains(event.getStatus())) {
             throw new ConflictException("Ticket type is not currently on sale");
+        }
+
+        if (ticketType.isSalesPaused()) {
+            throw new ConflictException("Sales for this ticket type are paused");
         }
 
         Instant now = Instant.now();
@@ -314,6 +320,11 @@ public class CartServiceImpl implements CartService {
         PromoCode promoCode = promoCodeRepository.findByEventIdAndCodeAndDeletedAtIsNull(eventId, code)
                 .orElseThrow(() -> new UnprocessableEntityException("Promo code is invalid or inapplicable to this cart"));
 
+        // A paused code is rejected exactly like an unknown one - the buyer is not told it exists but is switched off.
+        if (!promoCode.isRedeemable()) {
+            throw new UnprocessableEntityException("Promo code is invalid or inapplicable to this cart");
+        }
+
         Instant now = Instant.now();
         if (now.isBefore(promoCode.getValidFrom()) || now.isAfter(promoCode.getValidUntil())) {
             // BR-PROMO-005
@@ -377,6 +388,7 @@ public class CartServiceImpl implements CartService {
         long subtotal = 0L;
         String currency = "USD"; // default for an empty cart / cart with no resolvable prices
         boolean currencyResolved = false;
+        UUID feeEventId = null;
         for (CartItem item : items) {
             TicketType ticketType = ticketTypeRepository.findById(item.getTicketTypeId()).orElse(null);
             if (ticketType == null || ticketType.getPrice() == null) {
@@ -386,6 +398,9 @@ public class CartServiceImpl implements CartService {
                 continue;
             }
             subtotal += ticketType.getPrice().getAmount() * item.getQuantity();
+            if (feeEventId == null) {
+                feeEventId = ticketType.getEventId();
+            }
             if (!currencyResolved) {
                 currency = ticketType.getPrice().getCurrency();
                 currencyResolved = true;
@@ -396,10 +411,21 @@ public class CartServiceImpl implements CartService {
         long total = subtotal;
         if (cart.getPromoCodeId() != null) {
             PromoCode promoCode = promoCodeRepository.findById(cart.getPromoCodeId()).orElse(null);
-            if (promoCode != null) {
+            // A code that was paused or deleted after it was applied no longer gives a discount (the cart still loads).
+            if (promoCode != null && promoCode.isRedeemable()) {
                 long discount = computeDiscount(promoCode, subtotal);
                 total = subtotal - discount;
                 appliedPromoCode = new AppliedPromoCodeResponse(promoCode.getCode(), new MoneyDto(discount, currency));
+            }
+        }
+
+        // The platform fee is added on top of the ticket price (after the promo discount); a cart is limited to one
+        // event, so the first resolvable item decides which fee rule applies.
+        long platformFee = 0L;
+        if (feeEventId != null) {
+            Event feeEvent = eventRepository.findByIdAndDeletedAtIsNull(feeEventId).orElse(null);
+            if (feeEvent != null) {
+                platformFee = platformFeeService.quote(feeEvent.getOrganizationId(), feeEvent.getId(), total, currency).amount();
             }
         }
 
@@ -408,7 +434,8 @@ public class CartServiceImpl implements CartService {
                 cart.getBuyerId(),
                 itemResponses,
                 appliedPromoCode,
-                new MoneyDto(total, currency),
+                new MoneyDto(platformFee, currency),
+                new MoneyDto(total + platformFee, currency),
                 cart.getCreatedAt(),
                 cart.getUpdatedAt());
     }

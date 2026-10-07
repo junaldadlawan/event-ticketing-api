@@ -51,4 +51,9 @@ public class User extends Auditable {
     @Column(name = "account_status", nullable = false, length = 20)
     private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
+    /** URL of the profile picture (an image uploaded through POST /api/v1/uploads); null = none. */
+    @Size(max = 500)
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
 }
