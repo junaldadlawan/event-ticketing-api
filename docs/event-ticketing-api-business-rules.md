@@ -46,6 +46,7 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-EVENT-001 | An event's status must be one of: draft, published, on-sale, sold out, cancelled, completed. (§4.2) |
 | BR-EVENT-002 | An event must have: title, description, category, venue/location, start date-time, end date-time, timezone, images, and status. (§4.2) |
 | BR-EVENT-003 | Each ticket type on an event must define its own price, currency, quantity, sale window, and per-order purchase limit. (§4.2) |
+| BR-EVENT-004 | An event's category must be the name of an active category from the managed category list (`GET /api/v1/categories`); matching is case-insensitive and the canonical spelling is stored. Only an admin can create, rename, deactivate or re-activate categories; deactivating one never changes events that already use it. |
 
 ## 4. Ticket Inventory (Seating & GA)
 

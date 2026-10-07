@@ -114,6 +114,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/users/me/change-password").authenticated()
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
+                        // Public category list/detail; writes need a login and are
+                        // admin-only (CategoryServiceImpl#requireAdmin).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/**").permitAll()
+                        .requestMatchers("/api/v1/categories", "/api/v1/categories/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/venues/**").authenticated()
                         // /api/v1/events/**'s existing GET permitAll already covers

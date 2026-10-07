@@ -25,6 +25,7 @@ tags:
   - name: Auth
   - name: Organizations
   - name: Venues
+  - name: Categories
   - name: Events
   - name: TicketTypes
   - name: SeatMaps
@@ -396,6 +397,83 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Venue" }
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [Categories]
+      security: []
+      summary: List active event categories (public) - the allowed values for an event's category
+      responses:
+        "200":
+          description: OK (ordered by sort_order, then name)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+    post:
+      operationId: createCategory
+      tags: [Categories]
+      summary: Create a category (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: A category with that name (or slug) already exists }
+
+  /categories/{categoryId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCategory
+      tags: [Categories]
+      security: []
+      summary: Get a category (public; also returns inactive ones)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateCategory
+      tags: [Categories]
+      summary: Update a category, including re-activating it (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: A category with that name (or slug) already exists }
+    delete:
+      operationId: deactivateCategory
+      tags: [Categories]
+      summary: Deactivate a category (admin only). Soft - hidden from the list and refused for new events; existing events keep it.
+      responses:
+        "204": { description: Deactivated }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /venues/{venueId}:
     parameters:
@@ -1836,6 +1914,33 @@ components:
           type: string
           enum: [organizer, check_in_staff]
           description: owner cannot be granted here — it's only ever set by organization-application approval.
+
+    Category:
+      type: object
+      description: An event category. An event's `category` must be the name of an active Category (matched case-insensitively, stored with this canonical spelling).
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string, description: "URL-safe form of the name, e.g. arts-theatre." }
+        description: { type: [string, "null"] }
+        active: { type: boolean }
+        sort_order: { type: integer }
+
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 100 }
+        description: { type: string, maxLength: 255 }
+        sort_order: { type: integer }
+
+    CategoryUpdate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        description: { type: string, maxLength: 255 }
+        sort_order: { type: integer }
+        active: { type: boolean }
 
     Venue:
       type: object

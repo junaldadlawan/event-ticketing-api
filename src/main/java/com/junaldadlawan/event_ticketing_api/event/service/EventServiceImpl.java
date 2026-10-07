@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.event.service;
 
 
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
+import com.junaldadlawan.event_ticketing_api.category.service.CategoryService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -56,6 +57,7 @@ public class EventServiceImpl implements EventService {
     private final TicketRepository ticketRepository;
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
+    private final CategoryService categoryService;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -87,7 +89,7 @@ public class EventServiceImpl implements EventService {
                 .organizationId(organization.getId())
                 .title(request.title())
                 .description(request.description())
-                .category(request.category())
+                .category(categoryService.resolveActive(request.category()).getName())
                 .venueId(request.venueId())
                 .startAt(request.startAt())
                 .endAt(request.endAt())
@@ -180,7 +182,7 @@ public class EventServiceImpl implements EventService {
             if (request.category().isBlank()) {
                 throw new BadRequestException("Event category must not be blank");
             }
-            event.setCategory(request.category());
+            event.setCategory(categoryService.resolveActive(request.category()).getName());
         }
         if (request.images() != null) {
             event.setImages(new ArrayList<>(request.images()));
