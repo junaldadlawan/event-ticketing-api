@@ -4,7 +4,13 @@ import tools.jackson.databind.ObjectMapper;
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.config.Customizer;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.List;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -27,6 +33,7 @@ public class SecurityConfig {
                                                      DeviceAuthenticationFilter deviceAuthenticationFilter,
                                                      ObjectMapper objectMapper) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
+                .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
                         // refresh/logout are public on purpose: a client calls refresh
@@ -42,6 +49,11 @@ public class SecurityConfig {
                         // (no `security: []` override on listPromoCodes).
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/promo-codes").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/promo-codes").authenticated()
+                        // Edit, pause/resume and delete address the promo code by its own id; the owner/organizer/admin check
+                        // (resolved from the code's own event) is in PromoCodeServiceImpl. Never public.
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/promo-codes/*").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/promo-codes/*/status").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/promo-codes/*").authenticated()
                         // Same reasoning: GET /events/{eventId}/orders (Phase 6a) is
                         // owning-organizer/admin-only, not public - must precede the
                         // broader GET /api/v1/events/** permitAll matcher below.
@@ -114,6 +126,25 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/users/me/change-password").authenticated()
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
+                        // Announcements and sales: everyone reads them (like the public event list); writing and removing need a
+                        // login and are admin-only (checked in PostServiceImpl).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/posts").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/posts").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/posts/*").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/posts/*").authenticated()
+                        // Public category list/detail; writes need a login and are
+                        // admin-only (CategoryServiceImpl#requireAdmin).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/**").permitAll()
+                        .requestMatchers("/api/v1/categories", "/api/v1/categories/**").authenticated()
+                        // Spring forwards failed requests (404, 500, ...) to /error, which goes through this chain
+                        // again; the JWT filter does not run on that forward, so without this a signed-in caller
+                        // would see "Authentication required" instead of the real error. Anonymous callers still
+                        // get 401 from anyRequest() on the original request.
+                        .requestMatchers("/error").permitAll()
+                        // Uploaded images (ticket template backgrounds) are served publicly - they are drawn on
+                        // tickets; uploading itself needs a login (anyRequest().authenticated()).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/uploads/files/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/uploads").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/venues/**").authenticated()
                         // /api/v1/events/**'s existing GET permitAll already covers
@@ -121,12 +152,17 @@ public class SecurityConfig {
                         // /api/v1/ticket-types/** is a new top-level prefix (like
                         // /api/v1/venues/** in Phase 2) that needs its own matcher.
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/ticket-types").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/events/*/ticket-types/order").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/ticket-types/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/ticket-types/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/ticket-types/**").authenticated()
+                        // Pause / resume selling one ticket type; owner / organizer / admin is enforced in TicketTypeServiceImpl.
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/ticket-types/*/sales-status").authenticated()
                         // /api/v1/ticket-templates/** (Phase 6b) is a new top-level prefix
                         // (PATCH-only, no GET-single/DELETE per openapi.yaml) - always
                         // authenticated, no public GET exists for it at all.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/ticket-templates/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/ticket-templates/**").authenticated()
                         // No public GET exists for carts at all - buyer-only,
                         // always authenticated (Phase 5a).
                         .requestMatchers("/api/v1/carts", "/api/v1/carts/**").authenticated()
@@ -191,6 +227,23 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(deviceAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * CORS for uploaded images only. The ticket designer's auto-fit reads the
+     * background's pixels through a canvas, which the browser allows for a
+     * cross-origin image only if the server answers with CORS headers. Nothing
+     * else on the API is opened up.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origins:http://localhost:5173}") List<String> allowedOrigins) {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(allowedOrigins);
+        config.setAllowedMethods(List.of("GET", "HEAD"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/v1/uploads/files/**", config);
+        return source;
     }
 
     @Bean

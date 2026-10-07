@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
+import com.junaldadlawan.event_ticketing_api.category.entity.Category;
+import com.junaldadlawan.event_ticketing_api.category.service.CategoryService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -41,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -81,14 +84,22 @@ class EventServiceImplTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private CategoryService categoryService;
+
     private EventServiceImpl eventService;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService, auditLogService);
+        eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService, auditLogService, categoryService);
         orgId = UUID.randomUUID();
+        // Default: any category resolves, canonicalised to a capitalised name (music -> Music).
+        lenient().when(categoryService.resolveActive(anyString())).thenAnswer(invocation -> {
+            String name = invocation.getArgument(0);
+            return Category.builder().name(name.substring(0, 1).toUpperCase() + name.substring(1)).build();
+        });
     }
 
     private Organization organization(UUID id, OrganizationStatus status) {
@@ -455,7 +466,7 @@ class EventServiceImplTest {
 
         Event result = eventService.updateEvent(eventId, new EventUpdateRequest(null, null, "sports", null));
 
-        assertThat(result.getCategory()).isEqualTo("sports");
+        assertThat(result.getCategory()).isEqualTo("Sports");
         assertThat(result.getTitle()).isEqualTo("Original Title");
     }
 
@@ -511,6 +522,47 @@ class EventServiceImplTest {
         assertThatThrownBy(() -> eventService.updateEvent(eventId, new EventUpdateRequest(null, null, "   ", null)))
                 .isInstanceOf(BadRequestException.class);
         verify(eventRepository, never()).save(any());
+    }
+
+    @Test
+    void updateEvent_unknownCategory_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerAccess(eventId, EventStatus.DRAFT);
+        when(categoryService.resolveActive("nonsense")).thenThrow(new BadRequestException("Unknown event category"));
+
+        assertThatThrownBy(() -> eventService.updateEvent(eventId, new EventUpdateRequest(null, null, "nonsense", null)))
+                .isInstanceOf(BadRequestException.class);
+        verify(eventRepository, never()).save(any());
+    }
+
+    @Test
+    void createEvent_unknownCategory_throwsBadRequest_andSavesNothing() {
+        UUID ownerId = UUID.randomUUID();
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(categoryService.resolveActive("music"))
+                .thenThrow(new BadRequestException("Unknown event category 'music'"));
+
+        assertThatThrownBy(() -> eventService.createEvent(createRequest(orgId, null)))
+                .isInstanceOf(BadRequestException.class);
+        verify(eventRepository, never()).save(any());
+    }
+
+    @Test
+    void createEvent_storesTheCanonicalCategoryName() {
+        UUID ownerId = UUID.randomUUID();
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(eventRepository.existsByTicketPrefix(anyString())).thenReturn(false);
+        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Event result = eventService.createEvent(createRequest(orgId, null));
+
+        assertThat(result.getCategory()).isEqualTo("Music");
     }
 
     @Test

@@ -15,6 +15,9 @@ public interface OrganizationService {
 
     List<Organization> list(String status);
 
+    /** The caller's own organizations, of every status: ones they are a member of, plus ones they applied for. Oldest first. */
+    List<Organization> mine();
+
     Organization get(UUID orgId);
 
     Organization update(UUID orgId, OrganizationUpdateRequest request);

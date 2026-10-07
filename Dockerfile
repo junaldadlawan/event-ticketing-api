@@ -17,14 +17,18 @@ FROM eclipse-temurin:21-jre-jammy AS run
 WORKDIR /app
 
 # curl for the HEALTHCHECK below - the base JRE image doesn't include it.
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# fontconfig + a font: ticket images are drawn with Java2D text (SansSerif), which
+# fails on a bare JRE image that has no fonts installed.
+RUN apt-get update && apt-get install -y --no-install-recommends curl fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root - the base image ships a "ubuntu" user (uid 1000); a dedicated
 # app user keeps this independent of that image detail.
 RUN groupadd -r app && useradd -r -g app app
 COPY --from=build /build/target/*.jar app.jar
-RUN chown app:app app.jar
+# Uploaded template images (app.upload.dir=uploads, relative to /app) - the app user must be able to
+# write there. The container disk is lost on every deployment; a durable store (S3) is the real fix.
+RUN mkdir /app/uploads && chown app:app app.jar /app/uploads
 USER app
 
 # server.port in application.properties.

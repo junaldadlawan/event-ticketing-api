@@ -22,7 +22,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -54,6 +57,21 @@ public class OrganizationServiceImpl implements OrganizationService {
                 .where(OrganizationSpecification.hasStatus(statusFilter))
                 .and(OrganizationSpecification.notDeleted());
         return organizationRepository.findAll(specification);
+    }
+
+    @Override
+    public List<Organization> mine() {
+        UUID callerId = accessGuard.currentUserId();
+        List<UUID> memberOf = organizationMemberRepository.findByUserId(callerId).stream()
+                .map(OrganizationMember::getOrganizationId).toList();
+        // One batched lookup for the memberships, one for the applications; merged by id.
+        Map<UUID, Organization> byId = new LinkedHashMap<>();
+        organizationRepository.findAllById(memberOf).stream().filter(org -> org.getDeletedAt() == null)
+                .forEach(org -> byId.put(org.getId(), org));
+        organizationRepository.findByCreatedByAndDeletedAtIsNull(callerId.toString()).forEach(org -> byId.put(org.getId(), org));
+        return byId.values().stream()
+                .sorted(Comparator.comparing(Organization::getCreatedAt).thenComparing(Organization::getId))
+                .toList();
     }
 
     @Override

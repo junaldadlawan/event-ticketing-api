@@ -26,6 +26,7 @@ import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.entity.TicketTemplate;
+import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.CodeType;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TicketTemplateFormat;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.repository.TicketTemplateRepository;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
@@ -48,6 +49,7 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -75,6 +77,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * — decodes the QR from the real PNG response bytes and asserts it equals
  * the ticket's real {@code credential} column, read directly from Postgres.
  */
+@org.springframework.test.context.TestPropertySource(properties = "app.upload.dir=target/test-uploads")
 @SpringBootTest
 @AutoConfigureMockMvc
 class TicketArtifactIntegrationTest {
@@ -268,6 +271,21 @@ class TicketArtifactIntegrationTest {
         return saved.getId();
     }
 
+    private UUID persistTemplateWithCode(UUID eventId, TicketTemplateFormat format, CodeType type,
+                                         double x, double y, double width, int rotation) {
+        TicketTemplate saved = ticketTemplateRepository.save(TicketTemplate.builder()
+                .eventId(eventId)
+                .format(format)
+                .codeType(type)
+                .codeX(x)
+                .codeY(y)
+                .codeWidth(width)
+                .codeRotation(rotation)
+                .build());
+        createdTemplateIds.add(saved.getId());
+        return saved.getId();
+    }
+
     private UUID persistTemplate(UUID eventId, UUID ticketTypeIdOrNull, TicketTemplateFormat format, String primaryColor) {
         TicketTemplate template = TicketTemplate.builder()
                 .eventId(eventId)
@@ -456,6 +474,223 @@ class TicketArtifactIntegrationTest {
         assertThat(decoded).isEqualTo(realCredential);
         assertThat(decoded).isNotEqualTo(persisted.getTicketNumber());
         assertThat(decoded).isNotEqualTo(persisted.getId().toString());
+    }
+
+    /**
+     * The organizer-chosen QR position on the template is where the code lands on
+     * the real rendered PNG: decode ONLY the region the template points at, so a code
+     * drawn at the default bottom-right spot would fail this test.
+     */
+    @Test
+    void getArtifact_templateWithQrPlacement_drawsTheCodeThere() throws Exception {
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        UUID ticketTypeId = persistTicketType(eventId);
+        String realCredential = "11111111-2222-3333-4444-555555555555.positionedSignature"; // fixed: ZXing misses the odd random payload
+        UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), realCredential);
+        persistTemplateWithCode(eventId, TicketTemplateFormat.DIGITAL, CodeType.QR, 5.0, 30.0, 28.0, 0);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        MvcResult result = mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId)
+                        .header("Authorization", "Bearer " + buyerToken)
+                        .param("format", "digital"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()));
+        // 900x380 canvas: x = 5% of 900 = 45, y = 30% of 380 = 114, side = 28% of 900 = 252
+        BufferedImage region = image.getSubimage(31, 100, 280, 280);
+        ByteArrayOutputStream regionPng = new ByteArrayOutputStream();
+        ImageIO.write(region, "png", regionPng);
+        assertThat(decodeQr(regionPng.toByteArray())).isEqualTo(realCredential);
+
+        // ...and nothing scannable is left in the default bottom-right spot.
+        BufferedImage defaultSpot = image.getSubimage(616, 96, 260, 260);
+        ByteArrayOutputStream defaultPng = new ByteArrayOutputStream();
+        ImageIO.write(defaultSpot, "png", defaultPng);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> decodeQr(defaultPng.toByteArray()))
+                .isInstanceOf(com.google.zxing.NotFoundException.class);
+    }
+
+    /**
+     * A template may ask for a barcode instead of the QR code: the artifact then carries the same
+     * credential as a PDF417 barcode, at the template's position, and no QR code at all.
+     */
+    @Test
+    void getArtifact_templateWithBarcodePlacement_drawsTheBarcodeThere() throws Exception {
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        UUID ticketTypeId = persistTicketType(eventId);
+        String realCredential = "11111111-2222-3333-4444-555555555555:1.barcodeSignatureValue-0123456789abcdefghijklmnopq"; // fixed, see above
+        UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), realCredential);
+        persistTemplateWithCode(eventId, TicketTemplateFormat.DIGITAL, CodeType.BARCODE, 5.0, 20.0, 45.0, 0);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        MvcResult result = mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId)
+                        .header("Authorization", "Bearer " + buyerToken)
+                        .param("format", "digital"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()));
+        // 900x380 canvas: x = 5% of 900 = 45, y = 20% of 380 = 76, 45% wide = 405 x 135 (3:1)
+        BufferedImage region = image.getSubimage(31, 62, 433, 163);
+        ByteArrayOutputStream regionPng = new ByteArrayOutputStream();
+        ImageIO.write(region, "png", regionPng);
+        assertThat(decodeQr(regionPng.toByteArray())).isEqualTo(realCredential);
+    }
+
+    // ---- ticket designer: the designed layout through the real endpoint ----
+
+    private UUID persistDesignedTemplate(UUID eventId, TicketTemplateFormat format,
+                                         java.util.function.Consumer<TicketTemplate.TicketTemplateBuilder> design) {
+        TicketTemplate.TicketTemplateBuilder builder = TicketTemplate.builder().eventId(eventId).format(format);
+        design.accept(builder);
+        TicketTemplate saved = ticketTemplateRepository.save(builder.build());
+        createdTemplateIds.add(saved.getId());
+        return saved.getId();
+    }
+
+    @Test
+    void getArtifact_designedDigitalTicket_hasTheDesignedSizeAndColour_andNoCodeWhenNone() throws Exception {
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        UUID ticketTypeId = persistTicketType(eventId);
+        UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), UUID.randomUUID() + ":1.designedSignature");
+        persistDesignedTemplate(eventId, TicketTemplateFormat.DIGITAL, b -> b
+                .ticketWidth(600).ticketHeight(240).backgroundColor("#FFEEAA").codeType(CodeType.NONE)
+                .textFields(new java.util.ArrayList<>(java.util.List.of(com.junaldadlawan.event_ticketing_api.tickettemplate.entity.TicketTextField.builder()
+                        .key(com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TextFieldKey.TICKET_NUMBER)
+                        .x(10).y(50).fontSize(15).color("#000000").bold(true)
+                        .align(com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TextAlign.LEFT).build()))));
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        MvcResult result = mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId)
+                        .header("Authorization", "Bearer " + buyerToken)
+                        .param("format", "digital"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/png"))
+                .andReturn();
+
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()));
+        assertThat(image.getWidth()).isEqualTo(600);
+        assertThat(image.getHeight()).isEqualTo(240);
+        assertThat(new Color(image.getRGB(590, 5))).isEqualTo(Color.decode("#FFEEAA"));
+        assertThat(new Color(image.getRGB(590, 235))).isEqualTo(Color.decode("#FFEEAA"));
+        // no code anywhere (the default bottom-right spot is plain background)
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> decodeQr(result.getResponse().getContentAsByteArray()))
+                .isInstanceOf(com.google.zxing.NotFoundException.class);
+        // the ticket number text was drawn: some dark pixel exists in the left half
+        boolean ink = false;
+        for (int y = 0; y < 240 && !ink; y++) {
+            for (int x = 0; x < 300 && !ink; x++) {
+                ink = new Color(image.getRGB(x, y)).getRed() < 80;
+            }
+        }
+        assertThat(ink).isTrue();
+    }
+
+    @Test
+    void getArtifact_designedPhysicalTicket_isAPdfPageOfTheDesignedSize() throws Exception {
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        UUID ticketTypeId = persistTicketType(eventId);
+        UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), UUID.randomUUID() + ":1.designedSignature");
+        persistDesignedTemplate(eventId, TicketTemplateFormat.PHYSICAL, b -> b
+                .ticketWidth(700).ticketHeight(300).backgroundColor("#102030").codeType(CodeType.QR)
+                .codeX(60.0).codeY(10.0).codeWidth(30.0).codeRotation(0));
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        MvcResult result = mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId)
+                        .header("Authorization", "Bearer " + buyerToken)
+                        .param("format", "physical"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/pdf"))
+                .andReturn();
+
+        try (PDDocument document = Loader.loadPDF(result.getResponse().getContentAsByteArray())) {
+            assertThat(document.getNumberOfPages()).isEqualTo(1);
+            assertThat(document.getPage(0).getMediaBox().getWidth()).isEqualTo(700f);
+            assertThat(document.getPage(0).getMediaBox().getHeight()).isEqualTo(300f);
+        }
+    }
+
+    @Test
+    void getArtifact_aBackgroundUploadedThroughOurEndpoint_isDrawnOnTheTicket() throws Exception {
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        UUID ticketTypeId = persistTicketType(eventId);
+        UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), UUID.randomUUID() + ":1.designedSignature");
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        BufferedImage red = new BufferedImage(40, 20, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = red.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 40, 20);
+        g.dispose();
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(red, "png", png);
+        MvcResult upload = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/v1/uploads")
+                        .file(new org.springframework.mock.web.MockMultipartFile("file", "bg.png", "image/png", png.toByteArray()))
+                        .header("Authorization", "Bearer " + buyerToken))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String url = new tools.jackson.databind.ObjectMapper().readTree(upload.getResponse().getContentAsString()).get("url").asText();
+
+        persistDesignedTemplate(eventId, TicketTemplateFormat.DIGITAL, b -> b
+                .ticketWidth(400).ticketHeight(200).backgroundImageUrl(url)
+                .backgroundFit(com.junaldadlawan.event_ticketing_api.tickettemplate.enums.BackgroundFit.STRETCH)
+                .codeType(CodeType.NONE));
+
+        MvcResult result = mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId)
+                        .header("Authorization", "Bearer " + buyerToken)
+                        .param("format", "digital"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()));
+        assertThat(image.getWidth()).isEqualTo(400);
+        assertThat(new Color(image.getRGB(200, 100))).isEqualTo(Color.RED);
+        assertThat(new Color(image.getRGB(5, 5))).isEqualTo(Color.RED);
+    }
+
+    @Test
+    void getArtifact_aBackgroundUrlThatIsNotOurs_rendersWithoutItInsteadOfFetchingIt() throws Exception {
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId);
+        UUID ticketTypeId = persistTicketType(eventId);
+        UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), UUID.randomUUID() + ":1.designedSignature");
+        persistDesignedTemplate(eventId, TicketTemplateFormat.DIGITAL, b -> b
+                .ticketWidth(300).ticketHeight(150).backgroundColor("#00FF00").codeType(CodeType.NONE)
+                .backgroundImageUrl("http://169.254.169.254/latest/meta-data/"));
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        MvcResult result = mockMvc.perform(get("/api/v1/tickets/{ticketId}/artifact", ticketId)
+                        .header("Authorization", "Bearer " + buyerToken)
+                        .param("format", "digital"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()));
+        assertThat(new Color(image.getRGB(150, 75))).isEqualTo(Color.decode("#00FF00"));
     }
 
     // ---- template resolution order, proven via the rendered accent-bar pixel color ----

@@ -25,6 +25,10 @@ tags:
   - name: Auth
   - name: Organizations
   - name: Venues
+  - name: Categories
+  - name: Posts
+  - name: PlatformFees
+  - name: Uploads
   - name: Events
   - name: TicketTypes
   - name: SeatMaps
@@ -132,6 +136,36 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+    patch:
+      operationId: updateCurrentUser
+      tags: [Auth]
+      summary: Update the caller's own profile (name, email, profile picture)
+      description: |
+        Every field is optional; one that is left out is not changed. `avatarUrl` must be the URL returned by
+        `POST /uploads` on this server; any other link is a 400. Send an empty string to remove the picture.
+        The file of a replaced or removed picture is deleted from storage unless something else (another user,
+        a ticket template, an event image) still uses it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                avatarUrl:
+                  type: string
+                  maxLength: 500
+                  description: URL of an image uploaded through `POST /uploads`; "" removes the profile picture; omit to leave it unchanged.
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /users/me/orders:
     get:
@@ -218,6 +252,27 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Organization" }
         "422": { $ref: "#/components/responses/ValidationError" }
+
+  /organizations/mine:
+    get:
+      operationId: listMyOrganizations
+      tags: [Organizations]
+      summary: The caller's own organizations, of every status
+      description: |
+        Every non-deleted organization the caller is a member of (owner, organizer or check-in staff) or applied
+        for, whatever its status (PENDING, APPROVED, REJECTED, SUSPENDED), oldest first. A pending or rejected
+        application has no members yet, so it is matched by its applicant. An empty list when there are none.
+        Never returns an organization the caller has no relation to - not even for an admin (use
+        `GET /organizations` for the review queue).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Organization" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /organizations/{orgId}:
     parameters:
@@ -350,8 +405,6 @@ paths:
       tags: [Payouts]
       summary: >
         List an organization's payouts (owner/organizer or admin).
-        Payouts are system-generated on a schedule; this pass exposes
-        read access only, not manual creation.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -364,6 +417,33 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Payout" }
         "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: generateOrganizationPayout
+      tags: [Payouts]
+      summary: Generate a payout for a period (admin only) - this is where the platform fees are deducted
+      description: |
+        Settles every order of the organization that is paid (or partly refunded), placed in the period (UTC, both
+        days included) and not yet in a payout. Per order: `gross` = what the buyer paid minus refunds; `fees` = the
+        platform fee that order was charged (never more than the gross left after refunds); `net` = gross - fees,
+        which is what the organizer is owed. Fully refunded orders are left out. The payout is created SCHEDULED and
+        its orders are marked as settled, so no order is ever paid out twice.
+        409 when no order is due in the period, or when the orders use more than one currency.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutGenerate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: No orders are due for payout in that period (or they use more than one currency) }
 
   /organizations/{orgId}/venues:
     parameters:
@@ -396,6 +476,369 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Venue" }
+
+  /uploads:
+    post:
+      operationId: uploadImage
+      tags: [Uploads]
+      summary: Upload an image (any signed-in user) - e.g. a ticket template background
+      description: PNG, JPEG, WebP or GIF, up to 5 MB. The type is detected from the file's own bytes (SVG and anything else is rejected); the stored name is random.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadedImage" }
+        "400": { description: "Not a PNG/JPEG/WebP/GIF image, or no file part" }
+        "413": { description: Larger than 5 MB }
+
+  /uploads/files/{name}:
+    get:
+      operationId: getUploadedImage
+      tags: [Uploads]
+      security: []
+      summary: Serve an uploaded image (public)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The image
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform-fees:
+    get:
+      operationId: listPlatformFeeRules
+      tags: [PlatformFees]
+      summary: List the platform fee rules (admin only)
+      parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [PLATFORM, ORGANIZATION, EVENT] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PlatformFeeRule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /platform-fees/effective:
+    get:
+      operationId: getEffectivePlatformFee
+      tags: [PlatformFees]
+      summary: Which rule applies to an event right now (admin only)
+      parameters:
+        - name: eventId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK - `rule` is null when no rule applies (no fee is charged)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EffectivePlatformFee" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform-fees/default:
+    put:
+      operationId: setDefaultPlatformFee
+      tags: [PlatformFees]
+      summary: Set (or replace) the platform-wide default fee (admin only)
+      description: |
+        The fee ("admin cut") added on top of the ticket price of every purchase that has no more specific rule.
+        A percentage is worked out on the ticket total after promo discounts; a flat amount is per order.
+        A rate of 0 is allowed and means no fee.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformFeeRuleRequest" }
+      responses:
+        "200":
+          description: The rule now in force
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformFeeRule" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      operationId: removeDefaultPlatformFee
+      tags: [PlatformFees]
+      summary: Remove the platform-wide default (admin only) - purchases without an override then pay no fee
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform-fees/organizations/{organizationId}:
+    parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: setOrganizationPlatformFee
+      tags: [PlatformFees]
+      summary: Override the fee for one organization (admin only) - applies to its events that have no event rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformFeeRuleRequest" }
+      responses:
+        "200":
+          description: The rule now in force
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformFeeRule" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: removeOrganizationPlatformFee
+      tags: [PlatformFees]
+      summary: Remove an organization's override (admin only) - the platform default applies again
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform-fees/events/{eventId}:
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: setEventPlatformFee
+      tags: [PlatformFees]
+      summary: Override the fee for one event (admin only) - the most specific rule, it beats the organization and the default
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformFeeRuleRequest" }
+      responses:
+        "200":
+          description: The rule now in force
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformFeeRule" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: removeEventPlatformFee
+      tags: [PlatformFees]
+      summary: Remove an event's override (admin only) - the organization's rule, else the default, applies again
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /posts:
+    get:
+      operationId: listPosts
+      tags: [Posts]
+      security: []
+      summary: List sales and announcements (public), newest first
+      description: |
+        With no filter: site-wide posts plus the posts of events that are published (published, on sale, sold out
+        or completed). Posts of draft, cancelled, suspended or deleted events are never listed.
+        Only **live** posts are listed: not hidden, already published (`publishAt` reached or none) and not yet
+        expired (`expiresAt` not reached or none). Newest first by the moment a post went live (its `publishAt`,
+        else when it was created). `eventId` and `siteWide=true` cannot be combined (400).
+        An admin may add `all=true` to see every post that is not deleted - hidden, scheduled and expired ones
+        included, and those of non-public events - each with its `status`; anyone else gets a 403 for it.
+      parameters:
+        - name: eventId
+          in: query
+          description: Only the posts of this event (nothing if the event is not public).
+          schema: { type: string, format: uuid }
+        - name: siteWide
+          in: query
+          description: Only the posts that belong to no event.
+          schema: { type: boolean, default: false }
+        - name: all
+          in: query
+          description: Admin only. Include hidden, scheduled and expired posts and those of non-public events.
+          schema: { type: boolean, default: false }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          description: Page size; larger values are capped at 50.
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: A page of posts (always newest first)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PostPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+    post:
+      operationId: createPost
+      tags: [Posts]
+      summary: Publish a sale or an announcement (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Post" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /posts/{postId}:
+    parameters:
+      - name: postId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updatePost
+      tags: [Posts]
+      summary: Edit, schedule, expire, hide or unhide a post (admin only)
+      description: |
+        Every field is optional; one that is left out (or null) is not changed. The event of a post cannot be
+        changed. Use `clearPublishAt` / `clearExpiresAt` to remove a date. The resulting `expiresAt` must be after
+        the resulting `publishAt` (400); an `expiresAt` in the past is allowed here - it ends the post right now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Post" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePost
+      tags: [Posts]
+      summary: Remove a post (admin only). Soft delete - it is no longer listed, and its picture file is deleted unless something else still uses it.
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [Categories]
+      security: []
+      summary: List active event categories (public) - the allowed values for an event's category
+      responses:
+        "200":
+          description: OK (ordered by sort_order, then name)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+    post:
+      operationId: createCategory
+      tags: [Categories]
+      summary: Create a category (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: A category with that name (or slug) already exists }
+
+  /categories/{categoryId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCategory
+      tags: [Categories]
+      security: []
+      summary: Get a category (public; also returns inactive ones)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateCategory
+      tags: [Categories]
+      summary: Update a category, including re-activating it (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: A category with that name (or slug) already exists }
+    delete:
+      operationId: deactivateCategory
+      tags: [Categories]
+      summary: Deactivate a category (admin only). Soft - hidden from the list and refused for new events; existing events keep it.
+      responses:
+        "204": { description: Deactivated }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /venues/{venueId}:
     parameters:
@@ -606,6 +1049,34 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Event" }
 
+  /ticket-types/{ticketTypeId}/sales-status:
+    parameters:
+      - $ref: "#/components/parameters/TicketTypeId"
+    put:
+      operationId: setTicketTypeSalesStatus
+      tags: [TicketTypes]
+      summary: Pause or resume selling a ticket type (owning organizer, or admin)
+      description: |
+        Sets the ticket type's sales state. PAUSED: it can no longer be added to a cart (409) and a cart that already
+        holds it can no longer check out (409; nothing is charged, the cart and its holds are kept so the buyer can
+        check out once selling resumes). ACTIVE: normal selling again - the sale window and the event's status still
+        decide whether it can actually be bought. Tickets already sold are untouched. Asking for the state it is
+        already in is not an error. This is the same switch as `sales_paused` on the update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketTypeSalesStatus" }
+      responses:
+        "200":
+          description: The ticket type, with its new `sales_paused`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { description: "Missing or unknown status" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /events/{eventId}/seatmap:
     parameters:
       - $ref: "#/components/parameters/EventId"
@@ -658,6 +1129,35 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
 
+  /events/{eventId}/ticket-types/order:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    put:
+      operationId: reorderTicketTypes
+      tags: [TicketTypes]
+      summary: Save the arrangement of an event's ticket types (owning organizer, or admin)
+      description: |
+        The organizer drags ticket types into order; this saves it. `ticket_type_ids` is the whole list, first to last:
+        they become positions 0..n-1 and the list endpoint returns them in that order. It must contain every
+        ticket type of the event exactly once - a list that omits, repeats or invents one (a stale screen, another
+        event's id, a deleted ticket type) is refused with 400 and nothing changes. New ticket types go to the end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketTypeOrder" }
+      responses:
+        "200":
+          description: The event's ticket types in the new order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TicketType" }
+        "400": { description: "Empty list, or not exactly the event's ticket types" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /ticket-types/{ticketTypeId}:
     parameters:
       - $ref: "#/components/parameters/TicketTypeId"
@@ -687,6 +1187,16 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+    delete:
+      operationId: deleteTicketType
+      tags: [TicketTypes]
+      summary: Delete a TicketType (owning organizer)
+      description: Soft delete. Refused with 409 once the type has sales, held tickets or ticket rows - pause its sales instead.
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Has sales or held tickets }
 
   /events/{eventId}/promo-codes:
     parameters:
@@ -719,6 +1229,78 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PromoCode" }
+
+  /promo-codes/{promoCodeId}:
+    parameters:
+      - name: promoCodeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updatePromoCode
+      tags: [PromoCodes]
+      summary: Edit a promo code (owning organizer, or admin)
+      description: |
+        Every field is optional; omitted or null = unchanged. To remove a limit send 0 (0 = no limit); to apply the
+        code to every ticket type send an empty `applicable_ticket_type_ids`. `valid_until` must be after `valid_from`
+        (checked on the merged values), a percentage is at most 100, and the ticket types must belong to the code's
+        own event. A `code` the event already has is 409. Once the code has been used (`used_count` > 0) its `code`
+        and `discount_type` can no longer change (409 - pause it and create a new one) and `usage_limit_total` can't
+        go below `used_count` (400); everything else can still be edited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromoCodeUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoCode" }
+        "400": { description: "Invalid value (e.g. validity window, percentage over 100, ticket type of another event, total limit below the uses)" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The code already exists for the event, or the code / discount type of a used code was changed" }
+    delete:
+      operationId: deletePromoCode
+      tags: [PromoCodes]
+      summary: Delete a promo code that has not been used (owning organizer, or admin)
+      description: Soft delete. A code that orders have used (`used_count` > 0) can't be deleted (409) - pause it instead. A cart that still holds a deleted code simply loses the discount and can't check out with it. The code's name can be created again afterwards.
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The code has already been used, so it can't be deleted" }
+
+  /promo-codes/{promoCodeId}/status:
+    parameters:
+      - name: promoCodeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: setPromoCodeStatus
+      tags: [PromoCodes]
+      summary: Pause or resume a promo code (owning organizer, or admin)
+      description: |
+        PAUSED: the code can't be applied to a cart (422, like an unknown code) and a cart that already holds it can't
+        check out (422, nothing charged). ACTIVE: usable again. Orders that already used it are untouched. Allowed
+        whatever the event's status; asking for the state it is already in is not an error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromoCodeStatus" }
+      responses:
+        "200":
+          description: The promo code with its new `paused`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoCode" }
+        "400": { description: Missing or unknown status }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /events/{eventId}/waitlist:
     parameters:
@@ -880,6 +1462,15 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketTemplate" }
+    delete:
+      operationId: deleteTicketTemplate
+      tags: [TicketTemplates]
+      summary: Delete a ticket template (owning organizer, or admin)
+      description: Soft delete - the template stops being listed or used; tickets fall back to the event-level template or the built-in layout.
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /events/{eventId}/analytics:
     parameters:
@@ -1753,6 +2344,9 @@ components:
         name: { type: string }
         email: { type: string, format: email }
         is_admin: { type: boolean }
+        avatarUrl:
+          type: [string, "null"]
+          description: The user's profile picture - a URL on this server's `/uploads/files/` - or null when none is set. Set through `PATCH /users/me`.
         organizations:
           type: array
           description: One entry per organization the user has any role in.
@@ -1836,6 +2430,106 @@ components:
           type: string
           enum: [organizer, check_in_staff]
           description: owner cannot be granted here — it's only ever set by organization-application approval.
+
+    UploadedImage:
+      type: object
+      properties:
+        url: { type: string, format: uri, description: Absolute URL the image is served from. }
+        contentType: { type: string }
+        size: { type: integer, description: Bytes. }
+
+    Post:
+      type: object
+      description: A sale or an announcement. `eventId` is null for a site-wide post.
+      required: [id, kind, title, body, hidden, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: [string, "null"], format: uuid }
+        eventTitle: { type: [string, "null"], description: "Title of the event; null for a site-wide post." }
+        kind: { type: string, enum: [ANNOUNCEMENT, SALE] }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        body: { type: string, maxLength: 2000, description: May be empty. }
+        imageUrl: { type: [string, "null"], description: "The post's optional picture - a URL on this server's `/uploads/files/` - or null for a text-only post." }
+        publishAt: { type: [string, "null"], format: date-time, description: "Not public before this moment; null = public as soon as it was created." }
+        expiresAt: { type: [string, "null"], format: date-time, description: "Not public from this moment on; null = never expires." }
+        hidden: { type: boolean, description: "Admin switch: a hidden post is never public, whatever its dates say." }
+        status:
+          type: string
+          enum: [HIDDEN, EXPIRED, SCHEDULED, LIVE]
+          description: "Where the post stands right now. Only LIVE posts are in the public list."
+        createdAt: { type: string, format: date-time }
+
+    PostCreate:
+      type: object
+      required: [kind, title]
+      properties:
+        eventId: { type: [string, "null"], format: uuid, description: "The event the post is about; omit or null for a site-wide post. It must exist and not be deleted." }
+        kind: { type: string, enum: [ANNOUNCEMENT, SALE] }
+        title: { type: string, minLength: 1, maxLength: 120, description: Trimmed; must not contain HTML. }
+        body: { type: string, maxLength: 2000, description: Trimmed; may be empty or omitted; must not contain HTML. }
+        imageUrl:
+          type: [string, "null"]
+          maxLength: 500
+          description: Optional picture - the URL returned by `POST /uploads` on this server. Any other link, or a file that no longer exists, is a 400. Blank or omitted = no picture.
+        publishAt: { type: [string, "null"], format: date-time, description: "Schedule the post: it is public from this moment. Omit or null = public right away. A time in the past means right away." }
+        expiresAt: { type: [string, "null"], format: date-time, description: "Take the post down at this moment. Omit or null = never. Must be in the future and after publishAt." }
+        hidden: { type: boolean, default: false, description: "Create the post hidden - kept off the public list until an admin unhides it." }
+
+    PostUpdate:
+      type: object
+      description: Every field is optional; one that is left out (or null) is not changed.
+      properties:
+        kind: { type: string, enum: [ANNOUNCEMENT, SALE] }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        body: { type: string, maxLength: 2000 }
+        imageUrl:
+          type: string
+          maxLength: 500
+          description: URL returned by `POST /uploads` on this server to replace the picture; "" removes it; omitted or null leaves it unchanged. Sending the URL the post already has changes nothing. A replaced or removed file is deleted from storage unless another post, a user's avatar, a ticket template, an event image or an organization document still uses it.
+        publishAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, description: "May be in the past, which ends the post right now." }
+        hidden: { type: boolean }
+        clearPublishAt: { type: boolean, default: false, description: "true removes the publish time (public right away). Cannot be sent together with publishAt." }
+        clearExpiresAt: { type: boolean, default: false, description: "true removes the expiry (never expires). Cannot be sent together with expiresAt." }
+
+    PostPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/Post" }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPage: { type: integer }
+        last: { type: boolean }
+
+    Category:
+      type: object
+      description: An event category. An event's `category` must be the name of an active Category (matched case-insensitively, stored with this canonical spelling).
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string, description: "URL-safe form of the name, e.g. arts-theatre." }
+        description: { type: [string, "null"] }
+        active: { type: boolean }
+        sort_order: { type: integer }
+
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 100 }
+        description: { type: string, maxLength: 255 }
+        sort_order: { type: integer }
+
+    CategoryUpdate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        description: { type: string, maxLength: 255 }
+        sort_order: { type: integer }
+        active: { type: boolean }
 
     Venue:
       type: object
@@ -1979,6 +2673,8 @@ components:
         sale_start_at: { type: string, format: date-time }
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
+        sales_paused: { type: boolean, description: "While true the type can not be added to a cart and a cart holding it can not check out. Set with PUT /ticket-types/{id}/sales-status." }
+        position: { type: integer, minimum: 0, description: "Where it sits in the event's list (0 = first), as arranged by the organizer. The list endpoint returns ticket types in this order; new ones go to the end. Set with PUT /events/{id}/ticket-types/order." }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
@@ -1996,6 +2692,22 @@ components:
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer, default: 10 }
 
+    TicketTypeSalesStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACTIVE, PAUSED] }
+
+    TicketTypeOrder:
+      type: object
+      required: [ticket_type_ids]
+      properties:
+        ticket_type_ids:
+          type: array
+          minItems: 1
+          description: Every ticket type of the event exactly once, in the wanted order.
+          items: { type: string, format: uuid }
+
     TicketTypeUpdate:
       type: object
       properties:
@@ -2005,6 +2717,7 @@ components:
         sale_start_at: { type: string, format: date-time }
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
+        sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged." }
 
     PromoCode:
       type: object
@@ -2023,10 +2736,34 @@ components:
         usage_limit_per_buyer: { type: [integer, "null"] }
         valid_from: { type: string, format: date-time }
         valid_until: { type: string, format: date-time }
+        paused: { type: boolean, description: "While true the code can't be applied or checked out with. Set with PUT /promo-codes/{id}/status." }
+        used_count: { type: integer, minimum: 0, description: "How many non-cancelled orders used this code for its event; decides whether code / discount type can still change and whether it can be deleted." }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
         updated_by: { type: string, format: uuid }
+
+    PromoCodeUpdate:
+      type: object
+      description: Every field optional; omitted or null = unchanged.
+      properties:
+        code: { type: string, maxLength: 50 }
+        discount_type: { type: string, enum: [percentage, fixed] }
+        discount_value: { type: number, minimum: 0 }
+        applicable_ticket_type_ids:
+          type: array
+          description: "[] = every ticket type of the event."
+          items: { type: string, format: uuid }
+        usage_limit_total: { type: integer, minimum: 0, description: "0 = no limit." }
+        usage_limit_per_buyer: { type: integer, minimum: 0, description: "0 = no limit." }
+        valid_from: { type: string, format: date-time }
+        valid_until: { type: string, format: date-time }
+
+    PromoCodeStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACTIVE, PAUSED] }
 
     PromoCodeCreate:
       type: object
@@ -2157,6 +2894,24 @@ components:
             logo_url: { type: [string, "null"], format: uri }
             background_image_url: { type: [string, "null"], format: uri }
             primary_color: { type: [string, "null"] }
+        code_type: { type: [string, "null"], enum: [QR, BARCODE, NONE, null], description: "Which scannable code the ticket carries. Both encode the same credential; BARCODE is PDF417 (QR is square, barcode 3:1)." }
+        code_x: { type: [number, "null"], minimum: 0, maximum: 100, description: "Top-left corner of the (unrotated) code as % of the ticket width." }
+        code_y: { type: [number, "null"], minimum: 0, maximum: 100, description: "... as % of the ticket height. Type, x, y and width are given together or not at all; none = default placement (QR bottom-right)." }
+        code_width: { type: [number, "null"], minimum: 1, maximum: 100, description: "Width as % of the ticket width; at least 15 for QR, 35 for BARCODE; code_x + code_width must not exceed 100. The renderer keeps the code on the ticket." }
+        code_rotation: { type: [integer, "null"], minimum: 0, maximum: 359, description: "Degrees clockwise about the code centre." }
+        ticket_width: { type: [integer, "null"], minimum: 100, maximum: 5000, description: "The ticket's own size in px; need not match the background image. Null = 900." }
+        ticket_height: { type: [integer, "null"], minimum: 100, maximum: 5000, description: "Null = 380." }
+        background_color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Fill under everything; null = white." }
+        background_fit: { type: [string, "null"], enum: [COVER, CONTAIN, STRETCH, CUSTOM, null], description: "How background_image_url fills the ticket. Null = COVER. Only our own /api/v1/uploads/files/ images are drawn; anything else is ignored." }
+        background_x: { type: [number, "null"], minimum: -500, maximum: 500, description: "CUSTOM fit only (and then all four are required): the image's rectangle in % of the ticket width/height. May extend past the edges (it is clipped); must be null for any other fit." }
+        background_y: { type: [number, "null"], minimum: -500, maximum: 500 }
+        background_width: { type: [number, "null"], exclusiveMinimum: 0, maximum: 500 }
+        background_height: { type: [number, "null"], exclusiveMinimum: 0, maximum: 500 }
+        text_fields:
+          type: array
+          maxItems: 30
+          description: "In drawing order; later fields are drawn on top. The code is always drawn last."
+          items: { $ref: "#/components/schemas/TicketTextField" }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
@@ -2174,6 +2929,23 @@ components:
             logo_url: { type: string, format: uri }
             background_image_url: { type: string, format: uri }
             primary_color: { type: string }
+        code_type: { type: string, enum: [QR, BARCODE, NONE] }
+        code_x: { type: number, minimum: 0, maximum: 100 }
+        code_y: { type: number, minimum: 0, maximum: 100 }
+        code_width: { type: number, minimum: 1, maximum: 100 }
+        code_rotation: { type: integer, minimum: 0, maximum: 359 }
+        ticket_width: { type: integer, minimum: 100, maximum: 5000 }
+        ticket_height: { type: integer, minimum: 100, maximum: 5000 }
+        background_color: { type: string, pattern: "^(#[0-9A-Fa-f]{6})?$", description: "#RRGGBB. On update, an empty string clears it (white)." }
+        background_fit: { type: string, enum: [COVER, CONTAIN, STRETCH, CUSTOM], description: "CUSTOM needs all four background_* values; any other fit must not send them. On update, switching to a non-CUSTOM fit drops the stored rectangle." }
+        background_x: { type: number, minimum: -500, maximum: 500 }
+        background_y: { type: number, minimum: -500, maximum: 500 }
+        background_width: { type: number, exclusiveMinimum: 0, maximum: 500 }
+        background_height: { type: number, exclusiveMinimum: 0, maximum: 500 }
+        text_fields:
+          type: array
+          maxItems: 30
+          items: { $ref: "#/components/schemas/TicketTextField" }
 
     TicketTemplateUpdate:
       type: object
@@ -2184,6 +2956,54 @@ components:
             logo_url: { type: string, format: uri }
             background_image_url: { type: string, format: uri }
             primary_color: { type: string }
+        code_type: { type: string, enum: [QR, BARCODE, NONE], description: "Same rules as on create; any value given is merged with the stored placement and the result is re-validated. There is no way to clear a placement yet. background_image_url `\"\"` clears the background." }
+        code_x: { type: number, minimum: 0, maximum: 100 }
+        code_y: { type: number, minimum: 0, maximum: 100 }
+        code_width: { type: number, minimum: 1, maximum: 100 }
+        code_rotation: { type: integer, minimum: 0, maximum: 359 }
+        ticket_width: { type: integer, minimum: 100, maximum: 5000 }
+        ticket_height: { type: integer, minimum: 100, maximum: 5000 }
+        background_color: { type: string, pattern: "^(#[0-9A-Fa-f]{6})?$", description: "#RRGGBB. On update, an empty string clears it (white)." }
+        background_fit: { type: string, enum: [COVER, CONTAIN, STRETCH, CUSTOM], description: "CUSTOM needs all four background_* values; any other fit must not send them. On update, switching to a non-CUSTOM fit drops the stored rectangle." }
+        background_x: { type: number, minimum: -500, maximum: 500 }
+        background_y: { type: number, minimum: -500, maximum: 500 }
+        background_width: { type: number, exclusiveMinimum: 0, maximum: 500 }
+        background_height: { type: number, exclusiveMinimum: 0, maximum: 500 }
+        text_fields:
+          type: array
+          maxItems: 30
+          description: "On update: omitted = unchanged, [] = remove all, otherwise the whole list is replaced."
+          items: { $ref: "#/components/schemas/TicketTextField" }
+
+    TicketTextField:
+      type: object
+      required: [key, x, y, font_size, color, align]
+      description: |
+        One text printed on the ticket. x is the anchor edge chosen by align (left edge, centre or right edge of the text),
+        y the vertical centre of the whole text block, both in % of the ticket's width/height. Which members apply depends
+        on key: per-ticket keys (TICKET_TYPE, SECTION, ROW, SEAT, TICKET_NUMBER, ATTENDEE_NAME) may have sample_length /
+        sample_text and no line_breaks; event keys (EVENT_NAME, EVENT_DATE, EVENT_TIME, VENUE) and CUSTOM may have
+        line_breaks. CUSTOM needs text and no other key may have it. Every key except CUSTOM appears at most once (CUSTOM up to 10 times).
+        Values: SECTION is "GA" and ROW/SEAT "-" for general admission; ATTENDEE_NAME is the ticket's current owner;
+        EVENT_DATE ("Wed, Dec 23, 2026") and EVENT_TIME ("8:30 PM") are in the event's own time zone.
+        In responses, members that do not apply to a field are omitted (never null); rotation (0 when unrotated) and bold are always present.
+      properties:
+        key: { type: string, enum: [TICKET_TYPE, SECTION, ROW, SEAT, TICKET_NUMBER, ATTENDEE_NAME, EVENT_NAME, EVENT_DATE, EVENT_TIME, VENUE, CUSTOM] }
+        x: { type: number, minimum: 0, maximum: 100 }
+        y: { type: number, minimum: 0, maximum: 100 }
+        font_size: { type: number, minimum: 2, maximum: 25, description: "% of the ticket height; line height is 1.15 x." }
+        color: { type: string, pattern: "^#[0-9A-Fa-f]{6}$" }
+        bold: { type: boolean, default: false }
+        align: { type: string, enum: [LEFT, CENTER, RIGHT] }
+        rotation: { type: integer, minimum: 0, maximum: 359, default: 0, description: "Degrees clockwise about the centre of the text's box." }
+        sample_length: { type: integer, minimum: 1, maximum: 30, description: "Per-ticket keys only: reserved width in 'X' characters when there is no sample_text. The value fills the reserved box from its aligned edge and is never truncated." }
+        sample_text: { type: string, minLength: 1, maxLength: 30, description: "Per-ticket keys only: single line (trimmed); its width is the reserved width." }
+        text: { type: string, minLength: 1, maxLength: 60, description: "CUSTOM only: single line (trimmed)." }
+        line_breaks:
+          type: array
+          maxItems: 10
+          description: "Event keys and CUSTOM only: ascending unique character positions (> 0) where a new line starts; for CUSTOM each must be less than the text length."
+          items: { type: integer, minimum: 1 }
 
     Cart:
       type: object
@@ -2198,7 +3018,14 @@ components:
           properties:
             code: { type: string }
             discount_amount: { $ref: "#/components/schemas/Money" }
-        total: { $ref: "#/components/schemas/Money" }
+        platform_fee:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: The platform fee that will be added on top of the ticket price (worked out on the total after the promo discount; 0 when no fee rule applies).
+        total:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: What the buyer will pay - ticket price minus any promo discount, plus platform_fee.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -2221,7 +3048,14 @@ components:
         payee_id: { type: string, format: uuid }
         status: { type: string, enum: [pending, paid, cancelled, refunded, partially_refunded] }
         promo_code: { type: [string, "null"] }
-        total: { $ref: "#/components/schemas/Money" }
+        platform_fee:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: The platform fee charged on top of the ticket price (already part of total; 0 when no fee rule applied). Fixed when the order was placed - later rule changes do not alter it.
+        total:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: What the buyer paid, platform_fee included.
         tickets:
           type: array
           items: { $ref: "#/components/schemas/Ticket" }
@@ -2230,7 +3064,7 @@ components:
           type: string
           format: uuid
           description: User who initiated the purchase — normally equal to buyer_id, but may differ for an organizer/admin-initiated order (e.g. a comp ticket) placed on a buyer's behalf.
-        updated_at: { type: string, format: date-time, description: Reflects status transitions (pending -> paid -> refunded, etc). }
+        updated_at: { type: string, format: date-time, description: "Reflects status transitions (pending -> paid -> refunded, etc)." }
 
     OrderList:
       type: object
@@ -2288,8 +3122,7 @@ components:
         result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
         scanned_at: { type: string, format: date-time }
         ticket_summary:
-          type: object
-          nullable: true
+          type: [object, "null"]
           properties:
             ticket_number: { type: string }
             ticket_type_name: { type: string }
@@ -2422,20 +3255,74 @@ components:
         id: { type: string, format: uuid }
         organization_id: { type: string, format: uuid }
         gross: { $ref: "#/components/schemas/Money" }
-        fees: { $ref: "#/components/schemas/Money" }
-        net: { $ref: "#/components/schemas/Money" }
+        fees:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: The platform fees of the settled orders, deducted from the gross.
+        net:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: gross - fees - what the organizer is owed.
         period_start: { type: string, format: date }
         period_end: { type: string, format: date }
         status: { type: string, enum: [scheduled, paid, failed] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time, description: Reflects status transitions. }
 
+    PayoutGenerate:
+      type: object
+      required: [periodStart, periodEnd]
+      properties:
+        periodStart: { type: string, format: date, description: First day (UTC) of the orders to settle. }
+        periodEnd: { type: string, format: date, description: "Last day (UTC), included; not in the future and not before periodStart." }
+
+    PlatformFeeRuleRequest:
+      type: object
+      required: [type]
+      description: PERCENTAGE needs `percentage` and no `flatAmount`; FLAT needs `flatAmount` and no `percentage`.
+      properties:
+        type: { type: string, enum: [PERCENTAGE, FLAT] }
+        percentage: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01, description: "Percent of the ticket total after promo discounts, rounded half up to the minor unit. 0 = no fee." }
+        flatAmount:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: A fixed fee per order. A flat rule in another currency than the order is skipped (no fee).
+
+    PlatformFeeRule:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        scope: { type: string, enum: [PLATFORM, ORGANIZATION, EVENT], description: "The most specific scope wins: EVENT, then ORGANIZATION, then PLATFORM." }
+        scopeId: { type: [string, "null"], format: uuid, description: "The organization or event id; null for the platform default." }
+        type: { type: string, enum: [PERCENTAGE, FLAT] }
+        percentage: { type: [number, "null"] }
+        flatAmount:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, "null"], format: date-time }
+
+    EffectivePlatformFee:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        rule:
+          oneOf:
+            - $ref: "#/components/schemas/PlatformFeeRule"
+            - type: "null"
+          description: The rule that applies to the event; null when none does (no fee).
+
     EventAnalytics:
       type: object
       properties:
         event_id: { type: string, format: uuid }
         tickets_sold: { type: integer }
-        revenue: { $ref: "#/components/schemas/Money" }
+        revenue:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: Ticket revenue - what the buyers paid, without the platform fee.
         remaining_inventory: { type: integer }
         sales_over_time:
           type: array

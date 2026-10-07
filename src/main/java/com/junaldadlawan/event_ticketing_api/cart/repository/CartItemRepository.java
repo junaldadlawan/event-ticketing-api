@@ -11,6 +11,8 @@ public interface CartItemRepository extends JpaRepository<CartItem, UUID> {
 
     List<CartItem> findByCartId(UUID cartId);
 
+    boolean existsByTicketTypeId(UUID ticketTypeId);
+
     /** Used by the lazy expired-hold-release logic in CartServiceImpl. */
     List<CartItem> findByTicketTypeIdAndHoldExpiresAtBefore(UUID ticketTypeId, Instant now);
 }

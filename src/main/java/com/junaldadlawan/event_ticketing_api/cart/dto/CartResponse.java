@@ -12,13 +12,16 @@ import java.util.UUID;
  * Deliberately not a plain {@code from(Cart)} factory: {@code items},
  * {@code appliedPromoCode}, and {@code total} require cross-referencing
  * {@code CartItem}/{@code TicketType}/{@code PromoCode} and are computed
- * live by {@code CartServiceImpl}, not stored on {@code Cart} itself.
+ * live by {@code CartServiceImpl}, not stored on {@code Cart} itself. {@code platformFee} is the platform fee that
+ * will be added on top of the ticket price (after any promo discount); {@code total} is what the buyer will pay,
+ * fee included.
  */
 public record CartResponse(
         UUID id,
         UUID buyerId,
         List<CartItemResponse> items,
         AppliedPromoCodeResponse appliedPromoCode,
+        MoneyDto platformFee,
         MoneyDto total,
         Instant createdAt,
         Instant updatedAt) implements Serializable {

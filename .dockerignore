@@ -11,3 +11,4 @@ docs/postman/
 .claude/
 compose.yml
 logs/
+uploads/
