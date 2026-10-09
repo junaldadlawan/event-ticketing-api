@@ -64,7 +64,7 @@ class AuditLoggingIntegrationTest {
     @BeforeEach
     void setUp() {
         user = userRepository.save(User.builder()
-                .name("Audit Test")
+                .firstName("Audit").lastName("Test")
                 .email("audit-" + UUID.randomUUID() + "@test.local")
                 .passwordHash(passwordEncoder.encode(PASSWORD))
                 .role(Role.CUSTOMER)
@@ -166,11 +166,11 @@ class AuditLoggingIntegrationTest {
     }
 
     @Test
-    void registration_isAudited_withTheRequestedRole() throws Exception {
+    void registration_isAudited_withTheAssignedRole() throws Exception {
         String email = "registered-" + UUID.randomUUID() + "@test.local";
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType("application/json")
-                        .content("{\"name\":\"Reg Test\",\"email\":\"" + email + "\",\"passwordHash\":\"" + PASSWORD
+                        .content("{\"firstName\":\"Reg\",\"lastName\":\"Test\",\"birthDate\":\"1990-05-17\",\"email\":\"" + email + "\",\"passwordHash\":\"" + PASSWORD
                                 + "\",\"role\":\"CUSTOMER\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();

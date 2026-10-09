@@ -10,5 +10,10 @@ import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
+
+    /** Emails are compared ignoring case, so Jane@x.com cannot be registered next to jane@x.com. Soft-deleted rows count: the database key still holds them. */
+    boolean existsByEmailIgnoreCase(String email);
+
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
     List<User> findByDeletedAtIsNull();
 }

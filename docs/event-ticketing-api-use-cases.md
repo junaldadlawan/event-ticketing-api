@@ -16,8 +16,11 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 
 - **Preconditions:** None — open to the public.
 - **Main flow:**
-  1. User submits registration details.
-  2. API creates the account as an Attendee by default.
+  1. User submits registration details: first name, optional middle name, last name, date of birth, optional phone number, email and password.
+  2. API creates the account as an Attendee by default (a role sent by the client is ignored).
+- **Exception flow:** A name with anything but letters, spaces, periods, apostrophes or hyphens, a birth date that is not in the past (or is more than 120 years ago), a phone number that is not +digits, or an email with
+  characters outside plain ASCII letters, digits and `. _ % + -` (for example `x[]@gmail.com`) → rejected (400).
+  An email that already belongs to another account (any letter case) → 409.
 - **Postconditions:** User can now log in.
 - **Related rules:** —
 

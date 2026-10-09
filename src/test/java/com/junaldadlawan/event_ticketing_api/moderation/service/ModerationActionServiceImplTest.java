@@ -101,7 +101,7 @@ class ModerationActionServiceImplTest {
     }
 
     private User user(UUID id, AccountStatus status) {
-        return User.builder().id(id).name("n").email("e@test.local").passwordHash("h").role(Role.CUSTOMER).accountStatus(status).build();
+        return User.builder().id(id).firstName("n").lastName("User").email("e@test.local").passwordHash("h").role(Role.CUSTOMER).accountStatus(status).build();
     }
 
     // ---- admin gate ----

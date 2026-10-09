@@ -211,7 +211,7 @@ public class TicketArtifactServiceImpl implements TicketArtifactService {
         ZonedDateTime start = event.getStartAt().atZone(zoneOf(event.getTimezone()));
         String venueName = event.getVenueId() == null ? "" : venueRepository.findById(event.getVenueId())
                 .map(Venue::getName).orElse("");
-        String attendee = userRepository.findById(ticket.getOwnerId()).map(User::getName).orElse("");
+        String attendee = userRepository.findById(ticket.getOwnerId()).map(User::fullName).orElse("");
         return new TicketValues(
                 ticketType.getName(),
                 seat == null ? "GA" : seat.getSection(),
