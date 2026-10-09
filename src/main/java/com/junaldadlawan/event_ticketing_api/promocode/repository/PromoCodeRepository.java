@@ -12,4 +12,6 @@ public interface PromoCodeRepository extends JpaRepository<PromoCode, UUID> {
     Optional<PromoCode> findByEventIdAndCodeAndDeletedAtIsNull(UUID eventId, String code);
 
     List<PromoCode> findByEventIdAndDeletedAtIsNull(UUID eventId);
+
+    Optional<PromoCode> findByIdAndDeletedAtIsNull(UUID id);
 }

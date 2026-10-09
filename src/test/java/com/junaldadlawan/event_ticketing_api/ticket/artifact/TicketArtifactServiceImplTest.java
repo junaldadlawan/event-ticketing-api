@@ -18,6 +18,7 @@ import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.ticket.service.TicketAccessGuard;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.entity.TicketTemplate;
+import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.CodeType;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.enums.TicketTemplateFormat;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.repository.TicketTemplateRepository;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
@@ -79,6 +80,15 @@ class TicketArtifactServiceImplTest {
     private TicketTemplateRepository ticketTemplateRepository;
 
     @Mock
+    private com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository venueRepository;
+
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.user.repository.UserRepository userRepository;
+
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.upload.service.ImageStorageService imageStorageService;
+
+    @Mock
     private PngTicketRenderer pngTicketRenderer;
 
     @Mock
@@ -96,7 +106,9 @@ class TicketArtifactServiceImplTest {
     void setUp() {
         service = new TicketArtifactServiceImpl(
                 ticketRepository, ticketAccessGuard, eventRepository, ticketTypeRepository,
-                seatRepository, ticketTemplateRepository, qrCodeGenerator, pngTicketRenderer, pdfTicketRenderer);
+                seatRepository, ticketTemplateRepository, venueRepository, userRepository, imageStorageService,
+                qrCodeGenerator, new BarcodeGenerator(),
+                pngTicketRenderer, pdfTicketRenderer);
         eventId = UUID.randomUUID();
         ticketTypeId = UUID.randomUUID();
     }
@@ -296,11 +308,54 @@ class TicketArtifactServiceImplTest {
         service.render(ticket.getId(), TicketTemplateFormat.DIGITAL);
         verify(pngTicketRenderer).render(captor.capture());
 
-        String decoded = decode(captor.getValue().qrCodeImage());
+        String decoded = decode(captor.getValue().codeImage());
 
         assertThat(decoded).isEqualTo(realCredential);
         assertThat(decoded).isNotEqualTo(ticket.getTicketNumber());
         assertThat(decoded).isNotEqualTo(ticket.getId().toString());
+    }
+
+    @Test
+    void render_barcodeTemplate_encodesTheSameCredentialAsABarcode_andPassesThePlacementOn() throws Exception {
+        String realCredential = UUID.randomUUID() + ":1." + "reallySecretSignatureXYZ-0123456789abcdefghij";
+        Ticket ticket = ticket(UUID.randomUUID(), null, realCredential);
+        mockGaTicketFoundation(ticket);
+        TicketTemplate template = TicketTemplate.builder()
+                .eventId(eventId).format(TicketTemplateFormat.DIGITAL)
+                .codeType(CodeType.BARCODE).codeX(5.0).codeY(20.0).codeWidth(45.0).codeRotation(90)
+                .build();
+        when(ticketTemplateRepository.findByEventIdAndTicketTypeIdAndFormatAndDeletedAtIsNull(eventId, ticketTypeId, TicketTemplateFormat.DIGITAL))
+                .thenReturn(Optional.of(template));
+        when(pngTicketRenderer.render(org.mockito.ArgumentMatchers.any())).thenReturn(new byte[]{1});
+
+        ArgumentCaptor<TicketArtifactFields> captor = ArgumentCaptor.forClass(TicketArtifactFields.class);
+        service.render(ticket.getId(), TicketTemplateFormat.DIGITAL);
+        verify(pngTicketRenderer).render(captor.capture());
+
+        assertThat(decode(captor.getValue().codeImage())).isEqualTo(realCredential);
+        assertThat(captor.getValue().codePlacement()).isEqualTo(new CodePlacement(CodeType.BARCODE, 5.0, 20.0, 45.0, 90));
+    }
+
+    @Test
+    void render_qrTemplateWithAPlacement_stillEncodesTheCredentialAsAQr() throws Exception {
+        String realCredential = UUID.randomUUID() + "." + "reallySecretSignatureXYZ";
+        Ticket ticket = ticket(UUID.randomUUID(), null, realCredential);
+        mockGaTicketFoundation(ticket);
+        TicketTemplate template = TicketTemplate.builder()
+                .eventId(eventId).format(TicketTemplateFormat.DIGITAL)
+                .codeType(CodeType.QR).codeX(5.0).codeY(20.0).codeWidth(25.0).codeRotation(0)
+                .build();
+        when(ticketTemplateRepository.findByEventIdAndTicketTypeIdAndFormatAndDeletedAtIsNull(eventId, ticketTypeId, TicketTemplateFormat.DIGITAL))
+                .thenReturn(Optional.of(template));
+        when(pngTicketRenderer.render(org.mockito.ArgumentMatchers.any())).thenReturn(new byte[]{1});
+
+        ArgumentCaptor<TicketArtifactFields> captor = ArgumentCaptor.forClass(TicketArtifactFields.class);
+        service.render(ticket.getId(), TicketTemplateFormat.DIGITAL);
+        verify(pngTicketRenderer).render(captor.capture());
+
+        assertThat(decode(captor.getValue().codeImage())).isEqualTo(realCredential);
+        assertThat(captor.getValue().codeImage().getWidth()).isEqualTo(captor.getValue().codeImage().getHeight());
+        assertThat(captor.getValue().codePlacement().type()).isEqualTo(CodeType.QR);
     }
 
     // ---- template resolution order (the other security-relevant behavior) ----

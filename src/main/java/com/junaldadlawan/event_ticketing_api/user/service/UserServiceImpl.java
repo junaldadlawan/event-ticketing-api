@@ -4,6 +4,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserSelfUpdateRequest;
@@ -24,6 +25,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final OrganizationAccessGuard accessGuard;
+    private final UploadedFileUrls uploadedFileUrls;
 
     @Override
     public User register(UserRequest request) {
@@ -95,7 +97,25 @@ public class UserServiceImpl implements UserService {
         if (request.email() != null) {
             user.setEmail(request.email());
         }
-        return userRepository.save(user);
+        String previousAvatar = user.getAvatarUrl();
+        if (request.avatarUrl() != null) {
+            if (request.avatarUrl().isBlank()) {
+                user.setAvatarUrl(null);
+            } else {
+                // Only our own uploaded images: any other link would let a user show an arbitrary page or tracker on
+                // every screen that displays their picture.
+                if (uploadedFileUrls.ownFileName(request.avatarUrl()).isEmpty()) {
+                    throw new BadRequestException("avatarUrl must be the URL of an image uploaded through POST /api/v1/uploads");
+                }
+                user.setAvatarUrl(request.avatarUrl().trim());
+            }
+        }
+        User saved = userRepository.save(user);
+        // The replaced (or removed) picture is deleted from storage unless something else still uses it.
+        if (previousAvatar != null && !previousAvatar.equals(saved.getAvatarUrl())) {
+            uploadedFileUrls.deleteIfUnreferenced(previousAvatar);
+        }
+        return saved;
     }
 
     public User getOrThrow(UUID id) {

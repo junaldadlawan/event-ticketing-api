@@ -18,7 +18,7 @@ import java.util.UUID;
 
 /**
  * Separate controller from {@code CartController} (matches how
- * {@code EventPromoCodeController} is split from {@code EventController}) -
+ * {@code PromoCodeController} is split from {@code EventController}) -
  * {@code POST /carts/{cartId}/checkout} delegates to {@link CheckoutService},
  * not {@code CartService}. Security: covered by SecurityConfig's existing
  * {@code /api/v1/carts/**} authenticated matcher, no new matcher needed.

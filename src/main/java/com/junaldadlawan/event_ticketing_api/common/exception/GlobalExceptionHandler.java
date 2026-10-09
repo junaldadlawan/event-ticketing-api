@@ -7,6 +7,8 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -34,6 +36,20 @@ public class GlobalExceptionHandler {
         String detail = "Invalid value for parameter '" + ex.getName() + "'";
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail));
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ProblemDetail> handleMissingServletRequestPart(MissingServletRequestPartException ex) {
+        String detail = "Required part '" + ex.getRequestPartName() + "' is missing";
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ProblemDetail> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        HttpStatus status = HttpStatus.valueOf(413);
+        return ResponseEntity.status(status)
+                .body(ProblemDetail.forStatusAndDetail(status, "The uploaded file is too large (5 MB maximum)"));
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

@@ -14,5 +14,7 @@ import jakarta.validation.constraints.Size;
  */
 public record UserSelfUpdateRequest(
         @Size(max = 150) @NoHtml String name,
-        @Size(max = 255) @Email String email) {
+        @Size(max = 255) @Email String email,
+        /** Profile picture: one of our own upload URLs; null = unchanged, "" = remove. */
+        @Size(max = 500) String avatarUrl) {
 }

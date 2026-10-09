@@ -2,6 +2,8 @@ package com.junaldadlawan.event_ticketing_api.order.service;
 
 import com.junaldadlawan.event_ticketing_api.cart.dto.AppliedPromoCodeResponse;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartResponse;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeQuote;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
 import com.junaldadlawan.event_ticketing_api.cart.entity.Cart;
 import com.junaldadlawan.event_ticketing_api.cart.entity.CartItem;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
@@ -64,6 +66,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -124,6 +128,9 @@ class CheckoutServiceImplTest {
     @Mock
     private TicketCredentialService ticketCredentialService;
 
+    @Mock
+    private PlatformFeeService platformFeeService;
+
     private CheckoutServiceImpl service;
 
     private UUID buyerId;
@@ -136,7 +143,8 @@ class CheckoutServiceImplTest {
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
-                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService);
+                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService);
+        lenient().when(platformFeeService.quote(any(), any(), anyLong(), any())).thenReturn(PlatformFeeQuote.NONE);
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();
         idempotencyKey = UUID.randomUUID();
@@ -203,7 +211,7 @@ class CheckoutServiceImplTest {
         AppliedPromoCodeResponse applied = promoCode != null
                 ? new AppliedPromoCodeResponse(promoCode, new MoneyDto(0L, "USD"))
                 : null;
-        return new CartResponse(cartId, buyerId, List.of(), applied, new MoneyDto(total, "USD"), Instant.now(), Instant.now());
+        return new CartResponse(cartId, buyerId, List.of(), applied, new MoneyDto(0L, "USD"), new MoneyDto(total, "USD"), Instant.now(), Instant.now());
     }
 
     private void stubFreshClaim() {
@@ -380,6 +388,116 @@ class CheckoutServiceImplTest {
         verify(paymentRepository, never()).save(any());
         verify(cartItemRepository, never()).delete(any());
         verify(idempotencyKeyManager).delete(idempotencyKey);
+    }
+
+    // ---- sales paused after the item was added to the cart ----
+
+    @Test
+    void checkout_aTicketTypePausedAfterItWasAddedToTheCart_throwsConflict_chargesNothing_andFreesKey() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        CartItem item = gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
+        TicketType paused = ticketType(ticketTypeId, eventId);
+        paused.setSalesPaused(true);
+        when(ticketTypeRepository.findAllById(List.of(ticketTypeId))).thenReturn(List.of(paused));
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("paused");
+
+        verifyNoInteractions(paymentGatewayClient);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(paymentRepository, never()).save(any());
+        verify(cartItemRepository, never()).delete(any());
+        verify(idempotencyKeyManager).delete(idempotencyKey);
+    }
+
+    @Test
+    void checkout_oneOfSeveralTicketTypesPaused_refusesTheWholeCheckout() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID runningTypeId = UUID.randomUUID();
+        UUID pausedTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        Instant hold = Instant.now().plus(10, ChronoUnit.MINUTES);
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(
+                gaItem(cartId, runningTypeId, 1, hold), gaItem(cartId, pausedTypeId, 1, hold)));
+        TicketType paused = ticketType(pausedTypeId, eventId);
+        paused.setSalesPaused(true);
+        when(ticketTypeRepository.findAllById(List.of(runningTypeId, pausedTypeId)))
+                .thenReturn(List.of(ticketType(runningTypeId, eventId), paused));
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok")).isInstanceOf(ConflictException.class);
+
+        verifyNoInteractions(paymentGatewayClient);
+        verify(idempotencyKeyManager).delete(idempotencyKey);
+    }
+
+    // ---- promo code paused / deleted after it was applied ----
+
+    private void checkoutWithAppliedCode(PromoCode applied, UUID promoCodeId) {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        Cart lockedCart = cart(cartId, buyerId);
+        lockedCart.setPromoCodeId(promoCodeId);
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(lockedCart));
+        UUID ticketTypeId = UUID.randomUUID();
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(
+                gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES))));
+        when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
+        when(promoCodeRepository.findById(promoCodeId)).thenReturn(Optional.ofNullable(applied));
+    }
+
+    @Test
+    void checkout_aPromoCodePausedSinceItWasApplied_isRefusedBeforeCharging_andFreesTheKey() {
+        UUID promoCodeId = UUID.randomUUID();
+        PromoCode paused = PromoCode.builder().id(promoCodeId).code("SAVE10")
+                .discountType(DiscountType.FIXED).discountValue(BigDecimal.valueOf(100)).paused(true).build();
+        checkoutWithAppliedCode(paused, promoCodeId);
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessage("Promo code is invalid or inapplicable to this cart");
+
+        verifyNoInteractions(paymentGatewayClient);
+        verifyNoInteractions(promoCodeUsageLimitGuard);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(cartItemRepository, never()).delete(any());
+        verify(idempotencyKeyManager).delete(idempotencyKey);
+    }
+
+    @Test
+    void checkout_aPromoCodeDeletedSinceItWasApplied_isRefusedBeforeCharging() {
+        UUID promoCodeId = UUID.randomUUID();
+        PromoCode deleted = PromoCode.builder().id(promoCodeId).code("SAVE10")
+                .discountType(DiscountType.FIXED).discountValue(BigDecimal.valueOf(100)).build();
+        deleted.markDeleted();
+        checkoutWithAppliedCode(deleted, promoCodeId);
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
+                .isInstanceOf(UnprocessableEntityException.class);
+
+        verifyNoInteractions(paymentGatewayClient);
+        verify(idempotencyKeyManager).delete(idempotencyKey);
+    }
+
+    @Test
+    void checkout_aPromoCodeThatNoLongerExistsAtAll_isRefusedBeforeCharging() {
+        UUID promoCodeId = UUID.randomUUID();
+        checkoutWithAppliedCode(null, promoCodeId);
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
+                .isInstanceOf(UnprocessableEntityException.class);
+
+        verifyNoInteractions(paymentGatewayClient);
     }
 
     // ---- successful checkout ----
@@ -606,5 +724,90 @@ class CheckoutServiceImplTest {
                 .isInstanceOf(PaymentFailedException.class);
 
         verifyNoInteractions(notificationService);
+    }
+
+    // ---- platform fee: added on top of the ticket price ----
+
+    @Test
+    void checkout_withAPlatformFee_chargesTicketTotalPlusFee_andSnapshotsTheRuleOnTheOrder() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(
+                gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES))));
+        // the cart view already shows ticket total 1000 + fee 100 = 1100
+        when(cartService.get(cartId)).thenReturn(new CartResponse(cartId, buyerId, List.of(), null,
+                new MoneyDto(100L, "USD"), new MoneyDto(1100L, "USD"), Instant.now(), Instant.now()));
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
+        when(platformFeeService.quote(orgId, eventId, 1000L, "USD")).thenReturn(new PlatformFeeQuote(100L,
+                com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope.ORGANIZATION,
+                com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType.PERCENTAGE, BigDecimal.TEN, null));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any())).thenReturn(PaymentResult.success("mock_ref_fee"));
+        when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(UUID.randomUUID());
+            o.setCreatedAt(Instant.now());
+            return o;
+        });
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyKeyRepository.findById(idempotencyKey)).thenReturn(Optional.empty());
+        stubTicketIssuance();
+
+        OrderResponse response = service.checkout(cartId, idempotencyKey, "tok_ok");
+
+        org.mockito.ArgumentCaptor<Money> charged = org.mockito.ArgumentCaptor.forClass(Money.class);
+        verify(paymentGatewayClient).charge(org.mockito.ArgumentMatchers.eq("tok_ok"), charged.capture());
+        assertThat(charged.getValue().getAmount()).isEqualTo(1100L);
+        org.mockito.ArgumentCaptor<Order> order = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).saveAndFlush(order.capture());
+        assertThat(order.getValue().getTotal().getAmount()).isEqualTo(1100L);
+        assertThat(order.getValue().getPlatformFeeAmount()).isEqualTo(100L);
+        assertThat(order.getValue().getPlatformFeeScope()).isEqualTo(com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope.ORGANIZATION);
+        assertThat(order.getValue().getPlatformFeeType()).isEqualTo(com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType.PERCENTAGE);
+        assertThat(order.getValue().getPlatformFeePercentage()).isEqualByComparingTo("10");
+        org.mockito.ArgumentCaptor<Payment> payment = org.mockito.ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository).save(payment.capture());
+        assertThat(payment.getValue().getAmount().getAmount()).isEqualTo(1100L);
+        assertThat(response.total().amount()).isEqualTo(1100L);
+        assertThat(response.platformFee().amount()).isEqualTo(100L);
+    }
+
+    @Test
+    void checkout_withNoFeeRule_chargesTheTicketTotalOnly_andStoresNoFee() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(
+                gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES))));
+        when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any())).thenReturn(PaymentResult.success("mock_ref"));
+        when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(UUID.randomUUID());
+            o.setCreatedAt(Instant.now());
+            return o;
+        });
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyKeyRepository.findById(idempotencyKey)).thenReturn(Optional.empty());
+        stubTicketIssuance();
+
+        OrderResponse response = service.checkout(cartId, idempotencyKey, "tok_ok");
+
+        org.mockito.ArgumentCaptor<Order> order = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).saveAndFlush(order.capture());
+        assertThat(order.getValue().getTotal().getAmount()).isEqualTo(1000L);
+        assertThat(order.getValue().getPlatformFeeAmount()).isZero();
+        assertThat(order.getValue().getPlatformFeeScope()).isNull();
+        assertThat(response.platformFee().amount()).isZero();
     }
 }

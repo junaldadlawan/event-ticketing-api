@@ -21,6 +21,9 @@ public interface OrganizationMemberRepository extends JpaRepository<Organization
 
     boolean existsByUserIdAndRolesIn(UUID userId, Set<OrganizationRole> roles);
 
+    /** Every membership of a user, whatever its roles. */
+    List<OrganizationMember> findByUserId(UUID userId);
+
     /** Distinct because a member holding several matching roles would otherwise appear once per role. */
     List<OrganizationMember> findDistinctByUserIdAndRolesIn(UUID userId, Set<OrganizationRole> roles);
 }

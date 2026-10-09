@@ -13,6 +13,8 @@ import java.util.UUID;
 
 public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
+    boolean existsByTicketTypeId(UUID ticketTypeId);
+
     /**
      * Row lock for Phase 7's ownership-transfer paths (direct transfer and
      * resale purchase) - both mutate {@code owner_id}/{@code credential}/

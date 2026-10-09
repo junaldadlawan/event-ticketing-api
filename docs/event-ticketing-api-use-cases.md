@@ -30,6 +30,24 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Exception flow:** Invalid credentials → login rejected.
 - **Related rules:** —
 
+### UC-USER-03: Set or Remove a Profile Picture
+
+- **Preconditions:** User is signed in and has uploaded an image through the upload endpoint.
+- **Main flow:**
+  1. User sends the uploaded image's URL as their avatar URL (an empty value removes the picture).
+  2. API stores the URL on the account and returns the updated profile.
+  3. If a previous picture is no longer used by anything, API deletes its file.
+- **Exception flow:** A URL that is not one of this server's uploaded files → rejected (400); nothing changes.
+- **Related rules:** BR-PROFILE-001, BR-PROFILE-002, BR-PROFILE-003, BR-PROFILE-004
+
+### UC-USER-04: Read Sales and Announcements
+
+- **Preconditions:** None - open to the public.
+- **Main flow:**
+  1. Visitor lists posts, optionally for one event or only the site-wide ones.
+  2. API returns a page of posts, newest first, each with its event title when it has one.
+- **Related rules:** BR-POST-003
+
 ## Actor: Attendee (Buyer)
 
 ### UC-ATTND-01: Search & Browse Published Events
@@ -149,6 +167,17 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 
 ## Actor: Organization Owner
 
+### UC-ORG-02: See My Organizations
+
+- **Preconditions:** User is signed in.
+- **Main flow:**
+  1. User asks for their organizations.
+  2. API returns every organization the user is a member of (owner, organizer or check-in staff) or applied for,
+     whatever its status (pending, approved, rejected, suspended), oldest first - an empty list if there are none.
+  3. The client uses the approved ones to pick the organization for a new event, and shows a notice for each
+     suspended one (its events cannot be created or published until it is reinstated).
+- **Related rules:** BR-ORG-006
+
 ### UC-OWNER-01: Assign a Role to Another User
 
 - **Preconditions:** Caller is the organization's owner; target user is
@@ -178,9 +207,10 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
   (conceptually) approved organization.
 - **Main flow:**
   1. Organizer submits event details: title, description, category,
-     venue/location, start/end date-time, timezone, images.
+     venue/location, start/end date-time, timezone, images. The category
+     must be an active category from `GET /api/v1/categories` (BR-EVENT-004).
   2. API creates the event in `draft` status.
-- **Related rules:** BR-EVENT-001, BR-EVENT-002
+- **Related rules:** BR-EVENT-001, BR-EVENT-002, BR-EVENT-004
 
 ### UC-EVENT-02: Update an Event
 
@@ -212,7 +242,12 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Main flow:**
   1. Organizer defines a ticket type (e.g. GA, VIP, Early Bird) with
      price, currency, quantity, sale window, and per-order limit.
-- **Related rules:** BR-EVENT-003
+  2. Organizer may later pause selling the ticket type and resume it (for
+     example while a problem is fixed): a paused type can't be added to a
+     cart or checked out.
+  3. Organizer drags the ticket types into the order buyers should see them
+     in, and that arrangement is saved.
+- **Related rules:** BR-EVENT-003, BR-TICKET-012, BR-TICKET-013
 
 ### UC-EVENT-05: Define a Ticket Template
 
@@ -230,7 +265,9 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Main flow:**
   1. Organizer defines discount type (percentage/fixed), applicable
      ticket types, usage limits, and validity window.
-- **Related rules:** BR-PROMO-001–004
+  2. Organizer may later edit the promo code, pause and resume it, or delete
+     it while nothing has used it; a used code can only be paused.
+- **Related rules:** BR-PROMO-001-004, BR-PROMO-008, BR-PROMO-009
 
 ### UC-EVENT-07: Set an Event's Refund Policy
 
@@ -351,6 +388,40 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
   1. Admin requests platform-wide metrics: total GMV, active organizers,
      event volume, and similar aggregates.
 - **Related rules:** BR-ANALYTICS-002
+
+### UC-ADMIN-05: Publish, Schedule, Hide or Remove a Sale or Announcement
+
+- **Preconditions:** Caller is an admin.
+- **Main flow:**
+  1. Admin publishes a post (site-wide or for one event) with a kind, title, optional body and optional picture
+     (an image uploaded beforehand through the upload endpoint).
+  2. API stores it and returns it; it shows up in the public list.
+  3. Admin may add, replace or remove the picture, and may schedule the post (it appears at its publish time), give it an expiry (it disappears then) or hide it
+     (it is kept off the public list until unhidden), and may change these or the text later.
+  4. Later, admin removes the post; it no longer shows up.
+- **Exception flow:** Unknown or deleted event → 404. Blank or HTML title, too-long title or body → 400. A picture URL that is not one of this server's uploaded files → 400. An expiry in the past, or not after the publish time → 400. Non-admin → 403. Changing or removing an unknown or already removed post → 404.
+- **Related rules:** BR-POST-001, BR-POST-002, BR-POST-004, BR-POST-005, BR-POST-006
+
+### UC-ADMIN-06: Set the Platform Fee
+
+- **Preconditions:** Caller is an admin.
+- **Main flow:**
+  1. Admin sets the platform-wide default fee as a percentage or a flat amount per order.
+  2. Admin may override it for one organization or one event (a rate of 0 waives the fee), and may remove an override again.
+  3. Admin may check which rule currently applies to an event.
+- **Exception flow:** Unknown organization or event → 404. Missing, negative or over-100 percentage, a flat amount without currency, or a rule that mixes both kinds → 400. Non-admin → 403.
+- **Related rules:** BR-FEE-001, BR-FEE-002, BR-FEE-003
+
+### UC-ADMIN-07: Generate an Organization Payout
+
+- **Preconditions:** Caller is an admin; the organization has paid orders in the period that are not in a payout yet.
+- **Main flow:**
+  1. Admin picks the organization and a period (start and end day).
+  2. API totals the due orders: gross (paid minus refunds), the platform fees, and the net the organizer is owed.
+  3. API records a scheduled payout and marks those orders as settled.
+  4. The organization's owner or organizer can then see the payout with its fees.
+- **Exception flow:** Nothing is due in the period, or the orders use more than one currency → 409. End before start or in the future → 400. Non-admin → 403.
+- **Related rules:** BR-FEE-007, BR-FEE-008, BR-PAY-006
 
 ## Not covered (no requirement to derive a use case from)
 

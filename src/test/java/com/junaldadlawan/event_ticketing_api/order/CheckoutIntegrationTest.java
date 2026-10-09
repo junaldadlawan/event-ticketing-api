@@ -647,6 +647,401 @@ class CheckoutIntegrationTest {
         assertThat(cartItemRepository.findByCartId(cartId)).isEmpty();
     }
 
+    // ---- pausing / resuming a ticket type's sales (PUT /ticket-types/{id}/sales-status) ----
+
+    private org.springframework.test.web.servlet.ResultActions putSalesStatus(String token, UUID ticketTypeId, String status) throws Exception {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .put("/api/v1/ticket-types/{id}/sales-status", ticketTypeId)
+                .contentType("application/json")
+                .content("{\"status\":\"" + status + "\"}");
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return mockMvc.perform(request);
+    }
+
+    @Test
+    void salesStatus_pausedAfterTheItemWasInTheCart_blocksCheckoutUntilResumed() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        String ownerToken = jwtService.generateAccessToken(owner);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+
+        // the organizer pauses selling while the buyer's item is in the cart
+        putSalesStatus(ownerToken, ticketTypeId, "PAUSED").andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.salesPaused").value(true));
+
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        MvcResult blocked = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(blocked.getResponse().getStatus()).isEqualTo(409);
+        assertThat(blocked.getResponse().getContentAsString()).contains("paused");
+        // nothing charged or written; the cart and its hold are intact; the key is free to use again
+        assertThat(orderRepository.findByCartId(cartId)).isEmpty();
+        assertThat(cartItemRepository.findByCartId(cartId)).hasSize(1);
+        assertThat(checkoutIdempotencyKeyRepository.findById(key)).isEmpty();
+
+        // a new add-to-cart for the paused type is refused too
+        String otherBuyerToken = jwtService.generateAccessToken(inMemoryUser(Role.CUSTOMER));
+        UUID otherCartId = createCart(otherBuyerToken);
+        mockMvc.perform(post("/api/v1/carts/{cartId}/items", otherCartId)
+                        .header("Authorization", "Bearer " + otherBuyerToken)
+                        .contentType("application/json")
+                        .content("{\"ticketTypeId\":\"" + ticketTypeId + "\",\"quantity\":1}"))
+                .andExpect(status().isConflict());
+
+        // resumed: the very same cart and idempotency key now check out
+        putSalesStatus(ownerToken, ticketTypeId, "ACTIVE").andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.salesPaused").value(false));
+        MvcResult paid = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(paid.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(paid);
+        assertThat(orderRepository.findByCartId(cartId)).hasSize(1);
+    }
+
+    @Test
+    void salesStatus_aCartWithOnePausedTypeAndOneRunningType_cannotCheckOut() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID runningType = persistGaTicketType(eventId, 5);
+        UUID pausedType = persistGaTicketType(eventId, 5);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, runningType);
+        addGaItem(buyerToken, cartId, pausedType);
+        putSalesStatus(jwtService.generateAccessToken(owner), pausedType, "PAUSED").andExpect(status().isOk());
+
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+
+        assertThat(checkout(buyerToken, cartId, key, "tok_ok").getResponse().getStatus()).isEqualTo(409);
+        assertThat(orderRepository.findByCartId(cartId)).isEmpty();
+        assertThat(cartItemRepository.findByCartId(cartId)).hasSize(2);
+    }
+
+    @Test
+    void salesStatus_onlyThatTicketTypeIsAffected() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID pausedType = persistGaTicketType(eventId, 5);
+        UUID runningType = persistGaTicketType(eventId, 5);
+        putSalesStatus(jwtService.generateAccessToken(owner), pausedType, "PAUSED").andExpect(status().isOk());
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, runningType);
+
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        MvcResult paid = checkout(buyerToken, cartId, key, "tok_ok");
+
+        assertThat(paid.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(paid);
+    }
+
+    @Test
+    void salesStatus_accessControl() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User stranger = inMemoryUser(Role.CUSTOMER);
+        User admin = inMemoryUser(Role.ADMIN);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+
+        putSalesStatus(null, ticketTypeId, "PAUSED").andExpect(status().isUnauthorized());
+        putSalesStatus(jwtService.generateAccessToken(stranger), ticketTypeId, "PAUSED").andExpect(status().isForbidden());
+        assertThat(ticketTypeRepository.findById(ticketTypeId).orElseThrow().isSalesPaused()).isFalse();
+
+        putSalesStatus(jwtService.generateAccessToken(admin), ticketTypeId, "PAUSED").andExpect(status().isOk());
+        assertThat(ticketTypeRepository.findById(ticketTypeId).orElseThrow().isSalesPaused()).isTrue();
+
+        // the same state twice is not an error
+        putSalesStatus(jwtService.generateAccessToken(owner), ticketTypeId, "PAUSED").andExpect(status().isOk());
+        putSalesStatus(jwtService.generateAccessToken(owner), ticketTypeId, "ACTIVE").andExpect(status().isOk());
+        putSalesStatus(jwtService.generateAccessToken(owner), ticketTypeId, "ACTIVE").andExpect(status().isOk());
+        assertThat(ticketTypeRepository.findById(ticketTypeId).orElseThrow().isSalesPaused()).isFalse();
+    }
+
+    @Test
+    void salesStatus_unknownTicketType_is404_andABadStatusIs400() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        String ownerToken = jwtService.generateAccessToken(owner);
+
+        putSalesStatus(ownerToken, UUID.randomUUID(), "PAUSED").andExpect(status().isNotFound());
+        putSalesStatus(ownerToken, ticketTypeId, "ON_SALE").andExpect(status().isBadRequest());
+        putSalesStatus(ownerToken, ticketTypeId, "").andExpect(status().isBadRequest());
+    }
+
+    // ---- editing, pausing and deleting promo codes (PATCH / PUT status / DELETE /promo-codes/{id}) ----
+
+    private org.springframework.test.web.servlet.ResultActions patchPromo(String token, UUID promoCodeId, String body) throws Exception {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .patch("/api/v1/promo-codes/{id}", promoCodeId).contentType("application/json").content(body);
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return mockMvc.perform(request);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions putPromoStatus(String token, UUID promoCodeId, String status) throws Exception {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .put("/api/v1/promo-codes/{id}/status", promoCodeId).contentType("application/json")
+                .content("{\"status\":\"" + status + "\"}");
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return mockMvc.perform(request);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions deletePromo(String token, UUID promoCodeId) throws Exception {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .delete("/api/v1/promo-codes/{id}", promoCodeId);
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return mockMvc.perform(request);
+    }
+
+    private tools.jackson.databind.JsonNode listPromoCodes(String token, UUID eventId) throws Exception {
+        MvcResult result = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/v1/events/{eventId}/promo-codes", eventId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private MvcResult applyPromoCodeRaw(String token, UUID cartId, String code) throws Exception {
+        return mockMvc.perform(post("/api/v1/carts/{cartId}/promo-code", cartId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"code\":\"" + code + "\"}"))
+                .andReturn();
+    }
+
+    @Test
+    void promoCode_pausedThenResumed_blocksApplyingIt() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        UUID promoId = persistPromoCode(eventId, "PAUSEME", null, DiscountType.FIXED, BigDecimal.valueOf(100));
+        String ownerToken = jwtService.generateAccessToken(owner);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+
+        putPromoStatus(ownerToken, promoId, "PAUSED").andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.paused").value(true));
+        MvcResult blocked = applyPromoCodeRaw(buyerToken, cartId, "PAUSEME");
+        assertThat(blocked.getResponse().getStatus()).isEqualTo(422);
+        assertThat(blocked.getResponse().getContentAsString()).contains("invalid or inapplicable").doesNotContain("paused");
+
+        putPromoStatus(ownerToken, promoId, "ACTIVE").andExpect(status().isOk());
+        assertThat(applyPromoCodeRaw(buyerToken, cartId, "PAUSEME").getResponse().getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void promoCode_pausedAfterItWasApplied_blocksCheckoutUntilResumed_andTheCartLosesTheDiscountMeanwhile() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        UUID promoId = persistPromoCode(eventId, "LATEPAUSE", null, DiscountType.FIXED, BigDecimal.valueOf(100));
+        String ownerToken = jwtService.generateAccessToken(owner);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+        applyPromoCode(buyerToken, cartId, "LATEPAUSE");
+
+        putPromoStatus(ownerToken, promoId, "PAUSED").andExpect(status().isOk());
+
+        // the cart still loads, just without the discount
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/carts/{cartId}", cartId)
+                        .header("Authorization", "Bearer " + buyerToken))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.appliedPromoCode").doesNotExist())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.total.amount").value(1000));
+        // checkout is refused before anything is charged; the cart is intact and the key is free again
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        MvcResult refused = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(refused.getResponse().getStatus()).isEqualTo(422);
+        assertThat(orderRepository.findByCartId(cartId)).isEmpty();
+        assertThat(cartItemRepository.findByCartId(cartId)).hasSize(1);
+        assertThat(checkoutIdempotencyKeyRepository.findById(key)).isEmpty();
+
+        // resumed: the same cart and key check out, with the discount
+        putPromoStatus(ownerToken, promoId, "ACTIVE").andExpect(status().isOk());
+        MvcResult paid = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(paid.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(paid);
+        var order = objectMapper.readTree(paid.getResponse().getContentAsString());
+        assertThat(order.get("promoCode").asText()).isEqualTo("LATEPAUSE");
+        assertThat(order.get("total").get("amount").asLong()).isEqualTo(900L);
+    }
+
+    @Test
+    void promoCode_deletedAfterItWasApplied_blocksCheckout() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        UUID promoId = persistPromoCode(eventId, "GONE", null, DiscountType.FIXED, BigDecimal.valueOf(100));
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+        applyPromoCode(buyerToken, cartId, "GONE");
+
+        deletePromo(jwtService.generateAccessToken(owner), promoId).andExpect(status().isNoContent());
+
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        assertThat(checkout(buyerToken, cartId, key, "tok_ok").getResponse().getStatus()).isEqualTo(422);
+        assertThat(orderRepository.findByCartId(cartId)).isEmpty();
+    }
+
+    @Test
+    void promoCode_onceUsed_countsAsUsed_cannotBeRenamedOrDeleted_butCanBeRetunedAndPaused() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        UUID promoId = persistPromoCode(eventId, "USEDONCE", 10, DiscountType.FIXED, BigDecimal.valueOf(100));
+        String ownerToken = jwtService.generateAccessToken(owner);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+
+        assertThat(listPromoCodes(ownerToken, eventId).get(0).get("usedCount").asInt()).isZero();
+
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+        applyPromoCode(buyerToken, cartId, "USEDONCE");
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        MvcResult paid = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(paid.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(paid);
+
+        var listed = listPromoCodes(ownerToken, eventId).get(0);
+        assertThat(listed.get("usedCount").asInt()).isEqualTo(1);
+        assertThat(listed.get("paused").asBoolean()).isFalse();
+
+        patchPromo(ownerToken, promoId, "{\"code\":\"RENAMED\"}").andExpect(status().isConflict());
+        patchPromo(ownerToken, promoId, "{\"discountType\":\"PERCENTAGE\"}").andExpect(status().isConflict());
+        deletePromo(ownerToken, promoId).andExpect(status().isConflict());
+        // a total below the uses is refused; the other fields can still change
+        patchPromo(ownerToken, promoId, "{\"usageLimitTotal\":0}").andExpect(status().isOk());
+        patchPromo(ownerToken, promoId, "{\"usageLimitTotal\":1,\"discountValue\":150,\"usageLimitPerBuyer\":3}")
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.usedCount").value(1))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.discountValue").value(150));
+        putPromoStatus(ownerToken, promoId, "PAUSED").andExpect(status().isOk());
+        assertThat(promoCodeRepository.findById(promoId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void promoCode_unused_canBeEditedAndDeleted_andItsNameIsFreeAgainAfterwards() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        UUID promoId = persistPromoCode(eventId, "DRAFT10", null, DiscountType.FIXED, BigDecimal.valueOf(100));
+        UUID otherId = persistPromoCode(eventId, "OTHER", null, DiscountType.FIXED, BigDecimal.valueOf(100));
+        String ownerToken = jwtService.generateAccessToken(owner);
+
+        patchPromo(ownerToken, promoId, "{\"code\":\"LAUNCH\",\"usageLimitTotal\":25,\"applicableTicketTypeIds\":[\"" + ticketTypeId + "\"]}")
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("LAUNCH"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.usageLimitTotal").value(25))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.applicableTicketTypeIds[0]").value(ticketTypeId.toString()));
+        // a code the event already has is a readable 409, not a 500
+        MvcResult duplicate = patchPromo(ownerToken, promoId, "{\"code\":\"OTHER\"}").andReturn();
+        assertThat(duplicate.getResponse().getStatus()).isEqualTo(409);
+        assertThat(duplicate.getResponse().getContentAsString()).contains("OTHER").contains("already exists");
+        // a ticket type of another event is refused
+        UUID foreignType = persistGaTicketType(persistEvent(orgId, EventStatus.PUBLISHED), 5);
+        patchPromo(ownerToken, promoId, "{\"applicableTicketTypeIds\":[\"" + foreignType + "\"]}").andExpect(status().isBadRequest());
+        // every ticket type again
+        patchPromo(ownerToken, promoId, "{\"applicableTicketTypeIds\":[]}").andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.applicableTicketTypeIds.length()").value(0));
+
+        deletePromo(ownerToken, promoId).andExpect(status().isNoContent());
+        assertThat(listPromoCodes(ownerToken, eventId)).hasSize(1);
+        // the buyer can no longer use it ...
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+        assertThat(applyPromoCodeRaw(buyerToken, cartId, "LAUNCH").getResponse().getStatus()).isEqualTo(422);
+        // ... and the name is free to be created again
+        MvcResult recreated = mockMvc.perform(post("/api/v1/events/{eventId}/promo-codes", eventId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType("application/json")
+                        .content("{\"code\":\"LAUNCH\",\"discountType\":\"FIXED\",\"discountValue\":50,\"validFrom\":\""
+                                + Instant.now().minus(1, ChronoUnit.DAYS) + "\",\"validUntil\":\"" + Instant.now().plus(2, ChronoUnit.DAYS) + "\"}"))
+                .andReturn();
+        assertThat(recreated.getResponse().getStatus()).isEqualTo(201);
+        createdPromoCodeIds.add(UUID.fromString(objectMapper.readTree(recreated.getResponse().getContentAsString()).get("id").asText()));
+        assertThat(otherId).isNotNull();
+    }
+
+    @Test
+    void promoCode_accessControl_andNotFound() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User stranger = inMemoryUser(Role.CUSTOMER);
+        User admin = inMemoryUser(Role.ADMIN);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID promoId = persistPromoCode(eventId, "ACCESS", null, DiscountType.FIXED, BigDecimal.valueOf(100));
+        String strangerToken = jwtService.generateAccessToken(stranger);
+
+        patchPromo(null, promoId, "{}").andExpect(status().isUnauthorized());
+        putPromoStatus(null, promoId, "PAUSED").andExpect(status().isUnauthorized());
+        deletePromo(null, promoId).andExpect(status().isUnauthorized());
+        patchPromo(strangerToken, promoId, "{\"discountValue\":1}").andExpect(status().isForbidden());
+        putPromoStatus(strangerToken, promoId, "PAUSED").andExpect(status().isForbidden());
+        deletePromo(strangerToken, promoId).andExpect(status().isForbidden());
+        assertThat(promoCodeRepository.findById(promoId).orElseThrow().isPaused()).isFalse();
+        assertThat(promoCodeRepository.findById(promoId).orElseThrow().getDeletedAt()).isNull();
+
+        String adminToken = jwtService.generateAccessToken(admin);
+        putPromoStatus(adminToken, promoId, "PAUSED").andExpect(status().isOk());
+        putPromoStatus(adminToken, promoId, "PAUSED").andExpect(status().isOk());   // same state again: not an error
+        putPromoStatus(adminToken, promoId, "ACTIVE").andExpect(status().isOk());
+        putPromoStatus(adminToken, promoId, "EXPIRED").andExpect(status().isBadRequest());
+
+        UUID unknown = UUID.randomUUID();
+        patchPromo(adminToken, unknown, "{}").andExpect(status().isNotFound());
+        putPromoStatus(adminToken, unknown, "PAUSED").andExpect(status().isNotFound());
+        deletePromo(adminToken, unknown).andExpect(status().isNotFound());
+        deletePromo(adminToken, promoId).andExpect(status().isNoContent());
+        deletePromo(adminToken, promoId).andExpect(status().isNotFound());
+    }
+
     // ---- idempotent replay: same key after a successful checkout returns the same Order ----
 
     @Test

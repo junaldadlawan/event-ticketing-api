@@ -23,12 +23,18 @@ public record PromoCodeResponse(
         Integer usageLimitPerBuyer,
         Instant validFrom,
         Instant validUntil,
+        boolean paused,
+        int usedCount,
         String createdBy,
         Instant createdAt,
         String updatedBy,
         Instant updatedAt) implements Serializable {
 
-    public static PromoCodeResponse from(PromoCode promoCode) {
+    /**
+     * {@code usedCount}: how many (non-cancelled) orders used this code for its event - what the organizer needs to
+     * decide what may still be edited or deleted.
+     */
+    public static PromoCodeResponse from(PromoCode promoCode, int usedCount) {
         return new PromoCodeResponse(
                 promoCode.getId(),
                 promoCode.getEventId(),
@@ -40,6 +46,8 @@ public record PromoCodeResponse(
                 promoCode.getUsageLimitPerBuyer(),
                 promoCode.getValidFrom(),
                 promoCode.getValidUntil(),
+                promoCode.isPaused(),
+                usedCount,
                 promoCode.getCreatedBy(),
                 promoCode.getCreatedAt(),
                 promoCode.getUpdatedBy(),
