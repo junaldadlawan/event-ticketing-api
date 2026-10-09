@@ -15,6 +15,13 @@ public interface TicketTypeRepository extends JpaRepository<TicketType, UUID> {
 
     List<TicketType> findByEventIdAndDeletedAtIsNull(UUID eventId);
 
+    /** An event's ticket types in the order the organizer arranged them (ties: oldest first). */
+    List<TicketType> findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(UUID eventId);
+
+    /** The highest position in use by the event's ticket types, or -1 if it has none. */
+    @Query("select coalesce(max(t.position), -1) from TicketType t where t.eventId = :eventId and t.deletedAt is null")
+    int findMaxPositionByEventId(@Param("eventId") UUID eventId);
+
     Optional<TicketType> findByIdAndDeletedAtIsNull(UUID id);
 
     /**

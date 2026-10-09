@@ -10,12 +10,22 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface OrderRepository extends JpaRepository<Order, UUID> {
+
+    /**
+     * How many orders used the promo code {@code code} for the given event: every order that is not cancelled
+     * (paid, refunded or partly refunded all count as a use) and that has a ticket for the event. Orders carry only
+     * the code string, so the event comes from their tickets.
+     */
+    @Query("select count(o) from Order o where o.promoCode = :code and o.status <> com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus.CANCELLED"
+            + " and exists (select 1 from Ticket t where t.orderId = o.id and t.eventId = :eventId)")
+    long countPromoCodeUses(@Param("code") String code, @Param("eventId") UUID eventId);
 
     /**
      * Row lock for Phase 8's refund paths (code-reviewer CRITICAL) -
@@ -68,12 +78,24 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * {@code total_gmv}'s glossary entry) - refunds are a separate,
      * unmodeled metric here, matching the spec's named metric list.
      */
-    @Query("select coalesce(sum(o.total.amount), 0) from Order o where o.id in :orderIds")
+    @Query("select coalesce(sum(o.total.amount - o.platformFeeAmount), 0) from Order o where o.id in :orderIds")
     long sumTotalAmountByIdIn(@Param("orderIds") Collection<UUID> orderIds);
 
     /** Phase 14: per-day revenue for {@code sales_over_time}, for a known set of order ids (see {@link #sumTotalAmountByIdIn}). */
-    @Query("select cast(o.createdAt as date), coalesce(sum(o.total.amount), 0) from Order o where o.id in :orderIds group by cast(o.createdAt as date) order by cast(o.createdAt as date)")
+    @Query("select cast(o.createdAt as date), coalesce(sum(o.total.amount - o.platformFeeAmount), 0) from Order o where o.id in :orderIds group by cast(o.createdAt as date) order by cast(o.createdAt as date)")
     List<Object[]> sumTotalGroupedByDayForOrderIds(@Param("orderIds") Collection<UUID> orderIds);
+
+    /**
+     * Orders of an organization that are due to be paid out: paid or partly refunded, not yet in any payout, placed in
+     * [from, to). Row-locked so two payout generations can never take the same order.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.payeeType = com.junaldadlawan.event_ticketing_api.order.enums.PayeeType.ORGANIZATION"
+            + " and o.payeeId = :organizationId and o.payoutId is null"
+            + " and o.status in (com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus.PAID,"
+            + " com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus.PARTIALLY_REFUNDED)"
+            + " and o.createdAt >= :from and o.createdAt < :to order by o.createdAt")
+    List<Order> findDueForPayout(@Param("organizationId") UUID organizationId, @Param("from") Instant from, @Param("to") Instant to);
 
     /** Phase 14 (BR-ANALYTICS-002): platform-wide GMV - gross, before refunds, every order ever placed. */
     @Query("select coalesce(sum(o.total.amount), 0) from Order o")

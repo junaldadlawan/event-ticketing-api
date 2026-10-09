@@ -3,6 +3,8 @@ package com.junaldadlawan.event_ticketing_api.order.entity;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
 import com.junaldadlawan.event_ticketing_api.order.enums.PayeeType;
+import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope;
+import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType;
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
@@ -22,6 +24,7 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -90,6 +93,33 @@ public class Order {
             @AttributeOverride(name = "currency", column = @Column(name = "total_currency", nullable = false, length = 3))
     })
     private Money total;
+
+    /**
+     * The platform fee ("admin cut") charged on top of the ticket price; already part of {@code total}, in the same
+     * currency. The organizer's share of the order is {@code total - platformFeeAmount}. 0 when no fee rule applied.
+     */
+    @Builder.Default
+    @Column(name = "platform_fee_amount", nullable = false)
+    private long platformFeeAmount = 0L;
+
+    /** Snapshot of the fee rule that produced the fee (null when none applied), so rule changes never rewrite old orders. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "platform_fee_scope", length = 20)
+    private FeeScope platformFeeScope;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "platform_fee_type", length = 20)
+    private FeeType platformFeeType;
+
+    @Column(name = "platform_fee_percentage", precision = 5, scale = 2)
+    private BigDecimal platformFeePercentage;
+
+    @Column(name = "platform_fee_flat_amount")
+    private Long platformFeeFlatAmount;
+
+    /** The payout this order was settled in; null until an admin generates the payout that covers it. */
+    @Column(name = "payout_id")
+    private UUID payoutId;
 
     @Column(name = "created_by", nullable = false, length = 255)
     private String createdBy;

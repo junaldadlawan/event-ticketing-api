@@ -13,6 +13,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.GoneException;
 import com.junaldadlawan.event_ticketing_api.common.exception.PaymentFailedException;
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.common.exception.UnprocessableEntityException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
@@ -30,6 +31,8 @@ import com.junaldadlawan.event_ticketing_api.order.repository.CheckoutIdempotenc
 import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.PaymentRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeQuote;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
 import com.junaldadlawan.event_ticketing_api.promocode.entity.PromoCode;
 import com.junaldadlawan.event_ticketing_api.promocode.repository.PromoCodeRepository;
 import com.junaldadlawan.event_ticketing_api.promocode.service.PromoCodeUsageLimitGuard;
@@ -89,6 +92,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final PromoCodeUsageLimitGuard promoCodeUsageLimitGuard;
     private final TicketRepository ticketRepository;
     private final TicketCredentialService ticketCredentialService;
+    private final PlatformFeeService platformFeeService;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -173,13 +177,24 @@ public class CheckoutServiceImpl implements CheckoutService {
             throw new GoneException("A hold expired before checkout completed.");
         }
 
-        // Reuse CartService.get()'s already-computed total (subtotal minus
-        // any applied promo-code discount) instead of duplicating that
-        // pricing/discount math here.
+        // The organizer may have paused a ticket type AFTER it was added to this cart (adding is refused while
+        // paused, but a cart that already holds it must not slip through). Checked before anything is charged;
+        // the cart and its holds stay as they are (they expire on their normal timer) and the buyer can retry
+        // once sales resume - the catch in checkout() frees the idempotency key for exactly that.
+        List<UUID> cartTicketTypeIds = items.stream().map(CartItem::getTicketTypeId).distinct().toList();
+        for (TicketType heldType : ticketTypeRepository.findAllById(cartTicketTypeIds)) {
+            if (heldType.isSalesPaused()) {
+                throw new ConflictException("Sales for ticket type '" + heldType.getName() + "' are paused");
+            }
+        }
+
+        // Reuse CartService.get()'s already-computed amounts (subtotal minus any applied promo-code discount, plus the
+        // platform fee) instead of duplicating that pricing/discount math here. The ticket total is the cart total
+        // without the fee; the fee itself is quoted again below, next to the event, so the order can snapshot the rule.
         CartResponse cartView = cartService.get(cartId);
         MoneyDto totalDto = cartView.total();
         String promoCode = cartView.appliedPromoCode() != null ? cartView.appliedPromoCode().code() : null;
-        Money total = Money.builder().amount(totalDto.amount()).currency(totalDto.currency()).build();
+        long ticketTotal = totalDto.amount() - cartView.platformFee().amount();
 
         // BR-PROMO-006 (code-reviewer HIGH finding): re-validate the applied
         // promo code's usage limits immediately before charging, not just at
@@ -188,15 +203,23 @@ public class CheckoutServiceImpl implements CheckoutService {
         // buyer's applyPromoCode() call and this checkout() call.
         if (lockedCart.getPromoCodeId() != null) {
             PromoCode appliedPromoCode = promoCodeRepository.findById(lockedCart.getPromoCodeId()).orElse(null);
-            if (appliedPromoCode != null) {
-                promoCodeUsageLimitGuard.checkUsageLimits(appliedPromoCode, buyerId);
+            // Paused or deleted since it was applied: refuse before charging (the buyer can remove the code, or retry
+            // once it is resumed). Same message as an unknown code - nothing is revealed about why.
+            if (appliedPromoCode == null || !appliedPromoCode.isRedeemable()) {
+                throw new UnprocessableEntityException("Promo code is invalid or inapplicable to this cart");
             }
+            promoCodeUsageLimitGuard.checkUsageLimits(appliedPromoCode, buyerId);
         }
 
         // Also resolved here (rather than after payment) so the same lookup
         // can be reused below for ticket issuance without an extra query.
         Event event = resolveEvent(items);
         UUID payeeId = event.getOrganizationId();
+
+        // The platform fee is added on top of the ticket price: the buyer is charged ticket total + fee, the organizer
+        // keeps the ticket total (the fee is deducted from the organizer's side when the payout is generated).
+        PlatformFeeQuote fee = platformFeeService.quote(payeeId, event.getId(), ticketTotal, totalDto.currency());
+        Money total = Money.builder().amount(ticketTotal + fee.amount()).currency(totalDto.currency()).build();
 
         PaymentResult result = paymentGatewayClient.charge(paymentMethodToken, total);
         if (!result.successful()) {
@@ -215,6 +238,11 @@ public class CheckoutServiceImpl implements CheckoutService {
                 .payeeId(payeeId)
                 .status(OrderStatus.PAID)
                 .promoCode(promoCode)
+                .platformFeeAmount(fee.amount())
+                .platformFeeScope(fee.scope())
+                .platformFeeType(fee.type())
+                .platformFeePercentage(fee.percentage())
+                .platformFeeFlatAmount(fee.flatAmount())
                 .total(total)
                 .cartId(cartId)
                 .createdBy(buyerId.toString())
@@ -278,7 +306,8 @@ public class CheckoutServiceImpl implements CheckoutService {
 
         BusinessAuditLogger.recordAs(buyerId, "checkout.completed", "Order", savedOrder.getId(),
                 BusinessAuditLogger.Outcome.SUCCESS,
-                "total=" + total.getAmount() + " " + total.getCurrency() + " tickets=" + issuedTickets.size());
+                "total=" + total.getAmount() + " " + total.getCurrency() + " platformFee=" + fee.amount()
+                        + " tickets=" + issuedTickets.size());
 
         return OrderResponse.from(savedOrder, issuedTickets);
     }

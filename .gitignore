@@ -46,3 +46,6 @@ build/
 
 ### Local application log files (see src/main/resources/logback-spring.xml) ###
 /logs/
+
+### Uploaded images (local dev) ###
+/uploads/

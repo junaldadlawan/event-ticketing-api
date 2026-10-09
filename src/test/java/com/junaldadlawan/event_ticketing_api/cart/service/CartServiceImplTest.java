@@ -2,6 +2,8 @@ package com.junaldadlawan.event_ticketing_api.cart.service;
 
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemCreateRequest;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartResponse;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeQuote;
+import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
 import com.junaldadlawan.event_ticketing_api.cart.entity.Cart;
 import com.junaldadlawan.event_ticketing_api.cart.entity.CartItem;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
@@ -47,9 +49,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -94,6 +99,9 @@ class CartServiceImplTest {
     @Mock
     private EntityManager entityManager;
 
+    @Mock
+    private PlatformFeeService platformFeeService;
+
     private CartServiceImpl service;
 
     private UUID buyerId;
@@ -102,7 +110,8 @@ class CartServiceImplTest {
     void setUp() {
         service = new CartServiceImpl(
                 cartRepository, cartItemRepository, ticketTypeRepository, seatRepository,
-                seatMapRepository, eventRepository, promoCodeRepository, promoCodeUsageLimitGuard, accessGuard, entityManager);
+                seatMapRepository, eventRepository, promoCodeRepository, promoCodeUsageLimitGuard, accessGuard, entityManager, platformFeeService);
+        lenient().when(platformFeeService.quote(any(), any(), anyLong(), any())).thenReturn(PlatformFeeQuote.NONE);
         buyerId = UUID.randomUUID();
     }
 
@@ -352,6 +361,20 @@ class CartServiceImplTest {
 
         assertThatThrownBy(() -> service.addItem(cartId, new CartItemCreateRequest(ticketTypeId, null, 1)))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void addItem_pausedTicketType_throwsConflict() {
+        UUID cartId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        TicketType tt = gaTicketType(ticketTypeId, UUID.randomUUID(), 10);
+        tt.setSalesPaused(true);
+        mockCartAndTicketType(cartId, ticketTypeId, tt, EventStatus.ON_SALE);
+
+        assertThatThrownBy(() -> service.addItem(cartId, new CartItemCreateRequest(ticketTypeId, null, 1)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("paused");
+        verify(ticketTypeRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
@@ -905,6 +928,78 @@ class CartServiceImplTest {
 
         assertThat(result.total().amount()).isEqualTo(0L);
         assertThat(result.appliedPromoCode().discountAmount().amount()).isEqualTo(500L); // clamped to subtotal, not 999999
+    }
+
+    // ---- paused / deleted promo codes ----
+
+    @Test
+    void applyPromoCode_aPausedCode_isRejectedLikeAnUnknownOne_withoutSayingItExists() {
+        UUID cartId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        setUpSingleItemCart(cartId, ticketTypeId, eventId, 1000L);
+        PromoCode paused = promoCode(UUID.randomUUID(), eventId, DiscountType.FIXED, BigDecimal.valueOf(100),
+                Set.of(), Instant.now().minus(1, ChronoUnit.DAYS), Instant.now().plus(1, ChronoUnit.DAYS));
+        paused.setPaused(true);
+        when(promoCodeRepository.findByEventIdAndCodeAndDeletedAtIsNull(eventId, "SAVE10")).thenReturn(Optional.of(paused));
+
+        assertThatThrownBy(() -> service.applyPromoCode(cartId, "SAVE10"))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessage("Promo code is invalid or inapplicable to this cart");
+        verify(cartRepository, never()).saveAndFlush(any(Cart.class));
+        verifyNoInteractions(promoCodeUsageLimitGuard);
+    }
+
+    private CartResponse viewOfACartWithAppliedCode(PromoCode applied) {
+        UUID cartId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = applied.getEventId();
+        Cart cart = cart(cartId, buyerId);
+        cart.setPromoCodeId(applied.getId());
+        org.mockito.Mockito.lenient().when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart));
+        org.mockito.Mockito.lenient().when(accessGuard.currentUserId()).thenReturn(buyerId);
+        org.mockito.Mockito.lenient().when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(
+                cartItem(UUID.randomUUID(), cartId, ticketTypeId, null, 1, Instant.now().plus(10, ChronoUnit.MINUTES))));
+        TicketType tt = gaTicketType(ticketTypeId, eventId, 5);
+        tt.setPrice(Money.builder().amount(1000L).currency("USD").build());
+        org.mockito.Mockito.lenient().when(ticketTypeRepository.findById(ticketTypeId)).thenReturn(Optional.of(tt));
+        org.mockito.Mockito.lenient().when(promoCodeRepository.findById(applied.getId())).thenReturn(Optional.of(applied));
+        return service.get(cartId);
+    }
+
+    @Test
+    void get_anAppliedCodeStillRedeemable_givesTheDiscount() {
+        PromoCode live = promoCode(UUID.randomUUID(), UUID.randomUUID(), DiscountType.FIXED, BigDecimal.valueOf(300),
+                Set.of(), Instant.now().minus(1, ChronoUnit.DAYS), Instant.now().plus(1, ChronoUnit.DAYS));
+
+        CartResponse view = viewOfACartWithAppliedCode(live);
+
+        assertThat(view.appliedPromoCode()).isNotNull();
+        assertThat(view.total().amount()).isEqualTo(700L);
+    }
+
+    @Test
+    void get_anAppliedCodePausedSinceItWasApplied_returnsTheCartWithoutADiscount_insteadOfThrowing() {
+        PromoCode paused = promoCode(UUID.randomUUID(), UUID.randomUUID(), DiscountType.FIXED, BigDecimal.valueOf(300),
+                Set.of(), Instant.now().minus(1, ChronoUnit.DAYS), Instant.now().plus(1, ChronoUnit.DAYS));
+        paused.setPaused(true);
+
+        CartResponse view = viewOfACartWithAppliedCode(paused);
+
+        assertThat(view.appliedPromoCode()).isNull();
+        assertThat(view.total().amount()).isEqualTo(1000L);
+    }
+
+    @Test
+    void get_anAppliedCodeDeletedSinceItWasApplied_returnsTheCartWithoutADiscount() {
+        PromoCode deleted = promoCode(UUID.randomUUID(), UUID.randomUUID(), DiscountType.PERCENTAGE, BigDecimal.valueOf(10),
+                Set.of(), Instant.now().minus(1, ChronoUnit.DAYS), Instant.now().plus(1, ChronoUnit.DAYS));
+        deleted.markDeleted();
+
+        CartResponse view = viewOfACartWithAppliedCode(deleted);
+
+        assertThat(view.appliedPromoCode()).isNull();
+        assertThat(view.total().amount()).isEqualTo(1000L);
     }
 
     // ---- removePromoCode() ----

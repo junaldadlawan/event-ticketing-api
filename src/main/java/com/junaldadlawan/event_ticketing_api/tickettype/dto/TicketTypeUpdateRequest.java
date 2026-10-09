@@ -33,5 +33,14 @@ public record TicketTypeUpdateRequest(
         Instant saleEndAt,
 
         @Positive
-        Integer maxPerOrder) implements Serializable {
+        Integer maxPerOrder,
+
+        /** true = pause sales, false = resume; null leaves it unchanged. */
+        Boolean salesPaused) implements Serializable {
+
+    /** The update without a pause / resume change. */
+    public TicketTypeUpdateRequest(String name, MoneyDto price, Integer quantityTotal, Instant saleStartAt,
+                                   Instant saleEndAt, Integer maxPerOrder) {
+        this(name, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null);
+    }
 }

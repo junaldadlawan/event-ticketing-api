@@ -92,4 +92,17 @@ public class PromoCode extends Auditable {
 
     @Column(name = "valid_until", nullable = false)
     private Instant validUntil;
+
+    /**
+     * While true the code can't be applied to a cart and a cart already holding it can't check out (the organizer
+     * paused it). Orders that already used it are untouched.
+     */
+    @Builder.Default
+    @Column(name = "paused", nullable = false)
+    private boolean paused = false;
+
+    /** Usable right now as far as its on/off state goes: not paused and not deleted (validity window and limits are separate checks). */
+    public boolean isRedeemable() {
+        return !paused && getDeletedAt() == null;
+    }
 }

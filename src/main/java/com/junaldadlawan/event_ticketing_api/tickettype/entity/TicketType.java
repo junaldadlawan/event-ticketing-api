@@ -68,4 +68,15 @@ public class TicketType extends Auditable {
 
     @Column(name = "max_per_order", nullable = false)
     private int maxPerOrder;
+
+    /**
+     * Where this ticket type sits in its event's list (0 = first), as arranged by the organizer. New ticket types
+     * go to the end; PUT /events/{id}/ticket-types/order renumbers the whole list. Gaps (after a delete) are fine.
+     */
+    @Column(name = "position", nullable = false)
+    private int position;
+
+    /** While true the ticket type can not be added to a cart (the organizer paused sales). */
+    @Column(name = "sales_paused", nullable = false)
+    private boolean salesPaused;
 }

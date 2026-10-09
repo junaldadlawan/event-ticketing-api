@@ -55,12 +55,12 @@ class CartControllerTest {
     private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private CartResponse cartResponse(UUID id) {
-        return new CartResponse(id, UUID.randomUUID(), List.of(), null, new MoneyDto(0L, "USD"), Instant.now(), Instant.now());
+        return new CartResponse(id, UUID.randomUUID(), List.of(), null, new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), Instant.now(), Instant.now());
     }
 
     private CartResponse cartResponseWithItem(UUID id, UUID itemId) {
         CartItemResponse item = new CartItemResponse(itemId, UUID.randomUUID(), null, 2, Instant.now().plusSeconds(900), Instant.now());
-        return new CartResponse(id, UUID.randomUUID(), List.of(item), null, new MoneyDto(2000L, "USD"), Instant.now(), Instant.now());
+        return new CartResponse(id, UUID.randomUUID(), List.of(item), null, new MoneyDto(0L, "USD"), new MoneyDto(2000L, "USD"), Instant.now(), Instant.now());
     }
 
     // ---- create() ----
@@ -213,7 +213,7 @@ class CartControllerTest {
     void applyPromoCode_validRequest_returns200() throws Exception {
         UUID cartId = UUID.randomUUID();
         CartResponse withPromo = new CartResponse(cartId, UUID.randomUUID(), List.of(),
-                new AppliedPromoCodeResponse("SAVE10", new MoneyDto(100L, "USD")), new MoneyDto(900L, "USD"), Instant.now(), Instant.now());
+                new AppliedPromoCodeResponse("SAVE10", new MoneyDto(100L, "USD")), new MoneyDto(0L, "USD"), new MoneyDto(900L, "USD"), Instant.now(), Instant.now());
         when(cartService.applyPromoCode(eq(cartId), eq("SAVE10"))).thenReturn(withPromo);
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/promo-code", cartId)

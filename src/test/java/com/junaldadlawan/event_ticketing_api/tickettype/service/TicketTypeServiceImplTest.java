@@ -13,6 +13,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeCreateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
+import com.junaldadlawan.event_ticketing_api.tickettype.enums.SalesStatus;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,13 +56,19 @@ class TicketTypeServiceImplTest {
     @Mock
     private OrganizationAccessGuard accessGuard;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository ticketRepository;
+
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository cartItemRepository;
+
     private TicketTypeServiceImpl service;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard);
+        service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard, ticketRepository, cartItemRepository);
         orgId = UUID.randomUUID();
     }
 
@@ -296,7 +303,7 @@ class TicketTypeServiceImplTest {
     void list_publishedEvent_succeedsWithoutTouchingAccessGuard() {
         UUID eventId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.PUBLISHED)));
-        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNull(eventId)).thenReturn(List.of(ticketType(UUID.randomUUID(), eventId, 100, 100)));
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId)).thenReturn(List.of(ticketType(UUID.randomUUID(), eventId, 100, 100)));
 
         List<TicketType> result = service.list(eventId);
 
@@ -325,7 +332,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(ownerId);
         when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
-        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNull(eventId)).thenReturn(List.of());
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId)).thenReturn(List.of());
 
         List<TicketType> result = service.list(eventId);
 
@@ -337,7 +344,7 @@ class TicketTypeServiceImplTest {
         UUID eventId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
         when(accessGuard.isAdmin()).thenReturn(true);
-        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNull(eventId)).thenReturn(List.of());
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId)).thenReturn(List.of());
 
         service.list(eventId);
 
@@ -447,6 +454,357 @@ class TicketTypeServiceImplTest {
 
         assertThatThrownBy(() -> service.get(ticketTypeId)).isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(accessGuard);
+    }
+
+    // ---- delete() / pause sales ----
+
+    @Test
+    void delete_ownerWithNoSales_softDeletes() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+        when(cartItemRepository.existsByTicketTypeId(ticketTypeId)).thenReturn(false);
+        when(ticketRepository.existsByTicketTypeId(ticketTypeId)).thenReturn(false);
+
+        service.delete(ticketTypeId);
+
+        org.mockito.ArgumentCaptor<TicketType> saved = org.mockito.ArgumentCaptor.forClass(TicketType.class);
+        verify(ticketTypeRepository).save(saved.capture());
+        assertThat(saved.getValue().getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    void delete_withSoldTickets_throwsConflict() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 97); // 3 sold or held
+
+        assertThatThrownBy(() -> service.delete(ticketTypeId))
+                .isInstanceOf(com.junaldadlawan.event_ticketing_api.common.exception.ConflictException.class)
+                .hasMessageContaining("Pause its sales");
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void delete_withExistingTicketRows_throwsConflict() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+        when(cartItemRepository.existsByTicketTypeId(ticketTypeId)).thenReturn(false);
+        when(ticketRepository.existsByTicketTypeId(ticketTypeId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.delete(ticketTypeId))
+                .isInstanceOf(com.junaldadlawan.event_ticketing_api.common.exception.ConflictException.class);
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void delete_unknownTicketType_throwsResourceNotFound() {
+        UUID ticketTypeId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.delete(ticketTypeId)).isInstanceOf(ResourceNotFoundException.class);
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void delete_stranger_throwsForbidden() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID strangerId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId, 100, 100)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(strangerId);
+        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.delete(ticketTypeId)).isInstanceOf(ForbiddenException.class);
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void update_pauseAndResume_togglesSalesPaused() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+
+        TicketType paused = service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, null, null, null, null, true));
+        assertThat(paused.isSalesPaused()).isTrue();
+
+        TicketType resumed = service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, null, null, null, null, false));
+        assertThat(resumed.isSalesPaused()).isFalse();
+    }
+
+    @Test
+    void update_withoutSalesPausedField_leavesItAlone() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+
+        TicketType result = service.update(ticketTypeId, new TicketTypeUpdateRequest("Renamed", null, null, null, null, null));
+
+        assertThat(result.isSalesPaused()).isFalse();
+    }
+
+    // ---- setSalesStatus() ----
+
+    @Test
+    void setSalesStatus_paused_owner_setsThePausedFlag_andSaves() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+
+        TicketType result = service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED);
+
+        assertThat(result.isSalesPaused()).isTrue();
+        verify(ticketTypeRepository).save(result);
+    }
+
+    @Test
+    void setSalesStatus_active_owner_clearsThePausedFlag_andSaves() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        TicketType paused = ticketType(ticketTypeId, eventId, 100, 100);
+        paused.setSalesPaused(true);
+        UUID ownerId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(paused));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        lenient().when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TicketType result = service.setSalesStatus(ticketTypeId, SalesStatus.ACTIVE);
+
+        assertThat(result.isSalesPaused()).isFalse();
+        verify(ticketTypeRepository).save(paused);
+    }
+
+    @Test
+    void setSalesStatus_paused_whenAlreadyPaused_isANoOp_withNoWrite() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        TicketType paused = ticketType(ticketTypeId, eventId, 100, 100);
+        paused.setSalesPaused(true);
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(paused));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+
+        assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED).isSalesPaused()).isTrue();
+
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void setSalesStatus_active_whenNotPaused_isANoOp_withNoWrite() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId, 100, 100)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+
+        assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.ACTIVE).isSalesPaused()).isFalse();
+
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void setSalesStatus_paused_organizerAndAdmin_areAllowed() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID organizerId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId, 100, 100)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(organizerId);
+        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        lenient().when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED).isSalesPaused()).isTrue();
+
+        UUID otherTypeId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(otherTypeId)).thenReturn(Optional.of(ticketType(otherTypeId, eventId, 100, 100)));
+        when(accessGuard.isAdmin()).thenReturn(true);
+        assertThat(service.setSalesStatus(otherTypeId, SalesStatus.PAUSED).isSalesPaused()).isTrue();
+    }
+
+    @Test
+    void setSalesStatus_workInAnyEventStatus() {
+        for (EventStatus status : EventStatus.values()) {
+            UUID eventId = UUID.randomUUID();
+            UUID ticketTypeId = UUID.randomUUID();
+            UUID ownerId = UUID.randomUUID();
+            when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId, 100, 100)));
+            when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, status)));
+            when(accessGuard.isAdmin()).thenReturn(false);
+            when(accessGuard.currentUserId()).thenReturn(ownerId);
+            when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+            lenient().when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+            assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED).isSalesPaused()).as("pause in %s", status).isTrue();
+        }
+    }
+
+    @Test
+    void setSalesStatus_stranger_throwForbidden_andSaveNothing() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID strangerId = UUID.randomUUID();
+        TicketType existing = ticketType(ticketTypeId, eventId, 100, 100);
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(existing));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(strangerId);
+        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.ACTIVE)).isInstanceOf(ForbiddenException.class);
+
+        verify(ticketTypeRepository, never()).save(any());
+        assertThat(existing.isSalesPaused()).isFalse();
+    }
+
+    @Test
+    void setSalesStatus_unknownOrDeletedTicketType_throwResourceNotFound() {
+        UUID ticketTypeId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.ACTIVE)).isInstanceOf(ResourceNotFoundException.class);
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    // ---- position / reorder() ----
+
+    private void mockOwnerOfEvent(UUID eventId) {
+        UUID ownerId = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+    }
+
+    private TicketType typeAt(UUID id, UUID eventId, int position) {
+        TicketType ticketType = ticketType(id, eventId, 100, 100);
+        ticketType.setPosition(position);
+        return ticketType;
+    }
+
+    @Test
+    void create_putsTheNewTicketTypeAtTheEndOfTheArrangement() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        when(ticketTypeRepository.findMaxPositionByEventId(eventId)).thenReturn(4);
+        when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(service.create(eventId, createRequest(null)).getPosition()).isEqualTo(5);
+    }
+
+    @Test
+    void create_theFirstTicketTypeOfAnEvent_isPositionZero() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        when(ticketTypeRepository.findMaxPositionByEventId(eventId)).thenReturn(-1);
+        when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(service.create(eventId, createRequest(null)).getPosition()).isZero();
+    }
+
+    @Test
+    void reorder_savesTheGivenOrderAsPositionsZeroToN() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        UUID c = UUID.randomUUID();
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId))
+                .thenReturn(List.of(typeAt(a, eventId, 0), typeAt(b, eventId, 1), typeAt(c, eventId, 2)));
+        when(ticketTypeRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TicketType> result = service.reorder(eventId, List.of(c, a, b));
+
+        assertThat(result).extracting(TicketType::getId).containsExactly(c, a, b);
+        assertThat(result).extracting(TicketType::getPosition).containsExactly(0, 1, 2);
+    }
+
+    @Test
+    void reorder_aGapLeftByADelete_isClosedUp() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId))
+                .thenReturn(List.of(typeAt(a, eventId, 0), typeAt(b, eventId, 5)));
+        when(ticketTypeRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(service.reorder(eventId, List.of(a, b))).extracting(TicketType::getPosition).containsExactly(0, 1);
+    }
+
+    @Test
+    void reorder_aListThatOmitsATicketType_throwsBadRequest_andSavesNothing() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId))
+                .thenReturn(List.of(typeAt(a, eventId, 0), typeAt(b, eventId, 1)));
+
+        assertThatThrownBy(() -> service.reorder(eventId, List.of(a))).isInstanceOf(BadRequestException.class);
+        verify(ticketTypeRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void reorder_aListWithAnUnknownOrForeignId_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        UUID a = UUID.randomUUID();
+        when(ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId))
+                .thenReturn(List.of(typeAt(a, eventId, 0)));
+
+        assertThatThrownBy(() -> service.reorder(eventId, List.of(a, UUID.randomUUID()))).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.reorder(eventId, List.of(UUID.randomUUID()))).isInstanceOf(BadRequestException.class);
+        verify(ticketTypeRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void reorder_aTicketTypeListedTwice_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerOfEvent(eventId);
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.reorder(eventId, List.of(a, a, b))).isInstanceOf(BadRequestException.class);
+        verify(ticketTypeRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void reorder_stranger_throwsForbidden_andSavesNothing() {
+        UUID eventId = UUID.randomUUID();
+        UUID strangerId = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(strangerId);
+        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.reorder(eventId, List.of(UUID.randomUUID()))).isInstanceOf(ForbiddenException.class);
+        verify(ticketTypeRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void reorder_unknownEvent_throwsResourceNotFound() {
+        UUID eventId = UUID.randomUUID();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.reorder(eventId, List.of(UUID.randomUUID()))).isInstanceOf(ResourceNotFoundException.class);
     }
 
     // ---- update() : authorization ----
