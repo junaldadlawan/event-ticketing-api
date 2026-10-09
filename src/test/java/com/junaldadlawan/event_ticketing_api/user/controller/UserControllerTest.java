@@ -54,7 +54,7 @@ class UserControllerTest {
     void getUsers_returnsMappedList() throws Exception {
         User user = User.builder()
                 .id(UUID.randomUUID())
-                .name("Jane Doe")
+                .firstName("Jane").lastName("Doe")
                 .email("jane@example.com")
                 .passwordHash("hash")
                 .role(Role.CUSTOMER)
@@ -73,7 +73,7 @@ class UserControllerTest {
         UUID id = UUID.randomUUID();
         User updated = User.builder()
                 .id(id)
-                .name("New Name")
+                .firstName("New").lastName("Name")
                 .email("new@example.com")
                 .passwordHash("hash")
                 .role(Role.ADMIN)
@@ -83,10 +83,11 @@ class UserControllerTest {
         mockMvc.perform(patch("/api/v1/users/{id}", id)
                         .contentType("application/json")
                         .content("""
-                                {"name":"New Name","email":"new@example.com","role":"ADMIN"}
+                                {"firstName":"New","lastName":"Name","email":"new@example.com","role":"ADMIN"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("New Name"))
+                .andExpect(jsonPath("$.firstName").value("New"))
+                .andExpect(jsonPath("$.lastName").value("Name"))
                 .andExpect(jsonPath("$.passwordHash").doesNotExist());
     }
 
@@ -100,7 +101,7 @@ class UserControllerTest {
     void update_omittedField_returns200_notValidationError() throws Exception {
         UUID id = UUID.randomUUID();
         User updated = User.builder()
-                .id(id).name("Jane Doe").email("new@example.com").passwordHash("hash").role(Role.ADMIN).build();
+                .id(id).firstName("Jane").lastName("Doe").email("new@example.com").passwordHash("hash").role(Role.ADMIN).build();
         when(userService.update(eq(id), any())).thenReturn(updated);
 
         mockMvc.perform(patch("/api/v1/users/{id}", id)
@@ -115,7 +116,7 @@ class UserControllerTest {
     void update_emptyBody_returns200_leavesEverythingUnchanged() throws Exception {
         UUID id = UUID.randomUUID();
         User unchanged = User.builder()
-                .id(id).name("Jane Doe").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
+                .id(id).firstName("Jane").lastName("Doe").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
         when(userService.update(eq(id), any())).thenReturn(unchanged);
 
         mockMvc.perform(patch("/api/v1/users/{id}", id)
@@ -133,7 +134,7 @@ class UserControllerTest {
         mockMvc.perform(patch("/api/v1/users/{id}", id)
                         .contentType("application/json")
                         .content("""
-                                {"name":"   "}
+                                {"firstName":"   "}
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -160,7 +161,7 @@ class UserControllerTest {
         mockMvc.perform(patch("/api/v1/users/{id}", id)
                         .contentType("application/json")
                         .content("""
-                                {"name":"New Name","email":"new@example.com","role":"ADMIN"}
+                                {"firstName":"New","lastName":"Name","email":"new@example.com","role":"ADMIN"}
                                 """))
                 .andExpect(status().isNotFound());
     }
@@ -170,7 +171,7 @@ class UserControllerTest {
     @Test
     void getSelf_returnsCallersOwnProfile() throws Exception {
         User self = User.builder()
-                .id(UUID.randomUUID()).name("Jane Doe").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
+                .id(UUID.randomUUID()).firstName("Jane").lastName("Doe").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
         when(userService.getSelf()).thenReturn(self);
 
         mockMvc.perform(get("/api/v1/users/me"))
@@ -182,16 +183,17 @@ class UserControllerTest {
     @Test
     void updateSelf_nameOnly_returnsUpdatedProfile() throws Exception {
         User updated = User.builder()
-                .id(UUID.randomUUID()).name("New Name").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
+                .id(UUID.randomUUID()).firstName("New").lastName("Name").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
         when(userService.updateSelf(any())).thenReturn(updated);
 
         mockMvc.perform(patch("/api/v1/users/me")
                         .contentType("application/json")
                         .content("""
-                                {"name":"New Name"}
+                                {"firstName":"New","lastName":"Name"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("New Name"));
+                .andExpect(jsonPath("$.firstName").value("New"))
+                .andExpect(jsonPath("$.lastName").value("Name"));
     }
 
     @Test
@@ -214,7 +216,7 @@ class UserControllerTest {
     @Test
     void updateSelf_roleFieldInBody_isIgnored_notAnError() throws Exception {
         User updated = User.builder()
-                .id(UUID.randomUUID()).name("Jane Doe").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
+                .id(UUID.randomUUID()).firstName("Jane").lastName("Doe").email("jane@example.com").passwordHash("hash").role(Role.CUSTOMER).build();
         when(userService.updateSelf(any())).thenReturn(updated);
 
         mockMvc.perform(patch("/api/v1/users/me")
@@ -230,7 +232,7 @@ class UserControllerTest {
     void updateSelfPassword_validRequest_returns200() throws Exception {
         User updated = User.builder()
                 .id(UUID.randomUUID())
-                .name("Jane Doe")
+                .firstName("Jane").lastName("Doe")
                 .email("jane@example.com")
                 .passwordHash("new-hash")
                 .role(Role.CUSTOMER)
@@ -277,7 +279,7 @@ class UserControllerTest {
     void updateSelfPassword_blankFields_currentlyAcceptedByValidation() throws Exception {
         User updated = User.builder()
                 .id(UUID.randomUUID())
-                .name("Jane Doe")
+                .firstName("Jane").lastName("Doe")
                 .email("jane@example.com")
                 .passwordHash("hash-of-empty-string")
                 .role(Role.CUSTOMER)

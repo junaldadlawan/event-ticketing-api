@@ -1,8 +1,9 @@
 package com.junaldadlawan.event_ticketing_api.user.dto;
 
-import com.junaldadlawan.event_ticketing_api.common.validation.NoHtml;
+import com.junaldadlawan.event_ticketing_api.common.validation.UserInput;
+import com.junaldadlawan.event_ticketing_api.common.validation.ValidBirthDate;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
-import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -13,8 +14,12 @@ import jakarta.validation.constraints.Size;
  * own privileges through this endpoint.
  */
 public record UserSelfUpdateRequest(
-        @Size(max = 150) @NoHtml String name,
-        @Size(max = 255) @Email String email,
+        @Size(max = 150) @Pattern(regexp = UserInput.NAME_REGEX, message = UserInput.NAME_MESSAGE) String firstName,
+        @Size(max = 150) @Pattern(regexp = UserInput.MIDDLE_NAME_REGEX, message = UserInput.NAME_MESSAGE) String middleName,
+        @Size(max = 150) @Pattern(regexp = UserInput.NAME_REGEX, message = UserInput.NAME_MESSAGE) String lastName,
+        @ValidBirthDate @tools.jackson.databind.annotation.JsonDeserialize(using = com.junaldadlawan.event_ticketing_api.common.validation.StrictLocalDateDeserializer.class) java.time.LocalDate birthDate,
+        @Size(max = 20) @Pattern(regexp = UserInput.PHONE_OR_EMPTY_REGEX, message = UserInput.PHONE_MESSAGE) String phoneNumber,
+        @Size(max = 255) @Pattern(regexp = UserInput.EMAIL_REGEX, message = UserInput.EMAIL_MESSAGE) String email,
         /** Profile picture: one of our own upload URLs; null = unchanged, "" = remove. */
         @Size(max = 500) String avatarUrl) {
 }

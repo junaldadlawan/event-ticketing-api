@@ -15,7 +15,11 @@ import java.util.UUID;
  */
 public record UserResponse(
         UUID id,
-        @NotNull @Size(max = 150) String name,
+        @NotNull @Size(max = 150) String firstName,
+        @Size(max = 150) String middleName,
+        @NotNull @Size(max = 150) String lastName,
+        java.time.LocalDate birthDate,
+        String phoneNumber,
         @NotNull @Size(max = 255) String email,
         @NotNull Role role,
         String avatarUrl,
@@ -26,7 +30,11 @@ public record UserResponse(
 
     public static UserResponse from(User user) {
         return new UserResponse(user.getId(),
-                user.getName(),
+                user.getFirstName(),
+                user.getMiddleName(),
+                user.getLastName(),
+                user.getBirthDate(),
+                user.getPhoneNumber(),
                 user.getEmail(),
                 user.getRole(),
                 user.getAvatarUrl(),

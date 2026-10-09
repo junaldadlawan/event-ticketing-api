@@ -54,24 +54,58 @@ paths:
       operationId: registerUser
       tags: [Auth]
       security: []
-      summary: Create a User account
+      summary: Create a User account (always a CUSTOMER)
+      description: |
+        Every new account is a CUSTOMER; a `role` (or any other extra property) in the body is ignored.
+        The name comes as `firstName` and `lastName` (both required) and an optional `middleName`; each may only contain
+        letters (any language), spaces, `.`, apostrophes and `-`, and must start with a letter. There is no single `name` field.
+        `birthDate` is required (ISO `yyyy-MM-dd`, before today and not more than 120 years ago). `phoneNumber` is optional
+        and, when given, must be international format: `+` then 8 to 15 digits (no spaces, dashes or brackets); empty or
+        omitted means none.
+        `email` must be plain ASCII: letters, digits and `. _ % + -` before the @ (starting and ending with a letter or
+        digit, never doubled), then a real domain. Anything else is a 400. The same rules apply when the name or email is
+        changed through `PATCH /users/me`. The password may contain any character.
+        Note: on the wire the password field is named `passwordHash` (the plain password; it is hashed before saving).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, email, password]
+              required: [firstName, lastName, birthDate, email, passwordHash]
               properties:
-                name: { type: string }
-                email: { type: string, format: email }
-                password: { type: string, minLength: 8 }
+                firstName:
+                  type: string
+                  maxLength: 150
+                  pattern: "^\\p{L}[\\p{L}\\p{M} .'\\u2019-]*$"
+                middleName:
+                  type: [string, "null"]
+                  maxLength: 150
+                  description: Optional; empty or omitted means none.
+                  pattern: "^(\\p{L}[\\p{L}\\p{M} .'\\u2019-]*)?$"
+                lastName:
+                  type: string
+                  maxLength: 150
+                  pattern: "^\\p{L}[\\p{L}\\p{M} .'\\u2019-]*$"
+                birthDate: { type: string, format: date, description: "Before today, at most 120 years ago." }
+                phoneNumber:
+                  type: [string, "null"]
+                  maxLength: 20
+                  pattern: "^(\\+[1-9][0-9]{7,14})?$"
+                  description: Optional. International format, + then 8 to 15 digits.
+                email:
+                  type: string
+                  maxLength: 255
+                  pattern: "^[A-Za-z0-9]+([._%+-][A-Za-z0-9]+)*@([A-Za-z0-9]+(-[A-Za-z0-9]+)*\\.)+[A-Za-z]{2,}$"
+                passwordHash: { type: string, description: The plain password (hashed before saving). }
       responses:
         "201":
           description: Account created
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409": { description: "An account with this email already exists (compared ignoring case; a deleted account still holds its email)." }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /auth/login:
@@ -139,7 +173,7 @@ paths:
     patch:
       operationId: updateCurrentUser
       tags: [Auth]
-      summary: Update the caller's own profile (name, email, profile picture)
+      summary: Update the caller's own profile (first / middle / last name, email, profile picture)
       description: |
         Every field is optional; one that is left out is not changed. `avatarUrl` must be the URL returned by
         `POST /uploads` on this server; any other link is a 400. Send an empty string to remove the picture.
@@ -152,7 +186,11 @@ paths:
             schema:
               type: object
               properties:
-                name: { type: string }
+                firstName: { type: string, maxLength: 150, description: Same character rules as at registration; omit to leave unchanged. }
+                middleName: { type: string, maxLength: 150, description: Same rules; "" removes the middle name; omit to leave unchanged. }
+                lastName: { type: string, maxLength: 150, description: Same character rules as at registration; omit to leave unchanged. }
+                birthDate: { type: string, format: date, description: Same rule as at registration; omit to leave unchanged. }
+                phoneNumber: { type: string, maxLength: 20, description: "Same rule as at registration; \"\" removes the phone number; omit to leave unchanged." }
                 email: { type: string, format: email }
                 avatarUrl:
                   type: string
@@ -166,6 +204,8 @@ paths:
               schema: { $ref: "#/components/schemas/User" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Another account already uses that email. }
 
   /users/me/orders:
     get:
@@ -2341,7 +2381,11 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        name: { type: string }
+        firstName: { type: string }
+        middleName: { type: [string, "null"] }
+        lastName: { type: string, description: Empty for an older account that had a single-word name. }
+        birthDate: { type: [string, "null"], format: date, description: Null for an account created before the date of birth was collected. }
+        phoneNumber: { type: [string, "null"], description: "International format (+ then digits), or null when none was given." }
         email: { type: string, format: email }
         is_admin: { type: boolean }
         avatarUrl:

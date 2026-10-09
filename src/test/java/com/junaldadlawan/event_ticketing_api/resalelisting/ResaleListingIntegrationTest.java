@@ -171,7 +171,7 @@ class ResaleListingIntegrationTest {
     // ---- fixtures ----
 
     private User persistUser(Role role) {
-        User user = User.builder().name("Resale Test User").email("resale-" + UUID.randomUUID() + "@test.local")
+        User user = User.builder().firstName("Resale Test").lastName("User").email("resale-" + UUID.randomUUID() + "@test.local")
                 .passwordHash("irrelevant").role(role).build();
         User saved = userRepository.save(user);
         createdUserIds.add(saved.getId());

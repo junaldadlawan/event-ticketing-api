@@ -26,8 +26,34 @@ public class User extends Auditable {
 
     @Size(max = 150)
     @NotNull
-    @Column(name = "name", nullable = false, length = 150)
-    private String name;
+    @Column(name = "first_name", nullable = false, length = 150)
+    private String firstName;
+
+    @Size(max = 150)
+    @Column(name = "middle_name", length = 150)
+    private String middleName;
+
+    /** Empty (never null) for an account that had a single-word name before the name was split. */
+    @Size(max = 150)
+    @NotNull
+    @Column(name = "last_name", nullable = false, length = 150)
+    private String lastName;
+
+    /** First, middle and last name joined with single spaces, for places that print one name (the ticket artifact). */
+    public String fullName() {
+        return java.util.stream.Stream.of(firstName, middleName, lastName)
+                .filter(part -> part != null && !part.isBlank())
+                .collect(java.util.stream.Collectors.joining(" "));
+    }
+
+    /** Null for accounts created before the date of birth was collected. */
+    @Column(name = "birth_date")
+    private java.time.LocalDate birthDate;
+
+    /** International format (+<digits>); null when none was given. */
+    @Size(max = 20)
+    @Column(name = "phone_number", length = 20)
+    private String phoneNumber;
 
     @Size(max = 255)
     @NotNull

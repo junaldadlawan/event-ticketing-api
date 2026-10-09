@@ -50,7 +50,7 @@ class UserSecurityIntegrationTest {
     @BeforeEach
     void setUp() {
         persistedUser = userRepository.save(User.builder()
-                .name("Security Test User")
+                .firstName("Security Test").lastName("User")
                 .email("security-test-" + UUID.randomUUID() + "@example.com")
                 .passwordHash(passwordEncoder.encode("irrelevant"))
                 .role(Role.CUSTOMER)
@@ -120,10 +120,11 @@ class UserSecurityIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType("application/json")
                         .content("""
-                                {"name":"Updated Name"}
+                                {"firstName":"Updated","lastName":"Name"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Updated Name"));
+                .andExpect(jsonPath("$.firstName").value("Updated"))
+                .andExpect(jsonPath("$.lastName").value("Name"));
     }
 
     @Test
@@ -143,7 +144,7 @@ class UserSecurityIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType("application/json")
                         .content("""
-                                {"name":"Should Not Apply"}
+                                {"firstName":"Should","lastName":"Apply"}
                                 """))
                 .andExpect(status().isForbidden());
     }
@@ -189,11 +190,11 @@ class UserSecurityIntegrationTest {
                         .content("{\"email\":\"" + newEmail + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(newEmail))
-                .andExpect(jsonPath("$.name").value("Security Test User"));
+                .andExpect(jsonPath("$.firstName").value("Security Test"));
 
         User reloaded = userRepository.findById(persistedUser.getId()).orElseThrow();
         assertThat(reloaded.getEmail()).isEqualTo(newEmail);
-        assertThat(reloaded.getName()).isEqualTo("Security Test User");
+        assertThat(reloaded.getFirstName()).isEqualTo("Security Test");
         assertThat(reloaded.getRole()).isEqualTo(Role.CUSTOMER);
     }
 

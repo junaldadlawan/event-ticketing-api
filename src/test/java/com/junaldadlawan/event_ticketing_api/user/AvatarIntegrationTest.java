@@ -72,7 +72,7 @@ class AvatarIntegrationTest {
     }
 
     private User newUser() {
-        User saved = userRepository.save(User.builder().name("Avatar User")
+        User saved = userRepository.save(User.builder().firstName("Avatar").lastName("User")
                 .email("avatar-" + UUID.randomUUID() + "@example.com")
                 .passwordHash(passwordEncoder.encode("irrelevant")).role(Role.CUSTOMER).build());
         userIds.add(saved.getId());
@@ -204,9 +204,9 @@ class AvatarIntegrationTest {
         setAvatar(token, url);
 
         mockMvc.perform(patch("/api/v1/users/me").header("Authorization", token).contentType("application/json")
-                        .content("{\"name\":\"New Name\"}"))
+                        .content("{\"firstName\":\"New\",\"lastName\":\"Name\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("New Name"))
+                .andExpect(jsonPath("$.firstName").value("New"))
                 .andExpect(jsonPath("$.avatarUrl").value(url));
         assertThat(fileStatus(url)).isEqualTo(200);
     }

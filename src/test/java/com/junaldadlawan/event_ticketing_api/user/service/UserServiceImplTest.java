@@ -5,7 +5,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
-import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
+import com.junaldadlawan.event_ticketing_api.user.dto.RegisterRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserSelfUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,7 +60,7 @@ class UserServiceImplTest {
         userId = UUID.randomUUID();
         existingUser = User.builder()
                 .id(userId)
-                .name("Jane Doe")
+                .firstName("Jane").lastName("Doe")
                 .email("jane@example.com")
                 .passwordHash("old-hash")
                 .role(Role.CUSTOMER)
@@ -69,9 +70,7 @@ class UserServiceImplTest {
 
     @Test
     void register_hashesPasswordBeforeSaving() {
-        UserRequest request = new UserRequest(
-                "Jane Doe", "jane@example.com", "plainTextPassword", Role.CUSTOMER,
-                OffsetDateTime.now(), OffsetDateTime.now(), null, null);
+        RegisterRequest request = new RegisterRequest("Jane", "Q", "Doe", LocalDate.of(1990, 5, 17), "+639171234567", "jane@example.com", "plainTextPassword");
         when(passwordEncoder.encode("plainTextPassword")).thenReturn("hashed-value");
 
         User saved = userService.register(request);
@@ -81,10 +80,8 @@ class UserServiceImplTest {
     }
 
     @Test
-    void register_mapsNameEmailRole() {
-        UserRequest request = new UserRequest(
-                "Jane Doe", "jane@example.com", "plainTextPassword", Role.ADMIN,
-                OffsetDateTime.now(), OffsetDateTime.now(), null, null);
+    void register_mapsNameEmail_andAlwaysCreatesACustomer() {
+        RegisterRequest request = new RegisterRequest("Jane", "Q", "Doe", LocalDate.of(1990, 5, 17), "+639171234567", "jane@example.com", "plainTextPassword");
         when(passwordEncoder.encode(any())).thenReturn("hashed-value");
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         when(userRepository.save(captor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -92,9 +89,13 @@ class UserServiceImplTest {
         userService.register(request);
 
         User toSave = captor.getValue();
-        assertThat(toSave.getName()).isEqualTo("Jane Doe");
+        assertThat(toSave.getFirstName()).isEqualTo("Jane");
+        assertThat(toSave.getMiddleName()).isEqualTo("Q");
+        assertThat(toSave.getLastName()).isEqualTo("Doe");
+        assertThat(toSave.getBirthDate()).isEqualTo(LocalDate.of(1990, 5, 17));
+        assertThat(toSave.getPhoneNumber()).isEqualTo("+639171234567");
         assertThat(toSave.getEmail()).isEqualTo("jane@example.com");
-        assertThat(toSave.getRole()).isEqualTo(Role.ADMIN);
+        assertThat(toSave.getRole()).isEqualTo(Role.CUSTOMER);
     }
 
     @Test
@@ -112,24 +113,26 @@ class UserServiceImplTest {
 
     @Test
     void update_allFieldsPresent_updatesNameEmailRole() {
-        UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ADMIN);
+        UserUpdateRequest request = new UserUpdateRequest("New", null, "Name", null, null, "new@example.com", Role.ADMIN);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
 
         User updated = userService.update(userId, request);
 
-        assertThat(updated.getName()).isEqualTo("New Name");
+        assertThat(updated.getFirstName()).isEqualTo("New");
+        assertThat(updated.getLastName()).isEqualTo("Name");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
         assertThat(updated.getRole()).isEqualTo(Role.ADMIN);
     }
 
     @Test
     void update_nameOnly_leavesEmailAndRoleUnchanged() {
-        UserUpdateRequest request = new UserUpdateRequest("New Name", null, null);
+        UserUpdateRequest request = new UserUpdateRequest("New", null, "Name", null, null, null, null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
 
         User updated = userService.update(userId, request);
 
-        assertThat(updated.getName()).isEqualTo("New Name");
+        assertThat(updated.getFirstName()).isEqualTo("New");
+        assertThat(updated.getLastName()).isEqualTo("Name");
         assertThat(updated.getEmail()).isEqualTo("jane@example.com");
         assertThat(updated.getRole()).isEqualTo(Role.CUSTOMER);
         verify(userRepository, never()).findByEmail(any());
@@ -137,24 +140,26 @@ class UserServiceImplTest {
 
     @Test
     void update_emailOnly_leavesNameAndRoleUnchanged() {
-        UserUpdateRequest request = new UserUpdateRequest(null, "new@example.com", null);
+        UserUpdateRequest request = new UserUpdateRequest(null, null, null, null, null, "new@example.com", null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
 
         User updated = userService.update(userId, request);
 
-        assertThat(updated.getName()).isEqualTo("Jane Doe");
+        assertThat(updated.getFirstName()).isEqualTo("Jane");
+        assertThat(updated.getLastName()).isEqualTo("Doe");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
         assertThat(updated.getRole()).isEqualTo(Role.CUSTOMER);
     }
 
     @Test
     void update_roleOnly_leavesNameAndEmailUnchanged() {
-        UserUpdateRequest request = new UserUpdateRequest(null, null, Role.ADMIN);
+        UserUpdateRequest request = new UserUpdateRequest(null, null, null, null, null, null, Role.ADMIN);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
 
         User updated = userService.update(userId, request);
 
-        assertThat(updated.getName()).isEqualTo("Jane Doe");
+        assertThat(updated.getFirstName()).isEqualTo("Jane");
+        assertThat(updated.getLastName()).isEqualTo("Doe");
         assertThat(updated.getEmail()).isEqualTo("jane@example.com");
         assertThat(updated.getRole()).isEqualTo(Role.ADMIN);
         verify(userRepository, never()).findByEmail(any());
@@ -163,7 +168,7 @@ class UserServiceImplTest {
     @Test
     void update_unknownId_throwsResourceNotFoundException() {
         UUID unknownId = UUID.randomUUID();
-        UserUpdateRequest request = new UserUpdateRequest("New Name", "new@example.com", Role.ADMIN);
+        UserUpdateRequest request = new UserUpdateRequest("New", null, "Name", null, null, "new@example.com", Role.ADMIN);
         when(userRepository.findById(unknownId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.update(unknownId, request))
@@ -187,11 +192,12 @@ class UserServiceImplTest {
     void updateSelf_nameOnly_leavesEmailUnchanged() {
         when(accessGuard.currentUserId()).thenReturn(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        UserSelfUpdateRequest request = new UserSelfUpdateRequest("New Name", null, null);
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest("New", null, "Name", null, null, null, null);
 
         User updated = userService.updateSelf(request);
 
-        assertThat(updated.getName()).isEqualTo("New Name");
+        assertThat(updated.getFirstName()).isEqualTo("New");
+        assertThat(updated.getLastName()).isEqualTo("Name");
         assertThat(updated.getEmail()).isEqualTo("jane@example.com");
         assertThat(updated.getRole()).isEqualTo(Role.CUSTOMER);
     }
@@ -200,11 +206,12 @@ class UserServiceImplTest {
     void updateSelf_emailOnly_leavesNameUnchanged() {
         when(accessGuard.currentUserId()).thenReturn(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
-        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, "new@example.com", null);
+        UserSelfUpdateRequest request = new UserSelfUpdateRequest(null, null, null, null, null, "new@example.com", null);
 
         User updated = userService.updateSelf(request);
 
-        assertThat(updated.getName()).isEqualTo("Jane Doe");
+        assertThat(updated.getFirstName()).isEqualTo("Jane");
+        assertThat(updated.getLastName()).isEqualTo("Doe");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
     }
 
@@ -219,7 +226,7 @@ class UserServiceImplTest {
     }
 
     private UserSelfUpdateRequest avatar(String url) {
-        return new UserSelfUpdateRequest(null, null, url);
+        return new UserSelfUpdateRequest(null, null, null, null, null, null, url);
     }
 
     @Test
@@ -276,7 +283,7 @@ class UserServiceImplTest {
         signedIn();
         existingUser.setAvatarUrl(AVATAR_A);
 
-        User updated = userService.updateSelf(new UserSelfUpdateRequest("New Name", null, null));
+        User updated = userService.updateSelf(new UserSelfUpdateRequest("New", null, "Name", null, null, null, null));
 
         assertThat(updated.getAvatarUrl()).isEqualTo(AVATAR_A);
         verify(uploadedFileUrls, never()).deleteIfUnreferenced(any());

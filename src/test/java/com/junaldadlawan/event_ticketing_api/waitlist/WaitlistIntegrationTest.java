@@ -114,7 +114,7 @@ class WaitlistIntegrationTest {
 
     private User persistUser(Role role) {
         User user = User.builder()
-                .name("Waitlist Test User")
+                .firstName("Waitlist Test").lastName("User")
                 .email("waitlist-" + UUID.randomUUID() + "@test.local")
                 .passwordHash("irrelevant")
                 .role(role)

@@ -208,7 +208,7 @@ class NotificationIntegrationTest {
 
     private User persistUser(String emailLocalPart) {
         User user = User.builder()
-                .name("Notification Test User")
+                .firstName("Notification Test").lastName("User")
                 .email(emailLocalPart + "-" + UUID.randomUUID() + "@test.local")
                 .passwordHash("irrelevant")
                 .role(Role.CUSTOMER)
