@@ -126,7 +126,7 @@ class AuthUserErrorResponsesIntegrationTest {
         User target = user(Role.CUSTOMER);
 
         problem(mockMvc.perform(patch("/api/v1/users/{id}", target.getId()).header("Authorization", token(admin))
-                .contentType("application/json").content("{\"role\":\"SUPERUSER\"}")), 400, "role: must be one of [CUSTOMER, ADMIN]");
+                .contentType("application/json").content("{\"role\":\"SUPERUSER\"}")), 400, "role: must be one of [CUSTOMER, ADMIN, SUPER_ADMIN]");
     }
 
     @Test

@@ -11,7 +11,8 @@ BR-AUTH-001..009 in `event-ticketing-api-business-rules.md`).
 |---|---|---|
 | Visitor | not signed in | Nobody. Can only browse public things, register and log in. |
 | Customer | account role `CUSTOMER` (`users.role`) | Every registered user. |
-| Admin | account role `ADMIN` (`users.role`) | Platform staff. |
+| Super admin | account role `SUPER_ADMIN` (`users.role`) | The one highest account. Exactly one exists (database unique index, migration V38); it is created by hand (see `db/seed/demo-data.sql`) and can never be granted through the API. |
+| Admin | account role `ADMIN` (`users.role`) | Platform staff. Made an admin by the super admin only. |
 | Owner | organization role `OWNER` | The applicant, once an admin approves the organization. |
 | Organizer | organization role `ORGANIZER` | Given by the owner, or by the owner to themselves. |
 | Check-in staff | organization role `CHECK_IN_STAFF` | Given by the owner. |
@@ -23,43 +24,52 @@ organization's events only.
 
 ## 2. What each role can do
 
-| | Visitor | Customer | Check-in staff | Organizer | Owner | Admin | Scanner device |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| **Everyday use** | | | | | | | |
-| Browse public events, categories and live posts | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Register and log in | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Buy tickets (cart and checkout) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Transfer, resell, waitlist, raise a dispute on own tickets | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Edit own profile and picture | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Apply to create an organization | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| See own organizations (`/organizations/mine`) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Inside an organization** | | | | | | | |
-| View the organization's details | ❌ | ❌ (own application only) | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Assign organizer / check-in staff roles to others | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| List the organization's users | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (all) | ❌ |
-| **Events** | | | | | | | |
-| Create events (organization must be approved) | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Edit and publish events | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| Cancel or delete events | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Manage ticket types, promo codes, ticket templates, refund policy | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Manage check-in config and scanner devices | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| View orders, event analytics | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Issue refunds | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| View the organization's payouts | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| **Check-in** | | | | | | | |
-| Download the offline ticket list, validate tickets, send fallback scans | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Platform administration** | | | | | | | |
-| Approve or reject organization applications | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Suspend, reinstate or remove events, organizations, accounts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Manage users, categories, posts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Set platform fee rules, generate payouts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Platform analytics, audit log, handle disputes | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| | Visitor | Customer | Check-in staff | Organizer | Owner | Admin | Super admin | Scanner device |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| **Everyday use** | | | | | | | | |
+| Browse public events, categories and live posts | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Register and log in | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Buy tickets (cart and checkout) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Transfer, resell, waitlist, raise a dispute on own tickets | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Edit own profile and picture | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Save, list, choose the primary and remove **own** payment cards | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Apply to create an organization | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| See own organizations (`/organizations/mine`) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Inside an organization** | | | | | | | | |
+| View the organization's details | ❌ | ❌ (own application only) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Assign organizer / check-in staff roles to others | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| List the organization's users | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (all) | ✅ (all) | ❌ |
+| **Events** | | | | | | | | |
+| Create events (organization must be approved) | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Edit and publish events | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Cancel or delete events | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Manage ticket types, promo codes, ticket templates, refund policy | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Manage check-in config and scanner devices | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| View orders, event analytics | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Issue refunds | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| View the organization's payouts and payout cards | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Add, remove or choose the primary payout card | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| **Check-in** | | | | | | | | |
+| Download the offline ticket list, validate tickets, send fallback scans | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Platform administration** | | | | | | | | |
+| Approve or reject organization applications | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Suspend, reinstate or remove events, organizations, customer accounts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Suspend, reinstate, remove, delete or demote an **admin** account | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Make someone an admin | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Manage users, categories, posts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Set platform fee rules, generate payouts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Platform analytics, audit log, handle disputes | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 
 Notes
 - **Check-in staff** is a membership today, not a permission set: nothing in the API checks for it beyond letting the
   person see their organization. Scanning is done by scanner devices, which an owner, organizer or admin sets up.
   Give it real rights (for example creating its own scanner device) by adding the checks in the services.
-- **Admin cannot edit or publish an event** (BR-AUTH-004): those stay with the owning organization.
+- **Admin cannot edit or publish an event** (BR-AUTH-004): those stay with the owning organization. The super admin has the
+  same limit.
+- **Super admin** (BR-ADMIN-004..006): every admin power, plus being the only one who may suspend, reinstate, remove,
+  delete or demote an admin and the only one who may make someone an admin. Nobody, the super admin included, can
+  suspend, remove, delete or change the role of the super admin account, and the `SUPER_ADMIN` role cannot be
+  granted through the API.
 
 ## 3. Organization status gates the roles
 

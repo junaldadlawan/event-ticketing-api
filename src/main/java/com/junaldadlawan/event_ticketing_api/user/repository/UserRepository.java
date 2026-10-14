@@ -1,7 +1,11 @@
 package com.junaldadlawan.event_ticketing_api.user.repository;
 
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -16,4 +20,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
     List<User> findByDeletedAtIsNull();
+
+    /** Locks the row so two requests for the same user create one Stripe Customer, not two. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") UUID id);
 }

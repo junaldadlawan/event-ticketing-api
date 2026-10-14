@@ -41,6 +41,7 @@ tags:
   - name: TicketTemplates
   - name: Refunds
   - name: Payouts
+  - name: Payment methods
   - name: CheckIn
   - name: Notifications
   - name: Disputes
@@ -235,6 +236,99 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/WaitlistEntry" }
+
+  /users/me/payment-methods:
+    get:
+      operationId: listMyPaymentMethods
+      tags: [Payment methods]
+      summary: The caller's saved cards, primary first
+      description: Any signed-in user, for their own cards only. Never includes the provider's id or a token.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PaymentMethod" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: addMyPaymentMethod
+      tags: [Payment methods]
+      summary: Save a card
+      description: |
+        With the Stripe gateway `paymentToken` is a Stripe `pm_...` id: the card is attached to the caller's Stripe Customer
+        (created on first use) and its brand, last 4 and expiry are read from Stripe (anything sent for them is ignored). With the
+        default mock gateway `paymentToken` is `tok_<brand>` and the details come from the body; `tok_fail...` is refused.
+        The first card is always primary; `primary: true` unsets the previous primary in the same transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentMethodRequest" }
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentMethod" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: That Stripe card is already saved }
+        "502": { description: The payment provider is unavailable }
+
+  /users/me/payment-methods/setup-intent:
+    post:
+      operationId: createMyPaymentMethodSetupIntent
+      tags: [Payment methods]
+      summary: Start saving a card (Stripe SetupIntent)
+      description: Creates a SetupIntent (usage off_session) for the caller's Stripe Customer, creating the customer on first use. With the mock gateway it returns the dummy secret `seti_mock_secret` and calls nothing.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clientSecret: { type: string, description: Pass to Stripe.js. A secret for this one setup; do not log it. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/me/payment-methods/{id}/primary:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: setMyPrimaryPaymentMethod
+      tags: [Payment methods]
+      summary: Make this card the primary one
+      description: The previous primary is unset in the same transaction. Another user's card id is a 404.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentMethod" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/me/payment-methods/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: removeMyPaymentMethod
+      tags: [Payment methods]
+      summary: Remove a saved card (soft delete, detached from Stripe)
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: It is the primary card and other cards exist; make another card primary first }
 
   /users/me/notifications:
     get:
@@ -467,7 +561,8 @@ paths:
         platform fee that order was charged (never more than the gross left after refunds); `net` = gross - fees,
         which is what the organizer is owed. Fully refunded orders are left out. The payout is created SCHEDULED and
         its orders are marked as settled, so no order is ever paid out twice.
-        409 when no order is due in the period, or when the orders use more than one currency.
+        409 when the organization has no primary payout card, when no order is due in the period, or when the orders
+        use more than one currency. The payout is made out to the primary card and records its id (`payoutCardId`).
       requestBody:
         required: true
         content:
@@ -483,7 +578,88 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: No orders are due for payout in that period (or they use more than one currency) }
+        "409": { description: The organization has no primary payout card; or no orders are due for payout in that period; or they use more than one currency }
+
+  /organizations/{orgId}/payout-cards:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: listOrganizationPayoutCards
+      tags: [Payouts]
+      summary: List the organization's payout cards (owner, organizer or admin)
+      description: Oldest first. The gateway token is never returned.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PayoutCard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: addOrganizationPayoutCard
+      tags: [Payouts]
+      summary: Add a payout card (owner or admin; the organization must be approved)
+      description: |
+        Stores what the payment gateway returned for the card: token, brand, last 4, expiry and holder name. The full
+        card number and the security code are never accepted or stored. The organization's first card is always primary;
+        a later card is primary only when `primary` is true, which unsets the previous primary in the same transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutCardRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutCard" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Not the owner or an admin; or the organization is not approved }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /payout-cards/{cardId}/primary:
+    parameters:
+      - name: cardId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: setPrimaryPayoutCard
+      tags: [Payouts]
+      summary: Make this card the organization's primary payout card (owner or admin)
+      description: The previous primary card is unset in the same transaction, so there is always exactly one.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutCard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /payout-cards/{cardId}:
+    parameters:
+      - name: cardId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: removePayoutCard
+      tags: [Payouts]
+      summary: Remove a payout card (owner or admin; soft delete)
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: This is the primary card and the organization has other cards; make another card primary first }
 
   /organizations/{orgId}/venues:
     parameters:
@@ -1680,11 +1856,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: [payment_method_token]
+              description: Exactly one of paymentMethodToken or paymentMethodId.
               properties:
-                payment_method_token:
+                paymentMethodToken:
                   type: string
                   description: Client-side token from the payment gateway; the API never receives raw card data.
+                paymentMethodId:
+                  type: string
+                  format: uuid
+                  description: A card the signed-in user saved under /users/me/payment-methods (another user's card is a 404).
       responses:
         "201":
           description: Order created and tickets issued
@@ -1692,7 +1872,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
         "402":
-          description: Payment failed; cart and holds remain intact for retry
+          description: |
+            Payment failed (declined card, or a card that needs 3-D Secure, which is not supported yet); cart and holds remain
+            intact for retry. With the Stripe gateway the payment method must be a Stripe pm_ id.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2221,7 +2403,9 @@ paths:
       summary: >
         Suspend, reinstate, or remove an Organization/Event/User (admin
         only). Every call is recorded as its own immutable row, doubling as
-        the reason/audit trail BR-ADMIN-002 calls for.
+        the reason/audit trail BR-ADMIN-002 calls for. When the target is
+        an ADMIN account only the super admin may act (an admin gets 403),
+        and nobody may act on the SUPER_ADMIN account (403).
       requestBody:
         required: true
         content:
@@ -2387,6 +2571,14 @@ components:
         birthDate: { type: [string, "null"], format: date, description: Null for an account created before the date of birth was collected. }
         phoneNumber: { type: [string, "null"], description: "International format (+ then digits), or null when none was given." }
         email: { type: string, format: email }
+        role:
+          type: string
+          enum: [CUSTOMER, ADMIN, SUPER_ADMIN]
+          description: |
+            SUPER_ADMIN is the one highest account (exactly one exists; it cannot be granted through the API). It has every admin
+            power and is the only role that may suspend, remove, delete or demote an ADMIN or make someone an ADMIN.
+            Through `PATCH /users/{id}` an admin may change a customer's other fields, but a role change to or from ADMIN
+            needs the super admin (403 otherwise), and the SUPER_ADMIN role is never accepted (403).
         is_admin: { type: boolean }
         avatarUrl:
           type: [string, "null"]
@@ -3210,6 +3402,31 @@ components:
         scanned_at: { type: string, format: date-time }
         result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
 
+    PaymentMethod:
+      type: object
+      description: A saved card as shown. The provider's id and any token are never returned.
+      properties:
+        id: { type: string, format: uuid }
+        holderName: { type: string }
+        brand: { type: string, example: visa }
+        last4: { type: string, example: "4242" }
+        expMonth: { type: integer }
+        expYear: { type: integer }
+        primary: { type: boolean }
+
+    PaymentMethodRequest:
+      type: object
+      required: [paymentToken]
+      description: There is no field for a card number or security code.
+      properties:
+        paymentToken: { type: string, pattern: "^(pm|tok)_[A-Za-z0-9_]{2,100}$", description: A Stripe pm_ id (Stripe gateway) or tok_<brand> (mock gateway). }
+        primary: { type: boolean, description: Ignored for the first card, which is always primary. }
+        holderName: { type: string, maxLength: 100, description: "Letters, spaces and . , ' - only; no HTML. Defaults to the account name." }
+        brand: { type: string, maxLength: 30, description: Mock gateway only. Defaults to the token's brand. }
+        last4: { type: string, pattern: "^[0-9]{4}$", description: Mock gateway only (ignored with Stripe). }
+        expMonth: { type: integer, minimum: 1, maximum: 12, description: Mock gateway only. }
+        expYear: { type: integer, description: Mock gateway only. The card must not have expired. }
+
     Notification:
       type: object
       properties:
@@ -3310,8 +3527,36 @@ components:
         period_start: { type: string, format: date }
         period_end: { type: string, format: date }
         status: { type: string, enum: [scheduled, paid, failed] }
+        payoutCardId: { type: [string, "null"], format: uuid, description: The primary payout card this payout was made out to (null on older payouts). }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time, description: Reflects status transitions. }
+
+    PayoutCardRequest:
+      type: object
+      required: [holderName, brand, last4, expMonth, expYear, paymentToken]
+      description: What the payment gateway returned for the card. There is no field for the full number or the security code.
+      properties:
+        holderName: { type: string, maxLength: 100, description: "Letters, spaces and . , ' - only; no HTML." }
+        brand: { type: string, maxLength: 30, example: Visa }
+        last4: { type: string, pattern: "^[0-9]{4}$" }
+        expMonth: { type: integer, minimum: 1, maximum: 12 }
+        expYear: { type: integer, minimum: 2000, maximum: 2200, description: The card must not have expired (valid through the end of its expiry month). }
+        paymentToken: { type: string, pattern: "^[A-Za-z0-9_.-]{8,255}$", description: The gateway token. A bare 12 to 19 digit number is refused as a card number. }
+        primary: { type: boolean, description: Ignored for the first card, which is always primary. }
+
+    PayoutCard:
+      type: object
+      description: A payout card as shown. The gateway token is never returned.
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        holderName: { type: string }
+        brand: { type: string }
+        last4: { type: string, example: "4242" }
+        expMonth: { type: integer }
+        expYear: { type: integer }
+        primary: { type: boolean }
+        createdAt: { type: string, format: date-time }
 
     PayoutGenerate:
       type: object

@@ -43,6 +43,16 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Exception flow:** A URL that is not one of this server's uploaded files → rejected (400); nothing changes.
 - **Related rules:** BR-PROFILE-001, BR-PROFILE-002, BR-PROFILE-003, BR-PROFILE-004
 
+### UC-USER-05: Manage My Saved Cards
+
+- **Preconditions:** User is signed in (any account role).
+- **Main flow:**
+  1. The web app asks for a setup (`POST /users/me/payment-methods/setup-intent`) and collects the card in Stripe's own form, which returns a payment-method id.
+  2. User saves the card (`POST /users/me/payment-methods`). API reads the brand, last 4 and expiry from Stripe, attaches the card to the user's Stripe Customer (created on first use) and stores it. The first card becomes primary.
+  3. User lists their cards (primary first), chooses another as primary, or removes one (the card is also detached from Stripe).
+- **Exception flow:** Expired card, last 4 not 4 digits, HTML in the name, a failing token → 400. Removing the primary card while others exist → 409. Another user's card id → 404.
+- **Related rules:** BR-CARD-001 to BR-CARD-007, BR-CARD-009
+
 ### UC-USER-04: Read Sales and Announcements
 
 - **Preconditions:** None - open to the public.
@@ -201,6 +211,19 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
      (e.g. an owner also acting as organizer or scanner).
   2. No separate approval is required.
 - **Related rules:** BR-AUTH-007, BR-AUTH-008
+
+### UC-OWNER-03: Manage the Organization's Payout Cards
+
+- **Preconditions:** Caller is the organization's owner (or an admin); the organization is approved.
+- **Main flow:**
+  1. The payment gateway turns the card into a token on the client; the owner sends the token with the card's brand,
+     last 4 digits, expiry and holder name. The full number and security code never reach the API.
+  2. API stores the card. The first card is primary; adding a card as primary, or choosing another card as primary,
+     unsets the old one.
+  3. The owner, organizer or an admin lists the cards (never the token). The owner removes a card that is not the
+     primary one, or the last remaining card.
+- **Exception flow:** Organizer, other member or stranger adding, removing or choosing → 403. Organization not approved → 403. Expired card, bad last 4, a card number instead of a token, HTML in the name → 400. Removing the primary card while others exist → 409.
+- **Related rules:** BR-PAY-007, BR-PAY-008, BR-PAY-009, BR-PAY-010
 
 ## Actor: Event Organizer (including an owner acting as organizer)
 
@@ -374,7 +397,9 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Main flow:**
   1. Admin suspends or removes an organizer, event, or user account for a
      policy violation.
-- **Related rules:** BR-ADMIN-002
+  2. If the account is an admin's, only the super admin may do it (an admin gets 403). Nobody may do it to the super
+     admin's own account.
+- **Related rules:** BR-ADMIN-002, BR-ADMIN-004, BR-ADMIN-005, BR-ADMIN-006
 
 ### UC-ADMIN-03: View & Intervene in a Dispute
 
@@ -417,14 +442,15 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 
 ### UC-ADMIN-07: Generate an Organization Payout
 
-- **Preconditions:** Caller is an admin; the organization has paid orders in the period that are not in a payout yet.
+- **Preconditions:** Caller is an admin; the organization has a primary payout card and has paid orders in the period that are not in a payout yet.
 - **Main flow:**
   1. Admin picks the organization and a period (start and end day).
   2. API totals the due orders: gross (paid minus refunds), the platform fees, and the net the organizer is owed.
-  3. API records a scheduled payout and marks those orders as settled.
+  3. API records a scheduled payout made out to the organization's primary card (its id is stored) and marks those
+     orders as settled.
   4. The organization's owner or organizer can then see the payout with its fees.
-- **Exception flow:** Nothing is due in the period, or the orders use more than one currency → 409. End before start or in the future → 400. Non-admin → 403.
-- **Related rules:** BR-FEE-007, BR-FEE-008, BR-PAY-006
+- **Exception flow:** The organization has no primary payout card, nothing is due in the period, or the orders use more than one currency → 409. End before start or in the future → 400. Non-admin → 403.
+- **Related rules:** BR-FEE-007, BR-FEE-008, BR-PAY-006, BR-PAY-011
 
 ## Not covered (no requirement to derive a use case from)
 

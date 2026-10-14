@@ -3,6 +3,8 @@ package com.junaldadlawan.event_ticketing_api.organization.security;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
+import com.junaldadlawan.event_ticketing_api.user.entity.User;
+import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -35,11 +37,40 @@ public class OrganizationAccessGuard {
         return UUID.fromString(authentication.getName());
     }
 
+    /** An ADMIN or the SUPER_ADMIN: the super admin keeps every admin power. */
     public boolean isAdmin() {
+        return hasAuthority("ROLE_ADMIN") || hasAuthority("ROLE_SUPER_ADMIN");
+    }
+
+    public boolean isSuperAdmin() {
+        return hasAuthority("ROLE_SUPER_ADMIN");
+    }
+
+    private boolean hasAuthority(String authorityName) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return isAuthenticated(authentication)
                 && authentication.getAuthorities().stream()
-                        .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+                        .anyMatch(authority -> authority.getAuthority().equals(authorityName));
+    }
+
+    public void requireSuperAdmin() {
+        if (!isSuperAdmin()) {
+            throw new ForbiddenException("Only the super admin can do this");
+        }
+    }
+
+    /**
+     * Who may suspend, reinstate, remove, delete or change the role of another account: nobody for the SUPER_ADMIN's
+     * account, only the super admin for an ADMIN's, any admin for everyone else. {@code action} is the verb phrase
+     * used in the message, for example "suspend" or "change the role of".
+     */
+    public void requireMayManageAccount(User target, String action) {
+        if (target.getRole() == Role.SUPER_ADMIN) {
+            throw new ForbiddenException("Nobody can " + action + " the super admin account");
+        }
+        if (target.getRole() == Role.ADMIN && !isSuperAdmin()) {
+            throw new ForbiddenException("Only the super admin can " + action + " an admin account");
+        }
     }
 
     public void requireAdmin() {

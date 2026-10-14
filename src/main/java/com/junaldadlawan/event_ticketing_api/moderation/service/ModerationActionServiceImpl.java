@@ -197,6 +197,9 @@ public class ModerationActionServiceImpl implements ModerationActionService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User " + userId + " not found"));
 
+        // An admin's account is only the super admin's to act on, and the super admin's own is nobody's.
+        accessGuard.requireMayManageAccount(user, action.name().toLowerCase());
+
         return switch (action) {
             case SUSPEND -> {
                 if (user.getAccountStatus() == AccountStatus.SUSPENDED) {

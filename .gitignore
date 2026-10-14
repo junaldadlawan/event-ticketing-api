@@ -49,3 +49,6 @@ build/
 
 ### Uploaded images (local dev) ###
 /uploads/
+
+### Local secrets (never commit) ###
+.env

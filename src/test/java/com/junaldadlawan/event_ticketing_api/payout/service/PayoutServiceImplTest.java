@@ -16,6 +16,8 @@ import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutResponse;
 import com.junaldadlawan.event_ticketing_api.refund.repository.RefundRepository;
 import com.junaldadlawan.event_ticketing_api.payout.entity.Payout;
+import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutCard;
+import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutCardRepository;
 import com.junaldadlawan.event_ticketing_api.payout.enums.PayoutStatus;
 import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +32,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,13 +67,16 @@ class PayoutServiceImplTest {
     @Mock
     private RefundRepository refundRepository;
 
+    @Mock
+    private PayoutCardRepository payoutCardRepository;
+
     private PayoutServiceImpl service;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        service = new PayoutServiceImpl(payoutRepository, organizationRepository, accessGuard, orderRepository, refundRepository);
+        service = new PayoutServiceImpl(payoutRepository, organizationRepository, accessGuard, orderRepository, refundRepository, payoutCardRepository);
         orgId = UUID.randomUUID();
     }
 
@@ -191,9 +197,17 @@ class PayoutServiceImplTest {
         when(organizationRepository.existsById(orgId)).thenReturn(true);
     }
 
+    private PayoutCard withPrimaryCard() {
+        PayoutCard card = PayoutCard.builder().id(UUID.randomUUID()).organizationId(orgId).holderName("Demo Events Co.")
+                .brand("Visa").last4("4242").expMonth(12).expYear(2099).paymentToken("tok_test_12345678").primary(true).build();
+        when(payoutCardRepository.findByOrganizationIdAndPrimaryTrueAndDeletedAtIsNull(orgId)).thenReturn(Optional.of(card));
+        return card;
+    }
+
     @Test
     void generate_sumsGrossFeesAndNet_andMarksTheOrdersAsSettled() {
         adminAndOrg();
+        withPrimaryCard();
         Order first = order(1100, 100, OrderStatus.PAID);
         Order second = order(2200, 200, OrderStatus.PAID);
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(first, second));
@@ -219,8 +233,33 @@ class PayoutServiceImplTest {
     }
 
     @Test
+    void generate_recordsThePrimaryCardAsTheDestination() {
+        adminAndOrg();
+        PayoutCard card = withPrimaryCard();
+        when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(order(1000, 0, OrderStatus.PAID)));
+        when(refundRepository.sumCompletedAmountByOrderId(any())).thenReturn(0L);
+        when(payoutRepository.save(any(Payout.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PayoutResponse response = service.generate(orgId, period());
+
+        assertThat(response.payoutCardId()).isEqualTo(card.getId());
+    }
+
+    @Test
+    void generate_withoutAPrimaryCard_throwsConflict_andCreatesNothing() {
+        adminAndOrg();
+        when(payoutCardRepository.findByOrganizationIdAndPrimaryTrueAndDeletedAtIsNull(orgId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.generate(orgId, period()))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("primary payout card");
+        verify(payoutRepository, never()).save(any());
+        verifyNoInteractions(orderRepository);
+    }
+
+    @Test
     void generate_aPartialRefund_reducesTheGross_andTheFeeIsKeptInFull() {
         adminAndOrg();
+        withPrimaryCard();
         Order partlyRefunded = order(1100, 100, OrderStatus.PARTIALLY_REFUNDED);
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(partlyRefunded));
         when(refundRepository.sumCompletedAmountByOrderId(partlyRefunded.getId())).thenReturn(300L);
@@ -236,6 +275,7 @@ class PayoutServiceImplTest {
     @Test
     void generate_aRefundThatEatsIntoTheFee_capsTheFeeAtWhatIsLeft_andNetNeverGoesNegative() {
         adminAndOrg();
+        withPrimaryCard();
         Order order = order(1100, 100, OrderStatus.PARTIALLY_REFUNDED);
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(order));
         when(refundRepository.sumCompletedAmountByOrderId(order.getId())).thenReturn(1050L);
@@ -251,6 +291,7 @@ class PayoutServiceImplTest {
     @Test
     void generate_ordersWithoutAFee_payOutInFull() {
         adminAndOrg();
+        withPrimaryCard();
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(order(1000, 0, OrderStatus.PAID)));
         when(refundRepository.sumCompletedAmountByOrderId(any())).thenReturn(0L);
         when(payoutRepository.save(any(Payout.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -264,6 +305,7 @@ class PayoutServiceImplTest {
     @Test
     void generate_queriesTheWholePeriodInUtc_endDayIncluded() {
         adminAndOrg();
+        withPrimaryCard();
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.generate(orgId, period())).isInstanceOf(ConflictException.class);
@@ -275,6 +317,7 @@ class PayoutServiceImplTest {
     @Test
     void generate_noOrdersDue_throwsConflict_andCreatesNothing() {
         adminAndOrg();
+        withPrimaryCard();
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.generate(orgId, period())).isInstanceOf(ConflictException.class);
@@ -284,6 +327,7 @@ class PayoutServiceImplTest {
     @Test
     void generate_mixedCurrencies_throwsConflict_andCreatesNothing() {
         adminAndOrg();
+        withPrimaryCard();
         Order euro = order(1000, 0, OrderStatus.PAID);
         euro.setTotal(Money.builder().amount(1000).currency("EUR").build());
         when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(order(1000, 0, OrderStatus.PAID), euro));
