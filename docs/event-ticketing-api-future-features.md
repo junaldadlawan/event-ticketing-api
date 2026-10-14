@@ -111,7 +111,7 @@ These are recorded as "out of scope, documented rather than overlooked" in
 | D-5 | **Real foreign keys, or a documented integrity-check job** | P3 | ⬜ | The schema deliberately has no FK constraints (see V6–V9 headers); orphaned rows are possible if application logic has a bug. At minimum, add a periodic orphan-detection report. |
 | D-6 | **Index review** against real query plans (`EXPLAIN`) once representative data exists | P2 | ⬜ | Several indexes exist; none validated under load. |
 | D-7 | **Data retention & archival policy** for audit log, notifications, check-in records, idempotency keys | P2 | ⬜ | All append-only tables grow forever. Ties to S-4. |
-| D-8 | **Seed data kept in sync** — CI step that runs `db/seed/dev-seed.sql` against a freshly migrated DB | P3 | ⬜ | Prevents the dev seed from silently breaking when a migration changes a column. |
+| D-8 | **Seed data kept in sync** — CI step that runs `db/seed/demo-data.sql` against a freshly migrated DB | P3 | ⬜ | Prevents the demo seed from silently breaking when a migration changes a column (the old `dev-seed.sql` broke exactly that way when `users.name` was split, and was removed). |
 
 ---
 

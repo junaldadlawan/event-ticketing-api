@@ -117,7 +117,7 @@ class TicketTransferIntegrationTest {
 
     private User persistUser(Role role) {
         User user = User.builder()
-                .name("Transfer Test User")
+                .firstName("Transfer Test").lastName("User")
                 .email("transfer-" + UUID.randomUUID() + "@test.local")
                 .passwordHash("irrelevant")
                 .role(role)

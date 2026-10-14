@@ -6,7 +6,7 @@ import com.junaldadlawan.event_ticketing_api.auth.dto.LogoutRequest;
 import com.junaldadlawan.event_ticketing_api.auth.dto.RefreshRequest;
 import com.junaldadlawan.event_ticketing_api.auth.dto.TokenPairResponse;
 import com.junaldadlawan.event_ticketing_api.auth.service.AuthService;
-import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
+import com.junaldadlawan.event_ticketing_api.user.dto.RegisterRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserResponse;
 import com.junaldadlawan.event_ticketing_api.user.service.UserService;
 import jakarta.validation.Valid;
@@ -29,7 +29,7 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public UserResponse register(@RequestBody UserRequest request) {
+    public UserResponse register(@Valid @RequestBody RegisterRequest request) {
         return UserResponse.from(userService.register(request));
     }
 

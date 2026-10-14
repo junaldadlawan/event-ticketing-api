@@ -246,7 +246,7 @@ class SuspensionEnforcementIntegrationTest {
     @Test
     void login_suspendedAccount_correctPassword_returns403() throws Exception {
         String rawPassword = "correct-password-123";
-        User user = User.builder().name("Suspended User").email("suspended-" + UUID.randomUUID() + "@test.local")
+        User user = User.builder().firstName("Suspended").lastName("User").email("suspended-" + UUID.randomUUID() + "@test.local")
                 .passwordHash(passwordEncoder.encode(rawPassword)).role(Role.CUSTOMER).accountStatus(AccountStatus.SUSPENDED).build();
         User saved = userRepository.save(user);
         createdUserIds.add(saved.getId());
@@ -260,7 +260,7 @@ class SuspensionEnforcementIntegrationTest {
     @Test
     void login_suspendedAccount_wrongPassword_stillReturns401_notLeaking403() throws Exception {
         String rawPassword = "correct-password-123";
-        User user = User.builder().name("Suspended User").email("suspended-" + UUID.randomUUID() + "@test.local")
+        User user = User.builder().firstName("Suspended").lastName("User").email("suspended-" + UUID.randomUUID() + "@test.local")
                 .passwordHash(passwordEncoder.encode(rawPassword)).role(Role.CUSTOMER).accountStatus(AccountStatus.SUSPENDED).build();
         User saved = userRepository.save(user);
         createdUserIds.add(saved.getId());
@@ -274,7 +274,7 @@ class SuspensionEnforcementIntegrationTest {
     @Test
     void login_activeAccount_correctPassword_returns200() throws Exception {
         String rawPassword = "correct-password-123";
-        User user = User.builder().name("Active User").email("active-" + UUID.randomUUID() + "@test.local")
+        User user = User.builder().firstName("Active").lastName("User").email("active-" + UUID.randomUUID() + "@test.local")
                 .passwordHash(passwordEncoder.encode(rawPassword)).role(Role.CUSTOMER).accountStatus(AccountStatus.ACTIVE).build();
         User saved = userRepository.save(user);
         createdUserIds.add(saved.getId());

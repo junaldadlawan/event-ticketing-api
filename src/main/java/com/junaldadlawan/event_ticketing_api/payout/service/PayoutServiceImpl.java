@@ -14,7 +14,9 @@ import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationA
 import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutGenerateRequest;
 import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutResponse;
 import com.junaldadlawan.event_ticketing_api.payout.entity.Payout;
+import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutCard;
 import com.junaldadlawan.event_ticketing_api.payout.enums.PayoutStatus;
+import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutCardRepository;
 import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutRepository;
 import com.junaldadlawan.event_ticketing_api.refund.repository.RefundRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,7 @@ public class PayoutServiceImpl implements PayoutService {
     private final OrganizationAccessGuard accessGuard;
     private final OrderRepository orderRepository;
     private final RefundRepository refundRepository;
+    private final PayoutCardRepository payoutCardRepository;
 
     @Override
     public Page<PayoutResponse> list(UUID organizationId, Pageable pageable) {
@@ -64,6 +67,8 @@ public class PayoutServiceImpl implements PayoutService {
             throw new BadRequestException("periodEnd must not be in the future");
         }
 
+        PayoutCard card = payoutCardRepository.findByOrganizationIdAndPrimaryTrueAndDeletedAtIsNull(organizationId)
+                .orElseThrow(() -> new ConflictException("The organization has no primary payout card; add one before generating a payout"));
         Instant from = start.atStartOfDay().toInstant(ZoneOffset.UTC);
         Instant to = end.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
         List<Order> orders = orderRepository.findDueForPayout(organizationId, from, to);
@@ -93,6 +98,7 @@ public class PayoutServiceImpl implements PayoutService {
                 .periodStart(start)
                 .periodEnd(end)
                 .status(PayoutStatus.SCHEDULED)
+                .payoutCardId(card.getId())
                 .build());
         for (Order order : orders) {
             order.setPayoutId(payout.getId());

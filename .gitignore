@@ -49,3 +49,11 @@ build/
 
 ### Uploaded images (local dev) ###
 /uploads/
+
+### Local secrets (never commit) ###
+.env
+.env.*
+!.env.example
+
+### Local secrets (never commit) ###
+.env

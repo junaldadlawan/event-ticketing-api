@@ -101,7 +101,7 @@ class ModerationActionServiceImplTest {
     }
 
     private User user(UUID id, AccountStatus status) {
-        return User.builder().id(id).name("n").email("e@test.local").passwordHash("h").role(Role.CUSTOMER).accountStatus(status).build();
+        return User.builder().id(id).firstName("n").lastName("User").email("e@test.local").passwordHash("h").role(Role.CUSTOMER).accountStatus(status).build();
     }
 
     // ---- admin gate ----
@@ -391,5 +391,43 @@ class ModerationActionServiceImplTest {
 
     private static <T> T argThat(java.util.function.Predicate<T> predicate) {
         return org.mockito.ArgumentMatchers.argThat(predicate::test);
+    }
+
+    // ---- the super admin rules: an admin's account is only the super admin's to act on ----
+
+    @Test
+    void create_userAction_asksTheGuardWithTheActionName() {
+        UUID userId = UUID.randomUUID();
+        when(accessGuard.currentUserId()).thenReturn(UUID.randomUUID());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user(userId, AccountStatus.ACTIVE)));
+
+        service.create(new ModerationActionCreateRequest(ModerationTargetType.USER, userId, ModerationActionType.SUSPEND, "abuse"));
+
+        verify(accessGuard).requireMayManageAccount(argThat(u -> u.getId().equals(userId)), eq("suspend"));
+    }
+
+    @Test
+    void create_suspendingOrRemovingAnAccountTheGuardRefuses_changesNothing() {
+        UUID adminId = UUID.randomUUID();
+        User admin = user(adminId, AccountStatus.ACTIVE);
+        admin.setRole(Role.ADMIN);
+        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+        org.mockito.Mockito.doThrow(new ForbiddenException("Only the super admin can suspend an admin account"))
+                .when(accessGuard).requireMayManageAccount(admin, "suspend");
+        org.mockito.Mockito.doThrow(new ForbiddenException("Only the super admin can remove an admin account"))
+                .when(accessGuard).requireMayManageAccount(admin, "remove");
+        org.mockito.Mockito.doThrow(new ForbiddenException("Only the super admin can reinstate an admin account"))
+                .when(accessGuard).requireMayManageAccount(admin, "reinstate");
+
+        for (ModerationActionType action : ModerationActionType.values()) {
+            assertThatThrownBy(() -> service.create(new ModerationActionCreateRequest(ModerationTargetType.USER, adminId, action, "reason")))
+                    .as(action.name()).isInstanceOf(ForbiddenException.class);
+        }
+
+        assertThat(admin.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+        verify(userRepository, never()).save(any());
+        verify(userService, never()).delete(any());
+        verify(moderationActionRepository, never()).save(any());
+        verify(notificationService, never()).notify(any(), any(), any(), any());
     }
 }

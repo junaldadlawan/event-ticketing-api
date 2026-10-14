@@ -47,7 +47,7 @@ class AuthRefreshIntegrationTest {
     @BeforeEach
     void setUp() {
         user = userRepository.save(User.builder()
-                .name("Refresh Test User")
+                .firstName("Refresh Test").lastName("User")
                 .email("refresh-test-" + UUID.randomUUID() + "@example.com")
                 .passwordHash(passwordEncoder.encode(PASSWORD))
                 .role(Role.CUSTOMER)

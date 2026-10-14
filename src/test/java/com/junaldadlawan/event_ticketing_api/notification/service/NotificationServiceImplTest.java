@@ -70,7 +70,7 @@ class NotificationServiceImplTest {
     }
 
     private User user(UUID id, String email) {
-        return User.builder().id(id).name("Test User").email(email).passwordHash("irrelevant").role(Role.CUSTOMER).build();
+        return User.builder().id(id).firstName("Test").lastName("User").email(email).passwordHash("irrelevant").role(Role.CUSTOMER).build();
     }
 
     /** Every {@code saveAndFlush} call echoes back its argument, like a real save would. */
@@ -151,7 +151,7 @@ class NotificationServiceImplTest {
     @Test
     void notify_userHasNullEmail_transitionsToFailed_neverAttemptsDelivery() {
         stubSaveAndFlushEchoesArgument();
-        User userWithNoEmail = User.builder().id(userId).name("No Email").passwordHash("irrelevant").role(Role.CUSTOMER).email(null).build();
+        User userWithNoEmail = User.builder().id(userId).firstName("No").lastName("Email").passwordHash("irrelevant").role(Role.CUSTOMER).email(null).build();
         when(userRepository.findById(userId)).thenReturn(Optional.of(userWithNoEmail));
 
         service.notify(userId, NotificationType.REFUND_CONFIRMATION, "Refund", relatedObjectId);

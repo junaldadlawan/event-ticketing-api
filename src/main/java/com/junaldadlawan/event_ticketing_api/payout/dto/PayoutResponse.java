@@ -19,6 +19,7 @@ public record PayoutResponse(
         LocalDate periodStart,
         LocalDate periodEnd,
         PayoutStatus status,
+        UUID payoutCardId,
         Instant createdAt,
         Instant updatedAt) implements Serializable {
 
@@ -32,6 +33,7 @@ public record PayoutResponse(
                 payout.getPeriodStart(),
                 payout.getPeriodEnd(),
                 payout.getStatus(),
+                payout.getPayoutCardId(),
                 payout.getCreatedAt(),
                 payout.getUpdatedAt());
     }

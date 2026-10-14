@@ -82,6 +82,10 @@ public class Payout {
     @Column(name = "status", nullable = false, length = 20)
     private PayoutStatus status;
 
+    /** The payout card (the organization's primary one at the time) this payout was made out to. Null on older payouts. */
+    @Column(name = "payout_card_id")
+    private UUID payoutCardId;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;

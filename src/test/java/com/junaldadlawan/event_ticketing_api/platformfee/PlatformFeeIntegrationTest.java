@@ -20,6 +20,8 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStat
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.payout.entity.Payout;
+import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutCard;
+import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutCardRepository;
 import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutRepository;
 import com.junaldadlawan.event_ticketing_api.platformfee.entity.PlatformFeeRule;
 import com.junaldadlawan.event_ticketing_api.promocode.repository.PromoCodeRepository;
@@ -103,6 +105,8 @@ class PlatformFeeIntegrationTest {
     @Autowired
     private PayoutRepository payoutRepository;
     @Autowired
+    private PayoutCardRepository payoutCardRepository;
+    @Autowired
     private PromoCodeRepository promoCodes;
 
     private final List<UUID> promoIds = new ArrayList<>();
@@ -115,6 +119,7 @@ class PlatformFeeIntegrationTest {
     private final List<UUID> orderIds = new ArrayList<>();
     private final List<UUID> idempotencyKeyIds = new ArrayList<>();
     private final List<UUID> payoutIds = new ArrayList<>();
+    private final List<UUID> payoutCardIds = new ArrayList<>();
     private UUID setAsideDefault;
     private Instant startedAt;
 
@@ -143,6 +148,7 @@ class PlatformFeeIntegrationTest {
             orderRepository.deleteById(id);
         }
         payoutIds.forEach(payoutRepository::deleteById);
+        payoutCardIds.forEach(payoutCardRepository::deleteById);
         idempotencyKeyIds.forEach(idempotencyKeyRepository::deleteById);
         cartItemIds.forEach(cartItemRepository::deleteById);
         cartIds.forEach(cartRepository::deleteById);
@@ -447,6 +453,12 @@ class PlatformFeeIntegrationTest {
 
     // ---- the payout deducts the fee ----
 
+    /** A payout can only be generated for an organization that has a primary card to pay out to. */
+    private void payoutCard(UUID orgId) {
+        payoutCardIds.add(payoutCardRepository.save(PayoutCard.builder().organizationId(orgId).holderName("Fee Test Org").brand("Visa")
+                .last4("4242").expMonth(12).expYear(2099).paymentToken("tok_fee_test_1234").primary(true).build()).getId());
+    }
+
     private JsonNode generatePayout(UUID orgId, String authorization, int expected) throws Exception {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         MvcResult result = mockMvc.perform(post("/api/v1/organizations/{id}/payouts", orgId).header("Authorization", authorization)
@@ -463,6 +475,7 @@ class PlatformFeeIntegrationTest {
     @Test
     void generatingAPayout_deductsThePlatformFees_andSettlesTheOrdersOnce() throws Exception {
         UUID orgId = org();
+        payoutCard(orgId);
         UUID eventId = event(orgId);
         percentage("/api/v1/platform-fees/default", "10");
         UUID tt = ticketType(eventId, 1000);
@@ -494,6 +507,7 @@ class PlatformFeeIntegrationTest {
     @Test
     void aFullyRefundedOrder_isLeftOutOfThePayout() throws Exception {
         UUID orgId = org();
+        payoutCard(orgId);
         percentage("/api/v1/platform-fees/default", "10");
         UUID tt = ticketType(event(orgId), 1000);
         JsonNode kept = checkout(cartWith(tt, 1));
@@ -514,6 +528,7 @@ class PlatformFeeIntegrationTest {
     void onlyAnAdminGeneratesAPayout_andTheOrganizationOwnerCanReadIt() throws Exception {
         UUID ownerId = UUID.randomUUID();
         UUID orgId = org();
+        payoutCard(orgId);
         OrganizationMember member = OrganizationMember.builder().userId(ownerId).organizationId(orgId).build();
         member.getRoles().add(OrganizationRole.OWNER);
         members.add(organizationMemberRepository.save(member));
@@ -538,6 +553,7 @@ class PlatformFeeIntegrationTest {
     @Test
     void aPayoutPeriodMustBeValid() throws Exception {
         UUID orgId = org();
+        payoutCard(orgId);
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         for (String body : new String[] {
                 "{\"periodStart\":\"" + today + "\",\"periodEnd\":\"" + today.minusDays(1) + "\"}",

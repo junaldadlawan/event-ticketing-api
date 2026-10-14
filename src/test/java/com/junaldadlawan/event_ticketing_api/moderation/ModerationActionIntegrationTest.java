@@ -122,7 +122,7 @@ class ModerationActionIntegrationTest {
     }
 
     private UUID persistUser(AccountStatus accountStatus) {
-        User user = User.builder().name("Moderation Test User").email("mod-" + UUID.randomUUID() + "@test.local")
+        User user = User.builder().firstName("Moderation Test").lastName("User").email("mod-" + UUID.randomUUID() + "@test.local")
                 .passwordHash("hash").role(Role.CUSTOMER).accountStatus(accountStatus).build();
         User saved = userRepository.save(user);
         createdUserIds.add(saved.getId());

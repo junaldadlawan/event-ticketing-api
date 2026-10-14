@@ -1,7 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.user.service;
 
 import com.junaldadlawan.event_ticketing_api.user.dto.UserPasswordUpdateRequest;
-import com.junaldadlawan.event_ticketing_api.user.dto.UserRequest;
+import com.junaldadlawan.event_ticketing_api.user.dto.RegisterRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserResponse;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserSelfUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserUpdateRequest;
@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 public interface UserService {
-    User register(UserRequest request);
+    User register(RegisterRequest request);
     List<User> getUsers();
     User getSelf();
     User update(UUID id, UserUpdateRequest request);

@@ -149,7 +149,7 @@ class TicketArtifactDesignValuesTest {
     }
 
     private void owner(String name) {
-        when(userRepository.findById(ownerId)).thenReturn(Optional.of(User.builder().id(ownerId).name(name).build()));
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(User.builder().id(ownerId).firstName(name.split(" ", 2)[0]).lastName(name.contains(" ") ? name.split(" ", 2)[1] : "").build()));
     }
 
     private byte[] png() throws Exception {
@@ -247,7 +247,7 @@ class TicketArtifactDesignValuesTest {
         Ticket transferred = ticket(null);
         UUID newOwner = UUID.randomUUID();
         transferred.setOwnerId(newOwner);
-        when(userRepository.findById(newOwner)).thenReturn(Optional.of(User.builder().id(newOwner).name("Riley Park").build()));
+        when(userRepository.findById(newOwner)).thenReturn(Optional.of(User.builder().id(newOwner).firstName("Riley").lastName("Park").build()));
 
         TicketValues values = render(transferred, event("UTC", null, Instant.parse("2026-12-24T01:30:00Z")),
                 template().ticketWidth(800).build()).values();

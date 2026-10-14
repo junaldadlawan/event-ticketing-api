@@ -124,7 +124,10 @@ public class SecurityConfig {
                         // their current password in UserServiceImpl#updateSelfPassword),
                         // not an admin-only user-management action.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/users/me/change-password").authenticated()
-                        .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole("ADMIN")
+                        // Saved cards: every signed-in user (customer or admin) manages their OWN cards, so these must precede the
+                        // admin-only /users/** matcher below (the service only ever works on the caller's own rows).
+                        .requestMatchers("/api/v1/users/me/payment-methods", "/api/v1/users/me/payment-methods/**").authenticated()
+                        .requestMatchers("/api/v1/users", "/api/v1/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/v1/organizations", "/api/v1/organizations/**").authenticated()
                         // Announcements and sales: everyone reads them (like the public event list); writing and removing need a
                         // login and are admin-only (checked in PostServiceImpl).
@@ -178,17 +181,17 @@ public class SecurityConfig {
                         // this prefix is unconditionally admin-only, with no
                         // raiser/owner visibility branch to justify pushing the
                         // check down into the service layer alone.
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         // Phase 13 (BR-NFR-005): admin-only audit log, same
                         // unconditional hasRole restriction as the moderation
                         // action log above - not nested under /admin/** per
                         // openapi.yaml's literal /audit-log path, so it needs
                         // its own matcher.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/audit-log").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/audit-log").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         // Phase 14 (BR-ANALYTICS-002): platform-wide analytics, unconditionally
                         // admin-only, no per-resource owner/organizer branch - same idiom as
                         // audit-log above.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/analytics/platform").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/analytics/platform").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         // Phase 10: openapi.yaml's `security: [deviceAuth: []]` override
                         // on these three - device-credential-only, a user JWT must NOT
                         // work here (a user could otherwise validate/scan tickets it has

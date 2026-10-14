@@ -110,7 +110,7 @@ class CheckInConfigIntegrationTest {
     }
 
     private User persistUser(Role role) {
-        User user = User.builder().name("CheckInConfig Test User").email("checkin-config-" + UUID.randomUUID() + "@test.local")
+        User user = User.builder().firstName("CheckInConfig Test").lastName("User").email("checkin-config-" + UUID.randomUUID() + "@test.local")
                 .passwordHash("irrelevant").role(role).build();
         User saved = userRepository.save(user);
         createdUserIds.add(saved.getId());
