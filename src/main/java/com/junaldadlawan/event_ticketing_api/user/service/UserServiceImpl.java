@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.user.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
+import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
@@ -68,7 +69,15 @@ public class UserServiceImpl implements UserService {
             user.setEmail(request.email());
         }
 
-        if (request.role() != null) {
+        if (request.role() != null && request.role() != user.getRole()) {
+            if (request.role() == Role.SUPER_ADMIN) {
+                throw new ForbiddenException("The super admin role cannot be granted");
+            }
+            // Demoting or changing an admin, and making anyone an admin, is the super admin's alone.
+            accessGuard.requireMayManageAccount(user, "change the role of");
+            if (request.role() == Role.ADMIN) {
+                accessGuard.requireSuperAdmin();
+            }
             user.setRole(request.role());
         }
         return userRepository.save(user);
@@ -91,6 +100,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public void delete(UUID id) {
         User user = getOrThrow(id);
+        accessGuard.requireMayManageAccount(user, "delete");
         user.markDeleted();
         userRepository.save(user);
         BusinessAuditLogger.record("user.deleted", "User", id, BusinessAuditLogger.Outcome.SUCCESS);

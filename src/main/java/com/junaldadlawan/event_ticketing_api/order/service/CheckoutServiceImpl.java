@@ -98,6 +98,12 @@ public class CheckoutServiceImpl implements CheckoutService {
     @Override
     @Transactional(noRollbackFor = GoneException.class)
     public OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken) {
+        return checkout(cartId, idempotencyKey, paymentMethodToken, null);
+    }
+
+    @Override
+    @Transactional(noRollbackFor = GoneException.class)
+    public OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken, String customerId) {
         UUID buyerId = accessGuard.currentUserId();
 
         Cart cart = cartRepository.findById(cartId)
@@ -130,7 +136,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         }
 
         try {
-            return doCheckout(cart, buyerId, paymentMethodToken, idempotencyKey);
+            return doCheckout(cart, buyerId, paymentMethodToken, customerId, idempotencyKey);
         } catch (RuntimeException ex) {
             // Any failure past this point means the key was never actually
             // used for a completed checkout - free it for retry. This
@@ -143,7 +149,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         }
     }
 
-    private OrderResponse doCheckout(Cart cart, UUID buyerId, String paymentMethodToken, UUID idempotencyKey) {
+    private OrderResponse doCheckout(Cart cart, UUID buyerId, String paymentMethodToken, String customerId, UUID idempotencyKey) {
         UUID cartId = cart.getId();
 
         // Lock the Cart row FIRST, before reading any CartItems (code-reviewer
@@ -221,7 +227,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         PlatformFeeQuote fee = platformFeeService.quote(payeeId, event.getId(), ticketTotal, totalDto.currency());
         Money total = Money.builder().amount(ticketTotal + fee.amount()).currency(totalDto.currency()).build();
 
-        PaymentResult result = paymentGatewayClient.charge(paymentMethodToken, total);
+        // the checkout's own idempotency key goes to the gateway too, so a retried checkout cannot charge twice
+        PaymentResult result = paymentGatewayClient.charge(paymentMethodToken, customerId, total, "checkout-" + idempotencyKey);
         if (!result.successful()) {
             // BR-CART-002: no Order/Payment row is ever persisted on this
             // path. Cart and holds remain fully intact - nothing above this

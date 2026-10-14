@@ -139,6 +139,8 @@
 				<configuration>
 					<systemPropertyVariables>
 						<app.logging.file.dir>target/test-logs</app.logging.file.dir>
+						<!-- tests never call Stripe, whatever payments.gateway is set to in application.properties or the environment -->
+						<payments.gateway>mock</payments.gateway>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

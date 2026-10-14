@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.user.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
+import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
@@ -376,5 +377,69 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> userService.getOrThrow(unknownId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(unknownId.toString());
+    }
+
+    // ---- the super admin rules (the guard itself is tested in OrganizationAccessGuardAccountRulesTest) ----
+
+    @Test
+    void update_changingTheRole_asksTheGuard_beforeChangingAnything() {
+        existingUser.setRole(Role.ADMIN);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        org.mockito.Mockito.doThrow(new ForbiddenException("Only the super admin can change the role of an admin account"))
+                .when(accessGuard).requireMayManageAccount(existingUser, "change the role of");
+
+        assertThatThrownBy(() -> userService.update(userId, new UserUpdateRequest(null, null, null, null, null, null, Role.CUSTOMER)))
+                .isInstanceOf(ForbiddenException.class);
+
+        assertThat(existingUser.getRole()).isEqualTo(Role.ADMIN);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void update_makingSomeoneAnAdmin_needsTheSuperAdmin() {
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        org.mockito.Mockito.doThrow(new ForbiddenException("Only the super admin can do this")).when(accessGuard).requireSuperAdmin();
+
+        assertThatThrownBy(() -> userService.update(userId, new UserUpdateRequest(null, null, null, null, null, null, Role.ADMIN)))
+                .isInstanceOf(ForbiddenException.class);
+
+        assertThat(existingUser.getRole()).isEqualTo(Role.CUSTOMER);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void update_theSuperAdminRoleCanNeverBeGranted_whoeverAsks() {
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        assertThatThrownBy(() -> userService.update(userId, new UserUpdateRequest(null, null, null, null, null, null, Role.SUPER_ADMIN)))
+                .isInstanceOf(ForbiddenException.class).hasMessage("The super admin role cannot be granted");
+
+        assertThat(existingUser.getRole()).isEqualTo(Role.CUSTOMER);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void update_sendingTheRoleTheUserAlreadyHas_isNotARoleChange_soNoSuperAdminCheck() {
+        existingUser.setRole(Role.ADMIN);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+
+        userService.update(userId, new UserUpdateRequest("Renamed", null, null, null, null, null, Role.ADMIN));
+
+        verify(accessGuard, never()).requireMayManageAccount(any(), any());
+        verify(accessGuard, never()).requireSuperAdmin();
+        assertThat(existingUser.getFirstName()).isEqualTo("Renamed");
+    }
+
+    @Test
+    void delete_asksTheGuard_andDeletesNothingWhenItRefuses() {
+        existingUser.setRole(Role.ADMIN);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(existingUser));
+        org.mockito.Mockito.doThrow(new ForbiddenException("Only the super admin can delete an admin account"))
+                .when(accessGuard).requireMayManageAccount(existingUser, "delete");
+
+        assertThatThrownBy(() -> userService.delete(userId)).isInstanceOf(ForbiddenException.class);
+
+        assertThat(existingUser.getDeletedAt()).isNull();
+        verify(userRepository, never()).save(any());
     }
 }

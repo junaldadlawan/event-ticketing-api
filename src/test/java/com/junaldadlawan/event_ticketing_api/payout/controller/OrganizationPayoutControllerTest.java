@@ -57,7 +57,7 @@ class OrganizationPayoutControllerTest {
         UUID orgId = UUID.randomUUID();
         PayoutResponse payout = new PayoutResponse(UUID.randomUUID(), orgId, new MoneyDto(10_000L, "USD"),
                 new MoneyDto(500L, "USD"), new MoneyDto(9_500L, "USD"), LocalDate.of(2026, 8, 1),
-                LocalDate.of(2026, 8, 31), PayoutStatus.PAID, Instant.now(), null);
+                LocalDate.of(2026, 8, 31), PayoutStatus.PAID, null, Instant.now(), null);
         when(payoutService.list(eq(orgId), any()))
                 .thenReturn(new PageImpl<>(List.of(payout), PageRequest.of(0, 20), 1));
 

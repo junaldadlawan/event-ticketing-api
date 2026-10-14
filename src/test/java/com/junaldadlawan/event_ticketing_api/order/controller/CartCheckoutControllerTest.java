@@ -49,6 +49,9 @@ class CartCheckoutControllerTest {
     private CheckoutService checkoutService;
 
     @MockitoBean
+    private com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService paymentMethodService;
+
+    @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @MockitoBean
@@ -255,5 +258,45 @@ class CartCheckoutControllerTest {
                                 {"paymentMethodToken":"tok_ok"}
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    // ---- saved cards ----
+
+    @Test
+    void checkout_withASavedCard_resolvesItAndChargesWithItsTokenAndCustomer() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        UUID cardId = UUID.randomUUID();
+        UUID idempotencyKey = UUID.randomUUID();
+        when(paymentMethodService.resolveForCheckout(cardId))
+                .thenReturn(new com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService.SavedCardCharge("pm_saved", "cus_buyer"));
+        when(checkoutService.checkout(eq(cartId), eq(idempotencyKey), eq("pm_saved"), eq("cus_buyer")))
+                .thenReturn(orderResponse(UUID.randomUUID()));
+
+        mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
+                        .header("Idempotency-Key", idempotencyKey.toString())
+                        .contentType("application/json")
+                        .content("{\"paymentMethodId\":\"" + cardId + "\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void checkout_aSavedCardOfAnotherUser_is404() throws Exception {
+        UUID cardId = UUID.randomUUID();
+        when(paymentMethodService.resolveForCheckout(cardId)).thenThrow(new ResourceNotFoundException("Payment method not found"));
+
+        mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", UUID.randomUUID())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType("application/json")
+                        .content("{\"paymentMethodId\":\"" + cardId + "\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void checkout_bothATokenAndASavedCard_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", UUID.randomUUID())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType("application/json")
+                        .content("{\"paymentMethodToken\":\"tok_ok\",\"paymentMethodId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isBadRequest());
     }
 }

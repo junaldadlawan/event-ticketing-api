@@ -13,4 +13,7 @@ public interface CheckoutService {
      * contract (matches openapi.yaml's 201/402/410 responses).
      */
     OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken);
+
+    /** Same, charging a saved card: with Stripe the token is the {@code pm_...} id and {@code customerId} the buyer's Customer. */
+    OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken, String customerId);
 }

@@ -82,4 +82,9 @@ public class User extends Auditable {
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;
 
+    /** The user's Stripe Customer, created the first time one is needed (saved cards); null until then. Never returned by the API. */
+    @Size(max = 64)
+    @Column(name = "stripe_customer_id", length = 64)
+    private String stripeCustomerId;
+
 }

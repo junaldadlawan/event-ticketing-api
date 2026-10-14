@@ -378,7 +378,7 @@ class CheckoutServiceImplTest {
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_fail"), any()))
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_fail"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(PaymentResult.failure("Payment declined by gateway for the provided payment method token"));
 
         assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_fail"))
@@ -522,7 +522,7 @@ class CheckoutServiceImplTest {
         when(promoCodeRepository.findById(promoCodeId)).thenReturn(Optional.of(promoCode));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, organizationId)));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any()))
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(PaymentResult.success("mock_ref_123"));
         stubTicketIssuance();
         UUID savedOrderId = UUID.randomUUID();
@@ -590,7 +590,7 @@ class CheckoutServiceImplTest {
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 5000L, null));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any()))
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(PaymentResult.success("mock_ref_456"));
         when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
@@ -628,7 +628,7 @@ class CheckoutServiceImplTest {
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any()))
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(PaymentResult.success("mock_ref_789"));
         when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
@@ -661,7 +661,7 @@ class CheckoutServiceImplTest {
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any()))
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(PaymentResult.success("mock_ref_notify"));
         UUID savedOrderId = UUID.randomUUID();
         when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
@@ -717,7 +717,7 @@ class CheckoutServiceImplTest {
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_fail"), any()))
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_fail"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(PaymentResult.failure("Payment declined by gateway for the provided payment method token"));
 
         assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_fail"))
@@ -747,7 +747,7 @@ class CheckoutServiceImplTest {
         when(platformFeeService.quote(orgId, eventId, 1000L, "USD")).thenReturn(new PlatformFeeQuote(100L,
                 com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope.ORGANIZATION,
                 com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType.PERCENTAGE, BigDecimal.TEN, null));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any())).thenReturn(PaymentResult.success("mock_ref_fee"));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString())).thenReturn(PaymentResult.success("mock_ref_fee"));
         when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
             o.setId(UUID.randomUUID());
@@ -761,7 +761,7 @@ class CheckoutServiceImplTest {
         OrderResponse response = service.checkout(cartId, idempotencyKey, "tok_ok");
 
         org.mockito.ArgumentCaptor<Money> charged = org.mockito.ArgumentCaptor.forClass(Money.class);
-        verify(paymentGatewayClient).charge(org.mockito.ArgumentMatchers.eq("tok_ok"), charged.capture());
+        verify(paymentGatewayClient).charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), charged.capture(), org.mockito.ArgumentMatchers.anyString());
         assertThat(charged.getValue().getAmount()).isEqualTo(1100L);
         org.mockito.ArgumentCaptor<Order> order = org.mockito.ArgumentCaptor.forClass(Order.class);
         verify(orderRepository).saveAndFlush(order.capture());
@@ -790,7 +790,7 @@ class CheckoutServiceImplTest {
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
-        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), any())).thenReturn(PaymentResult.success("mock_ref"));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString())).thenReturn(PaymentResult.success("mock_ref"));
         when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
             o.setId(UUID.randomUUID());
@@ -809,5 +809,29 @@ class CheckoutServiceImplTest {
         assertThat(order.getValue().getPlatformFeeAmount()).isZero();
         assertThat(order.getValue().getPlatformFeeScope()).isNull();
         assertThat(response.platformFee().amount()).isZero();
+    }
+
+    // ---- paying with a saved card: the gateway gets the card's id and the buyer's customer ----
+
+    @Test
+    void checkout_withASavedCard_chargesThroughTheCustomerOverload() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        CartItem item = gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
+        when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, UUID.randomUUID())));
+        when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("pm_saved_card"), org.mockito.ArgumentMatchers.eq("cus_buyer"), any(), org.mockito.ArgumentMatchers.eq("checkout-" + idempotencyKey)))
+                .thenReturn(PaymentResult.failure("declined"));
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "pm_saved_card", "cus_buyer"))
+                .isInstanceOf(PaymentFailedException.class);
+
+        verify(paymentGatewayClient).charge(org.mockito.ArgumentMatchers.eq("pm_saved_card"), org.mockito.ArgumentMatchers.eq("cus_buyer"), any(), org.mockito.ArgumentMatchers.eq("checkout-" + idempotencyKey));
     }
 }

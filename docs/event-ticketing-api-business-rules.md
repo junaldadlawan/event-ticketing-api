@@ -88,6 +88,11 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-PAY-004 | An event's refund policy must be one of: refundable up to N days before the event, no refunds, or a custom policy. (§4.6) |
 | BR-PAY-005 | Cancelling an event must trigger an automated refund (or credit) workflow for every ticket holder of that event. (§4.6) |
 | BR-PAY-006 | Payout tracking must record gross sales, platform fees, and net payable, per organizer. (§4.6) |
+| BR-PAY-007 | An organization's payout cards store only what the payment gateway returns: a token, brand, last 4 digits, expiry and holder name. The full card number and the security code are never stored; the token is never returned or logged. |
+| BR-PAY-008 | The organization's first card is always primary. An organization has exactly one primary card; making another card primary unsets the old one in the same transaction. |
+| BR-PAY-009 | The primary card cannot be removed while other cards exist; the last remaining card can be. Removing a card is a soft delete. |
+| BR-PAY-010 | Only an approved organization may add a card, and a card whose expiry month has passed is refused. Only the organization's owner or an admin may add, remove or choose the primary card; the owner, organizer or an admin may list them. |
+| BR-PAY-011 | A payout is made out to the organization's primary card and records its id. With no primary card the payout cannot be generated (409). |
 
 ## 8. Promo Codes & Discounts
 
@@ -168,6 +173,9 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-ADMIN-001 | An admin may approve or reject a new organizer/organization application. (§4.2, §4.13) |
 | BR-ADMIN-002 | An admin may suspend or remove an organizer, event, or user account for policy violations. (§4.13) |
 | BR-ADMIN-003 | An admin may view and intervene in disputes (e.g. buyer-reported fraud, chargeback support). (§4.13) |
+| BR-ADMIN-004 | There is exactly one super admin account, the highest user (`SUPER_ADMIN`). The database refuses a second one. It is created by hand (the demo seed script), never through the API, and the `SUPER_ADMIN` role cannot be granted or assigned by anyone through the API. |
+| BR-ADMIN-005 | The super admin has every admin power. An admin cannot suspend, reinstate, remove, delete or demote another admin, nor make anyone an admin: only the super admin can (403 otherwise). An admin keeps these powers over customers. |
+| BR-ADMIN-006 | Nobody, the super admin included, can suspend, reinstate, remove, delete or change the role of the super admin account (403). |
 
 ## 15. Analytics & Reporting
 
@@ -208,6 +216,23 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-PROFILE-002 | The picture must be an image uploaded through this server (POST /uploads) and still stored here; a link to anywhere else is refused. The upload rules (type and size limits) are unchanged. |
 | BR-PROFILE-003 | When a picture is replaced or removed, its file is deleted from storage unless another user, ticket template, event or organization document still uses it. |
 | BR-PROFILE-004 | The picture URL is only part of the existing user payloads (own profile and the admin user list); it is not added to any response that exposes private data about a user. |
+
+## 14d. Saved Payment Methods (customer cards)
+
+| ID | Rule |
+|---|---|
+| BR-CARD-001 | Any signed-in user (customer, admin or super admin) may save, list, choose the primary of and remove their own cards, and only their own. Another user's card is "not found" (404), never "forbidden" and never visible. |
+| BR-CARD-002 | Only what the payment provider reports about a card is stored: the provider's payment-method id, brand, last 4 digits, expiry and holder name. A card number or security code is never stored, returned or logged; the provider's id and any token are never returned or logged. |
+| BR-CARD-003 | A user's first card is always primary. A user has exactly one primary card; making another primary unsets the old one in the same transaction, and the database refuses a second primary. |
+| BR-CARD-004 | The primary card cannot be removed while the user has other cards (409). The only remaining card can be removed. Removal is a soft delete and also detaches the card from the provider's customer. |
+| BR-CARD-005 | A card whose expiry month has passed is refused, last 4 must be 4 digits, the holder name has a length limit and may not contain HTML, and a token that fails (`tok_fail...`) is refused. |
+| BR-CARD-006 | With the Stripe gateway the card's brand, last 4 and expiry are always read from Stripe, never from the client. With the default mock gateway they come from the request and Stripe is never called. |
+| BR-CARD-007 | A user's Stripe Customer is created the first time one is needed and then reused; two requests at the same moment create one. The customer id is always the signed-in user's own and is never taken from the client. |
+| BR-CARD-008 | Checkout may pay with a saved card of the signed-in user (`paymentMethodId`) or with a one-off token (`paymentMethodToken`), exactly one of the two. |
+| BR-CARD-009 | Adding, choosing the primary of and removing a card are audit-logged (with the last 4 only). |
+| BR-CARD-010 | With the Stripe gateway a checkout really charges the card: a Stripe PaymentIntent in the order's currency for the buyer's customer and card, and only a succeeded one counts as paid. The payment's gateway reference is the PaymentIntent id. A retried checkout (same Idempotency-Key) can never charge twice. |
+| BR-CARD-011 | A declined card, or a card that needs extra authentication (3-D Secure, not supported yet), is a failed payment (402): nothing is charged, no order is created, the cart and holds stay. With the Stripe gateway the payment method must be a Stripe `pm_...` id (a saved card, or one from Stripe.js). |
+| BR-CARD-012 | With the Stripe gateway a refund is sent to Stripe against the original PaymentIntent. A payment made before Stripe was switched on (a mock reference) cannot be refunded in Stripe and the refund fails with a clear message. |
 
 ## 16. Cross-Cutting Rules (from Non-Functional Requirements)
 

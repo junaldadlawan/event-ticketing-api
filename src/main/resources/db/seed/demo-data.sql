@@ -3,27 +3,36 @@
 -- DEV / DEMO ONLY - DO NOT RUN AGAINST STAGING OR PRODUCTION
 -- =============================================================================
 -- What it creates
+--   * 1 super admin                              (users.role = SUPER_ADMIN) - the one highest account
 --   * 2 admins                                   (users.role = ADMIN)
 --   * 5 customers                                (users.role = CUSTOMER)
---   * 1 organization "Demo Events Co." (APPROVED) with
+--   * 2 organizations, both APPROVED. "Demo Events Co." has:
 --       - 1 owner      (CUSTOMER account + organization role OWNER)
 --       - 1 organizer  (CUSTOMER account + organization role ORGANIZER)
 --       - 1 scanner    (CUSTOMER account + organization role CHECK_IN_STAFF)
 --   * 1 sample event "Demo Sunset Concert" (ON_SALE, starts in 30 days) with two ticket types
---       (General Admission $50.00 and VIP $120.00)
+--       (General Admission $50.00 and VIP $120.00), run by Demo Events Co.
+--   * a second organization "Demo Productions" with just its own owner (owner2@demo.test), no organizer, scanner or event
 --
--- The owner, organizer and scanner are three extra accounts, so 10 accounts in all. "Organizer", "scanner" and
--- "organization owner" are not account types: users.role only has CUSTOMER / ADMIN, and these three are
+-- The two owners, the organizer and the scanner are four extra accounts, so 12 accounts in all. "Organizer", "scanner" and
+-- "organization owner" are not account types: users.role is CUSTOMER / ADMIN / SUPER_ADMIN, and these three are
 -- organization_member_roles memberships on top of a CUSTOMER account (see user/enums/Role.java).
+--
+-- The super admin has every admin power and is the only account that may suspend, remove, delete or demote an ADMIN
+-- (an ADMIN cannot do that to another admin). There is exactly one: the database refuses a second SUPER_ADMIN
+-- (unique index from migration V38, so run this script only after the app has applied V38). It can only be created
+-- by hand like this - never through the API.
 --
 -- Passwords (each user has its own, written as a "password:" comment next to the user; every password_hash is a real
 -- BCrypt hash of it, made with this project's own BCryptPasswordEncoder):
 --
---   admin1@demo.test      Admin1@Demo        customer1@demo.test   Customer1@Demo
---   admin2@demo.test      Admin2@Demo        customer2@demo.test   Customer2@Demo
---   owner@demo.test       Owner@Demo1        customer3@demo.test   Customer3@Demo
---   organizer@demo.test   Organizer@Demo1    customer4@demo.test   Customer4@Demo
---   scanner@demo.test     Scanner@Demo1      customer5@demo.test   Customer5@Demo
+--   superadmin@demo.test  SuperAdmin@Demo1   customer1@demo.test   Customer1@Demo
+--   admin1@demo.test      Admin1@Demo        customer2@demo.test   Customer2@Demo
+--   admin2@demo.test      Admin2@Demo        customer3@demo.test   Customer3@Demo
+--   owner@demo.test       Owner@Demo1        customer4@demo.test   Customer4@Demo
+--   owner2@demo.test      Owner@Demo2        customer5@demo.test   Customer5@Demo
+--   organizer@demo.test   Organizer@Demo1
+--   scanner@demo.test     Scanner@Demo1
 --
 -- This is NOT a Flyway migration: it lives outside src/main/resources/db/migration on purpose, so Flyway never runs it
 -- (a migration would put these known passwords on every environment). Run it by hand against a local dev database,
@@ -43,7 +52,7 @@
 
 BEGIN;
 
--- The 10 accounts, in one place. Plain-text password for each is in the comment above its row.
+-- The 12 accounts, in one place. Plain-text password for each is in the comment above its row.
 CREATE TEMP TABLE demo_user (
     email         text PRIMARY KEY,
     first_name    text NOT NULL,
@@ -56,6 +65,8 @@ CREATE TEMP TABLE demo_user (
 ) ON COMMIT DROP;
 
 INSERT INTO demo_user (email, first_name, middle_name, last_name, birth_date, phone_number, role, password_hash) VALUES
+    -- Sasha Valdez, SUPER ADMIN (the one highest account) | password: SuperAdmin@Demo1
+    ('superadmin@demo.test', 'Sasha',  NULL,    'Valdez',     DATE '1980-04-02', '+639171000000', 'SUPER_ADMIN', '$2a$10$Ug5nAjwRysZj3y/JrftIremDUsoh5bPCmfCuLDlRkgLRgzLaLdoBu'),
     -- Avery Santos, platform admin | password: Admin1@Demo
     ('admin1@demo.test',    'Avery',  NULL,    'Santos',     DATE '1988-03-14', '+639171000001', 'ADMIN',    '$2a$10$OsjKeMh6b4tj9APy2YTh7.yYFhExtp7JLogTj.535zUhZLTxJPGFi'),
     -- Morgan Reyes, platform admin | password: Admin2@Demo
@@ -72,6 +83,8 @@ INSERT INTO demo_user (email, first_name, middle_name, last_name, birth_date, ph
     ('customer5@demo.test', 'Jordan', NULL,    'Dela Cruz',  DATE '1999-12-25', '+639171000015', 'CUSTOMER', '$2a$10$vuCerSOQgQYabkxJFKVeY.7RRQ8pfqazF4UO03ShcAw9IEjZy/aiG'),
     -- Owen Mercado, owner of "Demo Events Co." | password: Owner@Demo1
     ('owner@demo.test',     'Owen',   'Dela',  'Mercado',    DATE '1985-06-12', '+639171000021', 'CUSTOMER', '$2a$10$F3fOaRxdWOtzaYCIkyc.ru4gZXEHW3kNqLrAGxybgEIU/mvoHnS5O'),
+    -- Rowan Castillo, owner of "Demo Productions" | password: Owner@Demo2
+    ('owner2@demo.test',    'Rowan',  NULL,    'Castillo',   DATE '1983-09-21', '+639171000024', 'CUSTOMER', '$2a$10$IqfoEg68x0mV3W7YVHS0Xetd1K9eo2os03ZADnYqDpeyb1rlu0Uhm'),
     -- Paula Ramos, organizer of "Demo Events Co." | password: Organizer@Demo1
     ('organizer@demo.test', 'Paula',  NULL,    'Ramos',      DATE '1991-02-27', '+639171000022', 'CUSTOMER', '$2a$10$UX7RV1bBKBxRQY9lP/CUbe2ZeSsq/iohOfHyU902kTVgWDRuevvUC'),
     -- Sam Villanueva, door scanner (check-in staff) of "Demo Events Co." | password: Scanner@Demo1
@@ -122,6 +135,27 @@ JOIN users u ON u.email = r.email
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- The second organization: approved, owned by owner2@demo.test (no other members, no events)
+-- ---------------------------------------------------------------------------
+INSERT INTO organizations (id, name, status, owner_id, created_by, created_at)
+SELECT 'd0000000-0000-4000-8000-000000000005', 'Demo Productions', 'APPROVED', u.id, 'Demo Seed', now()
+FROM users u
+WHERE u.email = 'owner2@demo.test'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO organization_members (user_id, organization_id, assigned_at)
+SELECT u.id, 'd0000000-0000-4000-8000-000000000005', now()
+FROM users u
+WHERE u.email = 'owner2@demo.test'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO organization_member_roles (user_id, organization_id, role)
+SELECT u.id, 'd0000000-0000-4000-8000-000000000005', 'OWNER'
+FROM users u
+WHERE u.email = 'owner2@demo.test'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- The sample event (on sale, 30 days from now) and its two ticket types
 -- ---------------------------------------------------------------------------
 INSERT INTO events (id, organization_id, title, description, category, start_time, end_time, status, ticket_prefix,
@@ -145,8 +179,11 @@ ON CONFLICT DO NOTHING;
 COMMIT;
 
 -- What is there now (counts for the demo accounts, the organization and the event):
-SELECT 'admins'                 AS item, count(*) AS total FROM users WHERE email LIKE '%@demo.test' AND role = 'ADMIN'
-UNION ALL SELECT 'customers (incl. the 3 org members)', count(*) FROM users WHERE email LIKE '%@demo.test' AND role = 'CUSTOMER'
-UNION ALL SELECT 'organization members',                 count(*) FROM organization_members WHERE organization_id = 'd0000000-0000-4000-8000-000000000001'
+SELECT 'super admin'             AS item, count(*) AS total FROM users WHERE email LIKE '%@demo.test' AND role = 'SUPER_ADMIN'
+UNION ALL SELECT 'admins',                              count(*) FROM users WHERE email LIKE '%@demo.test' AND role = 'ADMIN'
+UNION ALL SELECT 'customers (incl. the 4 org members)', count(*) FROM users WHERE email LIKE '%@demo.test' AND role = 'CUSTOMER'
+UNION ALL SELECT 'demo organizations',                   count(*) FROM organizations WHERE id IN ('d0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000005')
+UNION ALL SELECT 'members of Demo Events Co.',           count(*) FROM organization_members WHERE organization_id = 'd0000000-0000-4000-8000-000000000001'
+UNION ALL SELECT 'members of Demo Productions',          count(*) FROM organization_members WHERE organization_id = 'd0000000-0000-4000-8000-000000000005'
 UNION ALL SELECT 'events',                               count(*) FROM events WHERE id = 'd0000000-0000-4000-8000-000000000002'
 UNION ALL SELECT 'ticket types',                         count(*) FROM ticket_types WHERE event_id = 'd0000000-0000-4000-8000-000000000002';
