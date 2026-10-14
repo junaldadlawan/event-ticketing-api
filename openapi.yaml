@@ -1844,7 +1844,11 @@ paths:
     post:
       operationId: checkout
       tags: [Cart]
-      summary: Charge the cart and issue tickets
+      summary: "Charge the cart and issue tickets (with PayMongo: start the payment)"
+      description: |
+        Mock and Stripe gateways charge at once and answer 201 with the order. With the PayMongo gateway the card is entered in the
+        browser, so this only starts the payment: it answers 202 with a `checkoutId` and the intent's `clientKey` (send an empty body
+        `{}`); the order exists once PayMongo's webhook confirms the payment, see `GET /checkouts/{checkoutId}`.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -1871,6 +1875,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
+        "202":
+          description: PayMongo only. Payment started; attach the card in the browser with `clientKey` and poll `GET /checkouts/{checkoutId}`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutStart" }
         "402":
           description: |
             Payment failed (declined card, or a card that needs 3-D Secure, which is not supported yet); cart and holds remain
@@ -1883,6 +1892,40 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+
+  /checkouts/{checkoutId}:
+    parameters:
+      - name: checkoutId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCheckout
+      tags: [Cart]
+      summary: Status of a checkout waiting for the payment provider (PayMongo)
+      description: PENDING until the webhook arrives, then PAID (with the `orderId`), FAILED, or REFUNDED. Only the buyer who started it can read it (another buyer gets 404).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutStart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /webhooks/paymongo:
+    post:
+      operationId: payMongoWebhook
+      tags: [Cart]
+      summary: PayMongo's callback for payment.paid / payment.failed (PayMongo only, public, signature-checked)
+      description: |
+        Not called by the web app. Authenticated by the `Paymongo-Signature` header (`t=<timestamp>,te=<test>,li=<live>`: hex HMAC-SHA256
+        of "<timestamp>.<raw body>" with the webhook secret); a bad or missing signature is a 401 and changes nothing. Idempotent. Register this
+        URL in the PayMongo dashboard for the events payment.paid and payment.failed. Only exists when payments.gateway=paymongo.
+      responses:
+        "200": { description: Accepted (also for event types that are ignored) }
+        "400": { description: Body is not JSON }
+        "401": { description: Bad or missing signature }
 
   /orders/{orderId}:
     parameters:
@@ -3401,6 +3444,18 @@ components:
         source_id: { type: string, format: uuid }
         scanned_at: { type: string, format: date-time }
         result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
+
+    CheckoutStart:
+      type: object
+      description: "A checkout waiting for the payment provider (PayMongo). `clientKey` is a secret for this one payment, do not log it."
+      properties:
+        checkoutId: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, PAID, FAILED, REFUNDED] }
+        clientKey: { type: string, description: Attach the card to the payment intent with this (PayMongo.js). }
+        amount: { type: integer, description: Total in centavos, platform fee included. }
+        currency: { type: string, example: PHP }
+        orderId: { type: [string, "null"], format: uuid, description: Set once PAID. }
+        failureReason: { type: [string, "null"] }
 
     PaymentMethod:
       type: object

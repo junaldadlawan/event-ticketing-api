@@ -115,6 +115,20 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
   BR-TICKET-002, BR-NFR-008 (idempotent — a retried checkout must not
   double-charge or double-issue)
 
+### UC-ATTND-04b: Checkout with PayMongo (card entered in the browser)
+
+- **Preconditions:** `payments.gateway=paymongo`; cart has at least one held item; the order is in PHP.
+- **Main flow:**
+  1. Attendee starts the checkout (`POST /carts/{id}/checkout`, Idempotency-Key, empty body). API prices the cart, creates a PayMongo
+     payment intent and a pending checkout, and answers 202 with `checkoutId` and `clientKey`. No order exists yet.
+  2. The web app collects the card with PayMongo.js (public key), attaches it to the intent with the client key, and follows any
+     3-D Secure redirect back to the return URL.
+  3. PayMongo calls the webhook. On `payment.paid` the API issues the order, payment and tickets; the web app polls
+     `GET /checkouts/{checkoutId}` until it shows PAID with the `orderId`.
+- **Exception flow:** `payment.failed` → status FAILED, cart and holds intact, the same key can be used to try again. Paid but the hold
+  expired meanwhile (or the amount differs) → automatic refund, status REFUNDED. Bad webhook signature → 401. A checkout of another buyer → 404.
+- **Related rules:** BR-CART-002, BR-PM-001 to BR-PM-005
+
 ### UC-ATTND-05: View My Orders & Tickets
 
 - **Preconditions:** Attendee has at least one order.

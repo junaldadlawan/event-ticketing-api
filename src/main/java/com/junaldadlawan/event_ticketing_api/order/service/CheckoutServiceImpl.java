@@ -7,6 +7,7 @@ import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.cart.service.CartService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
+import com.junaldadlawan.event_ticketing_api.common.exception.ApiException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.GoneException;
@@ -18,18 +19,22 @@ import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
 import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
+import com.junaldadlawan.event_ticketing_api.order.dto.CheckoutStartResponse;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
 import com.junaldadlawan.event_ticketing_api.order.entity.CheckoutIdempotencyKey;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
 import com.junaldadlawan.event_ticketing_api.order.entity.Payment;
+import com.junaldadlawan.event_ticketing_api.order.entity.PendingCheckout;
 import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
 import com.junaldadlawan.event_ticketing_api.order.enums.PayeeType;
 import com.junaldadlawan.event_ticketing_api.order.enums.PaymentStatus;
+import com.junaldadlawan.event_ticketing_api.order.enums.PendingCheckoutStatus;
 import com.junaldadlawan.event_ticketing_api.order.gateway.PaymentGatewayClient;
 import com.junaldadlawan.event_ticketing_api.order.gateway.PaymentResult;
 import com.junaldadlawan.event_ticketing_api.order.repository.CheckoutIdempotencyKeyRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.PaymentRepository;
+import com.junaldadlawan.event_ticketing_api.order.repository.PendingCheckoutRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeQuote;
 import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
@@ -47,7 +52,10 @@ import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -93,6 +101,8 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final TicketRepository ticketRepository;
     private final TicketCredentialService ticketCredentialService;
     private final PlatformFeeService platformFeeService;
+    private final PendingCheckoutRepository pendingCheckoutRepository;
+    private final PlatformTransactionManager transactionManager;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -149,7 +159,35 @@ public class CheckoutServiceImpl implements CheckoutService {
         }
     }
 
+    /** Everything a checkout needs to be priced and issued, worked out once from the locked cart. */
+    private record Quote(Cart lockedCart, List<CartItem> items, Event event, UUID payeeId, String promoCode,
+                         PlatformFeeQuote fee, Money total) {
+    }
+
     private OrderResponse doCheckout(Cart cart, UUID buyerId, String paymentMethodToken, String customerId, UUID idempotencyKey) {
+        Quote quote = prepare(cart, buyerId, false);
+        Money total = quote.total();
+
+        // the checkout's own idempotency key goes to the gateway too, so a retried checkout cannot charge twice
+        PaymentResult result = paymentGatewayClient.charge(paymentMethodToken, customerId, total, "checkout-" + idempotencyKey);
+        if (!result.successful()) {
+            // BR-CART-002: no Order/Payment row is ever persisted on this
+            // path. Cart and holds remain fully intact - nothing above this
+            // point touched CartItem/TicketType/Seat state.
+            BusinessAuditLogger.recordAs(buyerId, "checkout.payment_failed", "Cart", cart.getId(),
+                    BusinessAuditLogger.Outcome.FAILURE, result.failureReason());
+            throw new PaymentFailedException(
+                    result.failureReason() != null ? result.failureReason() : "Payment failed");
+        }
+
+        return fulfill(quote, buyerId, result.gatewayRef(), idempotencyKey);
+    }
+
+    /**
+     * Locks the cart and checks everything that must hold before money moves: items, expired holds, paused ticket types, promo
+     * usage, and the price (tickets minus promo plus the platform fee). Throws without charging when something is wrong.
+     */
+    private Quote prepare(Cart cart, UUID buyerId, boolean onBehalfOfBuyer) {
         UUID cartId = cart.getId();
 
         // Lock the Cart row FIRST, before reading any CartItems (code-reviewer
@@ -197,7 +235,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         // Reuse CartService.get()'s already-computed amounts (subtotal minus any applied promo-code discount, plus the
         // platform fee) instead of duplicating that pricing/discount math here. The ticket total is the cart total
         // without the fee; the fee itself is quoted again below, next to the event, so the order can snapshot the rule.
-        CartResponse cartView = cartService.get(cartId);
+        // the payment webhook has no logged-in user, so it reads the cart for the buyer who started the checkout
+        CartResponse cartView = onBehalfOfBuyer ? cartService.getForBuyer(cartId, buyerId) : cartService.get(cartId);
         MoneyDto totalDto = cartView.total();
         String promoCode = cartView.appliedPromoCode() != null ? cartView.appliedPromoCode().code() : null;
         long ticketTotal = totalDto.amount() - cartView.platformFee().amount();
@@ -227,17 +266,19 @@ public class CheckoutServiceImpl implements CheckoutService {
         PlatformFeeQuote fee = platformFeeService.quote(payeeId, event.getId(), ticketTotal, totalDto.currency());
         Money total = Money.builder().amount(ticketTotal + fee.amount()).currency(totalDto.currency()).build();
 
-        // the checkout's own idempotency key goes to the gateway too, so a retried checkout cannot charge twice
-        PaymentResult result = paymentGatewayClient.charge(paymentMethodToken, customerId, total, "checkout-" + idempotencyKey);
-        if (!result.successful()) {
-            // BR-CART-002: no Order/Payment row is ever persisted on this
-            // path. Cart and holds remain fully intact - nothing above this
-            // point touched CartItem/TicketType/Seat state.
-            BusinessAuditLogger.recordAs(buyerId, "checkout.payment_failed", "Cart", cart.getId(),
-                    BusinessAuditLogger.Outcome.FAILURE, result.failureReason());
-            throw new PaymentFailedException(
-                    result.failureReason() != null ? result.failureReason() : "Payment failed");
-        }
+        return new Quote(lockedCart, items, event, payeeId, promoCode, fee, total);
+    }
+
+    /** Issues the order, payment record and tickets for a payment that succeeded, and converts the holds into sold seats. */
+    private OrderResponse fulfill(Quote quote, UUID buyerId, String gatewayRef, UUID idempotencyKey) {
+        Cart lockedCart = quote.lockedCart();
+        UUID cartId = lockedCart.getId();
+        List<CartItem> items = quote.items();
+        Event event = quote.event();
+        UUID payeeId = quote.payeeId();
+        String promoCode = quote.promoCode();
+        PlatformFeeQuote fee = quote.fee();
+        Money total = quote.total();
 
         Order order = Order.builder()
                 .buyerId(buyerId)
@@ -258,7 +299,7 @@ public class CheckoutServiceImpl implements CheckoutService {
 
         Payment payment = Payment.builder()
                 .orderId(savedOrder.getId())
-                .gatewayRef(result.gatewayRef())
+                .gatewayRef(gatewayRef)
                 .amount(total)
                 .status(PaymentStatus.COMPLETED)
                 .build();
@@ -317,6 +358,140 @@ public class CheckoutServiceImpl implements CheckoutService {
                         + " tickets=" + issuedTickets.size());
 
         return OrderResponse.from(savedOrder, issuedTickets);
+    }
+
+    // ---- checkouts confirmed by the payment provider's webhook (PayMongo): the order is issued only once the payment succeeded ----
+
+    @Override
+    public boolean isAsynchronous() {
+        return paymentGatewayClient.confirmsByWebhook();
+    }
+
+    @Override
+    @Transactional(noRollbackFor = GoneException.class)
+    public CheckoutStartResponse startCheckout(UUID cartId, UUID idempotencyKey) {
+        UUID buyerId = accessGuard.currentUserId();
+        Cart cart = cartRepository.findById(cartId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart " + cartId + " not found"));
+        if (!buyerId.equals(cart.getBuyerId())) {
+            throw new ForbiddenException("Only the cart's own buyer may check out this cart");
+        }
+
+        CheckoutIdempotencyKeyManager.ClaimOutcome claim = idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId);
+        if (!claim.freshlyClaimed()) {
+            if (!claim.key().getBuyerId().equals(buyerId)) {
+                throw new ForbiddenException("This idempotency key was issued by a different buyer");
+            }
+            // A repeated start with the same key returns the checkout it already created (still waiting, or already paid).
+            return pendingCheckoutRepository.findFirstByIdempotencyKeyOrderByCreatedAtDesc(idempotencyKey)
+                    .map(CheckoutStartResponse::from)
+                    .orElseThrow(() -> new ConflictException("Checkout already in progress for this idempotency key"));
+        }
+
+        try {
+            Quote quote = prepare(cart, buyerId, false);
+            PaymentGatewayClient.PaymentIntentInfo intent = paymentGatewayClient.createPaymentIntent(
+                    quote.total(), "Event ticket order", "checkout-" + idempotencyKey);
+            PendingCheckout pending = pendingCheckoutRepository.save(PendingCheckout.builder()
+                    .cartId(cartId)
+                    .buyerId(buyerId)
+                    .idempotencyKey(idempotencyKey)
+                    .providerIntentId(intent.intentId())
+                    .clientKey(intent.clientKey())
+                    .amount(quote.total().getAmount())
+                    .currency(quote.total().getCurrency())
+                    .status(PendingCheckoutStatus.PENDING)
+                    .build());
+            BusinessAuditLogger.recordAs(buyerId, "checkout.started", "Cart", cartId, BusinessAuditLogger.Outcome.SUCCESS,
+                    "total=" + pending.getAmount() + " " + pending.getCurrency());
+            return CheckoutStartResponse.from(pending);
+        } catch (RuntimeException ex) {
+            idempotencyKeyManager.delete(idempotencyKey);
+            throw ex;
+        }
+    }
+
+    /**
+     * Webhook: the payment succeeded. The order is issued in its own transaction; if it cannot be (the hold expired while the buyer
+     * was paying, the amount differs, ...) that transaction is rolled back cleanly and the payment is refunded in a second one. A
+     * technical failure (database down) is NOT treated as "cannot issue": it propagates, the webhook answers 500 and PayMongo retries.
+     */
+    @Override
+    public void onPaymentPaid(String providerIntentId, String providerPaymentId, long amount, String currency) {
+        Money paid = Money.builder().amount(amount).currency(currency.toUpperCase()).build();
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        String problem = null;
+        try {
+            tx.executeWithoutResult(status -> issueOrder(providerIntentId, providerPaymentId, paid));
+        } catch (ApiException e) {
+            problem = e.getMessage() != null ? e.getMessage() : "The order could not be issued";
+        }
+        if (problem != null) {
+            String reason = problem;
+            tx.executeWithoutResult(status -> refundUnissuable(providerIntentId, providerPaymentId, paid, reason));
+        }
+    }
+
+    /** Inside the webhook's transaction: issues the order for a paid checkout, or throws an ApiException to roll everything back. */
+    private void issueOrder(String providerIntentId, String providerPaymentId, Money paid) {
+        PendingCheckout pending = pendingCheckoutRepository.findByProviderIntentIdForUpdate(providerIntentId).orElse(null);
+        if (pending == null || pending.getStatus() != PendingCheckoutStatus.PENDING) {
+            return;   // not ours, or a webhook delivered twice: already handled
+        }
+        Cart cart = cartRepository.findById(pending.getCartId())
+                .orElseThrow(() -> new ResourceNotFoundException("Cart " + pending.getCartId() + " not found"));
+        Quote quote = prepare(cart, pending.getBuyerId(), true);
+        if (quote.total().getAmount() != paid.getAmount() || !quote.total().getCurrency().equalsIgnoreCase(paid.getCurrency())) {
+            throw new ConflictException("The amount paid does not match the order");
+        }
+        OrderResponse order = fulfill(quote, pending.getBuyerId(), providerPaymentId, pending.getIdempotencyKey());
+        pending.setStatus(PendingCheckoutStatus.PAID);
+        pending.setOrderId(order.id());
+        pendingCheckoutRepository.save(pending);
+    }
+
+    /** The buyer paid but the order cannot be issued: give the money back and let them start again. */
+    private void refundUnissuable(String providerIntentId, String providerPaymentId, Money paid, String problem) {
+        PendingCheckout pending = pendingCheckoutRepository.findByProviderIntentIdForUpdate(providerIntentId).orElse(null);
+        if (pending == null || pending.getStatus() != PendingCheckoutStatus.PENDING) {
+            return;
+        }
+        PaymentResult refund = paymentGatewayClient.refund(providerPaymentId, paid);
+        pending.setStatus(PendingCheckoutStatus.REFUNDED);
+        pending.setFailureReason(truncate(problem + (refund.successful() ? "" : " (the refund FAILED and needs manual attention)")));
+        pendingCheckoutRepository.save(pending);
+        idempotencyKeyManager.delete(pending.getIdempotencyKey());
+        BusinessAuditLogger.recordAs(pending.getBuyerId(), "checkout.paid_but_refunded", "Cart", pending.getCartId(),
+                BusinessAuditLogger.Outcome.FAILURE, problem + (refund.successful() ? " (refunded)" : " (REFUND FAILED: needs manual attention)"));
+    }
+
+    @Override
+    @Transactional
+    public void onPaymentFailed(String providerIntentId, String reason) {
+        PendingCheckout pending = pendingCheckoutRepository.findByProviderIntentIdForUpdate(providerIntentId).orElse(null);
+        if (pending == null || pending.getStatus() != PendingCheckoutStatus.PENDING) {
+            return;
+        }
+        pending.setStatus(PendingCheckoutStatus.FAILED);
+        pending.setFailureReason(truncate(reason != null && !reason.isBlank() ? reason : "The payment failed"));
+        pendingCheckoutRepository.save(pending);
+        // nothing was charged and the cart is untouched: free the key so the buyer can try again
+        idempotencyKeyManager.delete(pending.getIdempotencyKey());
+        BusinessAuditLogger.recordAs(pending.getBuyerId(), "checkout.payment_failed", "Cart", pending.getCartId(),
+                BusinessAuditLogger.Outcome.FAILURE, pending.getFailureReason());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CheckoutStartResponse getStatus(UUID checkoutId) {
+        return pendingCheckoutRepository.findByIdAndBuyerId(checkoutId, accessGuard.currentUserId())
+                .map(CheckoutStartResponse::from)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout " + checkoutId + " not found"));
+    }
+
+    private static String truncate(String text) {
+        return text.length() <= 500 ? text : text.substring(0, 500);
     }
 
     /**

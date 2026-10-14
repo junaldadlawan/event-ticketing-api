@@ -131,6 +131,9 @@ class CheckoutServiceImplTest {
     @Mock
     private PlatformFeeService platformFeeService;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.order.repository.PendingCheckoutRepository pendingCheckoutRepository;
+
     private CheckoutServiceImpl service;
 
     private UUID buyerId;
@@ -143,7 +146,8 @@ class CheckoutServiceImplTest {
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
-                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService);
+                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
+                pendingCheckoutRepository, org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class));
         lenient().when(platformFeeService.quote(any(), any(), anyLong(), any())).thenReturn(PlatformFeeQuote.NONE);
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();

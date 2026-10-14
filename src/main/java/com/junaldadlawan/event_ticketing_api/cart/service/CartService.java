@@ -19,6 +19,9 @@ public interface CartService {
 
     CartResponse get(UUID cartId);
 
+    /** Same as {@link #get} for a named buyer instead of the logged-in caller: used by the payment webhook, which has no login. */
+    CartResponse getForBuyer(UUID cartId, UUID buyerId);
+
     CartResponse addItem(UUID cartId, CartItemCreateRequest request);
 
     void removeItem(UUID cartId, UUID itemId);

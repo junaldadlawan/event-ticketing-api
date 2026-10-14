@@ -42,4 +42,22 @@ public interface PaymentGatewayClient {
      * never-throws-on-decline contract as {@link #charge}.
      */
     PaymentResult refund(String gatewayRef, Money amount);
+
+    /**
+     * True when the provider confirms a payment later, by webhook, after the buyer's card is attached in the browser (PayMongo).
+     * Checkout then starts a payment intent ({@link #createPaymentIntent}) and the order is issued when the webhook says paid,
+     * instead of charging in one synchronous call.
+     */
+    default boolean confirmsByWebhook() {
+        return false;
+    }
+
+    /** Starts a payment the buyer will complete in the browser. Only for gateways where {@link #confirmsByWebhook()} is true. */
+    default PaymentIntentInfo createPaymentIntent(Money amount, String description, String reference) {
+        throw new UnsupportedOperationException("This payment gateway charges synchronously");
+    }
+
+    /** The provider's payment intent id and the key the browser needs to attach a card to it. */
+    record PaymentIntentInfo(String intentId, String clientKey) {
+    }
 }

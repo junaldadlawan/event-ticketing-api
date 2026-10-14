@@ -8,6 +8,7 @@ import com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethod
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,11 +34,25 @@ public class CartCheckoutController {
     private final CheckoutService checkoutService;
     private final PaymentMethodService paymentMethodService;
 
+    /**
+     * With the mock or Stripe gateway this charges at once and answers 201 with the order. With PayMongo the card is entered in the
+     * browser, so this only starts the payment (202 with the client key); the order exists once the webhook confirms the payment
+     * ({@code GET /checkouts/{id}} shows the status).
+     */
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public OrderResponse checkout(@PathVariable UUID cartId,
-                                   @RequestHeader("Idempotency-Key") UUID idempotencyKey,
-                                   @Valid @RequestBody CheckoutRequest request) {
+    public ResponseEntity<Object> checkout(@PathVariable UUID cartId,
+                                           @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+                                           @Valid @RequestBody(required = false) CheckoutRequest request) {
+        if (checkoutService.isAsynchronous()) {
+            return ResponseEntity.accepted().body(checkoutService.startCheckout(cartId, idempotencyKey));
+        }
+        if (request == null) {
+            throw new BadRequestException("Provide either paymentMethodToken or paymentMethodId");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(chargeNow(cartId, idempotencyKey, request));
+    }
+
+    private OrderResponse chargeNow(UUID cartId, UUID idempotencyKey, CheckoutRequest request) {
         boolean hasToken = request.paymentMethodToken() != null && !request.paymentMethodToken().isBlank();
         boolean hasSavedCard = request.paymentMethodId() != null;
         if (hasToken == hasSavedCard) {

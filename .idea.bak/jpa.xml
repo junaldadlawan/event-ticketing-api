@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="JpaBuddyIdeaProjectConfig" newRepositoryParent="org.springframework.data.jpa.repository.JpaRepository">
+    <option name="reLastEntityCreationPackage" value="src/main/java/com/junaldadlawan/event_ticketing_api/user/dto" />
+    <option name="reverseEngineeringLastDbConnectionId" value="60b07e97-5b6f-480c-8e5b-b3e64ec58425" />
+  </component>
+</project>

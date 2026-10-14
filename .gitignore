@@ -52,3 +52,5 @@ build/
 
 ### Local secrets (never commit) ###
 .env
+.env.*
+!.env.example

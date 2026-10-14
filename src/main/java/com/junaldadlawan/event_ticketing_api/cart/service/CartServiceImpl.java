@@ -105,6 +105,17 @@ public class CartServiceImpl implements CartService {
 
     @Override
     @Transactional
+    public CartResponse getForBuyer(UUID cartId, UUID buyerId) {
+        Cart cart = getCartOrThrow(cartId);
+        if (!buyerId.equals(cart.getBuyerId())) {
+            throw new ForbiddenException("Only the cart's own buyer may access this cart");
+        }
+        releaseExpiredHoldsForCart(cart.getId());
+        return toResponse(cart);
+    }
+
+    @Override
+    @Transactional
     public CartResponse addItem(UUID cartId, CartItemCreateRequest request) {
         Cart cart = getCartOrThrow(cartId);
         requireOwnerBuyer(cart);

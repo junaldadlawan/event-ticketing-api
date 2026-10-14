@@ -36,6 +36,9 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
+                        // PayMongo's webhook sends no login: it is authenticated by its signature header (checked in
+                        // PayMongoWebhookController). The controller only exists when payments.gateway=paymongo.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/paymongo").permitAll()
                         // refresh/logout are public on purpose: a client calls refresh
                         // precisely because its access token has expired, so it has no
                         // valid bearer token to send. Both are guarded by possession of
