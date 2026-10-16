@@ -59,6 +59,40 @@ resource "aws_secretsmanager_secret_version" "ticket_credential_secret" {
   secret_string = random_password.ticket_credential_secret.result
 }
 
+# PayMongo keys (PAYMONGO_SECRET_KEY, PAYMONGO_WEBHOOK_SECRET). Unlike the secrets above they cannot be generated: they come from the PayMongo
+# dashboard. Terraform creates each secret with a placeholder so the task can start, and then never touches the value again
+# (ignore_changes), so a key you type into Secrets Manager is not overwritten. Fill both in the AWS console (or with
+# "aws secretsmanager put-secret-value"), then force a new deployment: a running task only reads its secrets when it starts.
+resource "aws_secretsmanager_secret" "paymongo_secret_key" {
+  name                    = "${local.name}/paymongo-secret-key"
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "paymongo_secret_key" {
+  secret_id     = aws_secretsmanager_secret.paymongo_secret_key.id
+  secret_string = "CHANGE_ME"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
+resource "aws_secretsmanager_secret" "paymongo_webhook_secret" {
+  name                    = "${local.name}/paymongo-webhook-secret"
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "paymongo_webhook_secret" {
+  secret_id     = aws_secretsmanager_secret.paymongo_webhook_secret.id
+  secret_string = "CHANGE_ME"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
 resource "aws_secretsmanager_secret" "device_credential_secret" {
   name                    = "${local.name}/device-credential-secret"
   recovery_window_in_days = 0

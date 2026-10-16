@@ -57,9 +57,11 @@ resource "aws_ecs_task_definition" "app" {
         # that ever changes the schema. See CLAUDE.md "Database &
         # migrations" for why both being on at once is flagged as a gap.
         { name = "SPRING_JPA_HIBERNATE_DDL_AUTO", value = "validate" },
-        # Browser origins allowed to call the API cross-origin (CORS); empty = none. See variables.tf.
+        # mock (no real payments) or paymongo. See variables.tf.
+        { name = "PAYMENTS_GATEWAY", value = var.payments_gateway },
         # Demo only: loads db/seed/demo-data.sql at startup when true. See variables.tf.
         { name = "APP_SEED_DEMO_DATA", value = tostring(var.seed_demo_data) },
+        # Browser origins allowed to call the API cross-origin (CORS); empty = none. See variables.tf.
         { name = "APP_CORS_ALLOWED_ORIGINS", value = join(",", var.cors_allowed_origins) },
       ]
 
@@ -68,6 +70,9 @@ resource "aws_ecs_task_definition" "app" {
         { name = "APP_JWT_SECRET", valueFrom = aws_secretsmanager_secret.jwt_secret.arn },
         { name = "APP_TICKET_CREDENTIAL_SECRET", valueFrom = aws_secretsmanager_secret.ticket_credential_secret.arn },
         { name = "APP_DEVICE_CREDENTIAL_SECRET", valueFrom = aws_secretsmanager_secret.device_credential_secret.arn },
+        # PayMongo keys from the dashboard: placeholders until you set them in Secrets Manager (see secrets.tf). Only used when PAYMENTS_GATEWAY=paymongo.
+        { name = "PAYMONGO_SECRET_KEY", valueFrom = aws_secretsmanager_secret.paymongo_secret_key.arn },
+        { name = "PAYMONGO_WEBHOOK_SECRET", valueFrom = aws_secretsmanager_secret.paymongo_webhook_secret.arn },
       ]
 
       logConfiguration = {
