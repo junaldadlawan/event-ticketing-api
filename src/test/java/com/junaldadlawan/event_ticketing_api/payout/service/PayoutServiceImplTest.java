@@ -16,7 +16,11 @@ import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutResponse;
 import com.junaldadlawan.event_ticketing_api.refund.repository.RefundRepository;
 import com.junaldadlawan.event_ticketing_api.payout.entity.Payout;
+import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutAccount;
 import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutCard;
+import com.junaldadlawan.event_ticketing_api.payout.gateway.PayoutTransferClient;
+import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutAccountRepository;
+import com.junaldadlawan.event_ticketing_api.payout.security.AccountNumberCipher;
 import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutCardRepository;
 import com.junaldadlawan.event_ticketing_api.payout.enums.PayoutStatus;
 import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutRepository;
@@ -70,13 +74,33 @@ class PayoutServiceImplTest {
     @Mock
     private PayoutCardRepository payoutCardRepository;
 
+    @Mock
+    private PayoutAccountRepository payoutAccountRepository;
+
+    @Mock
+    private PayoutTransferClient transferClient;
+
+    @Mock
+    private AccountNumberCipher cipher;
+
+    @Mock
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.event.repository.EventRepository eventRepository;
+
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.payout.repository.PayoutEligibilityRepository eligibilityRepository;
+
     private PayoutServiceImpl service;
 
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        service = new PayoutServiceImpl(payoutRepository, organizationRepository, accessGuard, orderRepository, refundRepository, payoutCardRepository);
+        service = new PayoutServiceImpl(payoutRepository, organizationRepository, accessGuard, orderRepository, refundRepository, payoutCardRepository,
+                payoutAccountRepository, transferClient, cipher, transactionManager,
+                eventRepository, eligibilityRepository);
         orgId = UUID.randomUUID();
     }
 
@@ -246,6 +270,34 @@ class PayoutServiceImplTest {
     }
 
     @Test
+    void generate_withPayMongo_recordsThePayoutAccountAsTheDestination_notACard() {
+        adminAndOrg();
+        when(transferClient.requiresAccount()).thenReturn(true);
+        PayoutAccount account = PayoutAccount.builder().id(UUID.randomUUID()).organizationId(orgId).build();
+        when(payoutAccountRepository.findByOrganizationIdAndDeletedAtIsNull(orgId)).thenReturn(Optional.of(account));
+        when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(order(1000, 0, OrderStatus.PAID)));
+        when(refundRepository.sumCompletedAmountByOrderId(any())).thenReturn(0L);
+        when(payoutRepository.save(any(Payout.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PayoutResponse response = service.generate(orgId, period());
+
+        assertThat(response.payoutAccountId()).isEqualTo(account.getId());
+        assertThat(response.payoutCardId()).isNull();
+        verifyNoInteractions(payoutCardRepository);
+    }
+
+    @Test
+    void generate_withPayMongoAndNoPayoutAccount_throwsConflict_andCreatesNothing() {
+        adminAndOrg();
+        when(transferClient.requiresAccount()).thenReturn(true);
+        when(payoutAccountRepository.findByOrganizationIdAndDeletedAtIsNull(orgId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.generate(orgId, period()))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("payout account");
+        verify(payoutRepository, never()).save(any());
+    }
+
+    @Test
     void generate_withoutAPrimaryCard_throwsConflict_andCreatesNothing() {
         adminAndOrg();
         when(payoutCardRepository.findByOrganizationIdAndPrimaryTrueAndDeletedAtIsNull(orgId)).thenReturn(Optional.empty());
@@ -362,5 +414,92 @@ class PayoutServiceImplTest {
 
         assertThatThrownBy(() -> service.generate(orgId, period())).isInstanceOf(ForbiddenException.class);
         verifyNoInteractions(orderRepository, payoutRepository);
+    }
+
+    // ---- the payment gateway's fee: who bears it decides what comes off the organizer's share ----
+
+    private Order orderWithGatewayFee(long total, long platformFee, long gatewayFee,
+                                      com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer payer) {
+        Order order = order(total, platformFee, OrderStatus.PAID);
+        order.setGatewayFeeAmount(gatewayFee);
+        order.setGatewayFeePayer(payer);
+        return order;
+    }
+
+    @Test
+    void generate_aForeignCardWhenTheOrganizationBearsTheFee_deductsTheForeignFeeThatApplied() {
+        Order order = orderWithGatewayFee(1000, 0, 50, com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.ORGANIZATION);
+        order.setGatewayFeeAppliedAmount(80L);
+
+        PayoutResponse response = generateFor(order);
+
+        assertThat(response.fees().amount()).isEqualTo(80L);
+        assertThat(response.net().amount()).isEqualTo(920L);
+    }
+
+    @Test
+    void generate_aForeignCardWhenTheCustomerPaidTheFee_doesNotChargeTheOrganizerTheExtra_thePlatformAbsorbsIt() {
+        Order order = orderWithGatewayFee(1050, 0, 50, com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.CUSTOMER);
+        order.setGatewayFeeAppliedAmount(80L);
+
+        PayoutResponse response = generateFor(order);
+
+        assertThat(response.fees().amount()).isEqualTo(50L);   // only what the customer paid comes off
+        assertThat(response.net().amount()).isEqualTo(1000L);
+    }
+
+    @Test
+    void generate_anOrderWithoutAnAppliedFee_usesTheFeeItWasPlacedWith() {
+        Order order = orderWithGatewayFee(1000, 0, 50, com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.ORGANIZATION);
+
+        assertThat(generateFor(order).fees().amount()).isEqualTo(50L);
+    }
+
+    private PayoutResponse generateFor(Order order) {
+        adminAndOrg();
+        withPrimaryCard();
+        when(orderRepository.findDueForPayout(eq(orgId), any(), any())).thenReturn(List.of(order));
+        when(refundRepository.sumCompletedAmountByOrderId(any())).thenReturn(0L);
+        when(payoutRepository.save(any(Payout.class))).thenAnswer(inv -> inv.getArgument(0));
+        return service.generate(orgId, period());
+    }
+
+    @Test
+    void generate_aGatewayFeeTheCustomerPaid_comesOffTheGross_soTheOrganizerKeepsTheTicketPrice() {
+        // ticket 1000 + platform fee 100 + gateway fee 55 paid by the buyer = 1155
+        PayoutResponse response = generateFor(orderWithGatewayFee(1155, 100, 55,
+                com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.CUSTOMER));
+
+        assertThat(response.gross().amount()).isEqualTo(1155L);
+        assertThat(response.fees().amount()).isEqualTo(155L);
+        assertThat(response.net().amount()).isEqualTo(1000L);
+    }
+
+    @Test
+    void generate_aGatewayFeeTheOrganizationBears_isDeductedFromItsShare() {
+        // the buyer paid ticket 1000 + platform fee 100 = 1100; the gateway fee 55 is the organization's
+        PayoutResponse response = generateFor(orderWithGatewayFee(1100, 100, 55,
+                com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.ORGANIZATION));
+
+        assertThat(response.gross().amount()).isEqualTo(1100L);
+        assertThat(response.fees().amount()).isEqualTo(155L);
+        assertThat(response.net().amount()).isEqualTo(945L);
+    }
+
+    @Test
+    void generate_aGatewayFeeThePlatformAbsorbs_takesNothingOffTheOrganizer() {
+        PayoutResponse response = generateFor(orderWithGatewayFee(1100, 100, 55,
+                com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.PLATFORM));
+
+        assertThat(response.fees().amount()).isEqualTo(100L);
+        assertThat(response.net().amount()).isEqualTo(1000L);
+    }
+
+    @Test
+    void generate_anOrderBeforeGatewayFeesExisted_isUnchanged() {
+        PayoutResponse response = generateFor(order(1100, 100, OrderStatus.PAID));   // no payer, no gateway fee
+
+        assertThat(response.fees().amount()).isEqualTo(100L);
+        assertThat(response.net().amount()).isEqualTo(1000L);
     }
 }

@@ -38,7 +38,7 @@ public class CheckoutIdempotencyKeyManager {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ClaimOutcome claim(UUID idempotencyKey, UUID buyerId, UUID cartId) {
+    public ClaimOutcome claim(UUID idempotencyKey, UUID buyerId, UUID cartId, String itemIds) {
         Optional<CheckoutIdempotencyKey> existing = repository.findById(idempotencyKey);
         if (existing.isPresent()) {
             return new ClaimOutcome(existing.get(), false);
@@ -49,6 +49,7 @@ public class CheckoutIdempotencyKeyManager {
                     .buyerId(buyerId)
                     .cartId(cartId)
                     .orderId(null)
+                    .itemIds(itemIds)
                     .build();
             return new ClaimOutcome(repository.saveAndFlush(key), true);
         } catch (DataIntegrityViolationException e) {

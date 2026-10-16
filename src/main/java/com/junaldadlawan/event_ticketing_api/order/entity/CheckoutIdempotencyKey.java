@@ -70,6 +70,10 @@ public class CheckoutIdempotencyKey implements Persistable<UUID> {
     @Column(name = "order_id")
     private UUID orderId;
 
+    /** The cart items this checkout pays (sorted ids, comma-separated); null = the whole cart. */
+    @Column(name = "item_ids")
+    private String itemIds;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;

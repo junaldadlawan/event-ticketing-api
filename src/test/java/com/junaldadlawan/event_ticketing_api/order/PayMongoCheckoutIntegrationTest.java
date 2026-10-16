@@ -242,6 +242,55 @@ class PayMongoCheckoutIntegrationTest {
     }
 
     @Test
+    void aCheckoutOfSomeItems_issuesTheOrderForOnlyThoseItems_whenTheWebhookSaysPaid() throws Exception {
+        UUID cartId = cartWithOneTicket(buyer);
+        // a second line of the same ticket type (carts made before lines merged have them), put in directly
+        jdbc.update("insert into cart_items (id, cart_id, ticket_type_id, quantity, hold_expires_at, created_at) select ?, cart_id, ticket_type_id, 1, hold_expires_at, created_at + interval '1 second' from cart_items where cart_id = ?", UUID.randomUUID(), cartId);
+        List<UUID> items = jdbc.queryForList("select id from cart_items where cart_id = ? order by created_at", UUID.class, cartId);
+        assertThat(items).hasSize(2);
+
+        keyIds.add(UUID.randomUUID());
+        JsonNode started = json(mockMvc.perform(post("/api/v1/carts/{id}/checkout", cartId).header("Authorization", buyer)
+                .header("Idempotency-Key", keyIds.get(keyIds.size() - 1).toString()).contentType("application/json")
+                .content("{\"itemIds\":[\"" + items.get(0) + "\"]}")).andExpect(status().isAccepted()));
+        String intentId = jdbc.queryForObject("select provider_intent_id from pending_checkouts where id = ?", String.class, UUID.fromString(started.get("checkoutId").asText()));
+
+        webhook(webhookBody("payment.paid", intentId, "pay_it_part", started.get("amount").asLong(), "PHP"), true).andExpect(status().isOk());
+
+        assertThat(ordersOfBuyer()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from tickets t join orders o on o.id = t.order_id where o.buyer_id = ?", Integer.class, buyerId)).isEqualTo(1);
+        assertThat(jdbc.queryForList("select id from cart_items where cart_id = ?", UUID.class, cartId)).containsExactly(items.get(1));   // the rest stays
+    }
+
+    @Test
+    void aForeignCardPayment_recordsTheForeignFeeThatApplied_whileTheCustomerPaidTheDomesticOne() throws Exception {
+        java.util.Map<String, Object> original = jdbc.queryForMap("select percentage, flat_amount, flat_currency, payer, foreign_percentage, foreign_flat_amount from payment_gateway_fee_settings where id = 1");
+        try {
+            // the organization bears the fee, so the customer's total stays the price; 3.5% + 15.00 at home, 4.5% + 15.00 for a card from abroad
+            jdbc.update("update payment_gateway_fee_settings set percentage = 3.5, flat_amount = 1500, flat_currency = 'PHP', payer = 'ORGANIZATION', foreign_percentage = 4.5, foreign_flat_amount = 1500 where id = 1");
+            UUID cartId = cartWithOneTicket(buyer);
+            JsonNode started = json(start(buyer, cartId, UUID.randomUUID()).andExpect(status().isAccepted()));
+            String intentId = jdbc.queryForObject("select provider_intent_id from pending_checkouts where id = ?", String.class, UUID.fromString(started.get("checkoutId").asText()));
+            long amount = started.get("amount").asLong();
+            String body = webhookBody("payment.paid", intentId, "pay_us", amount, "PHP").replace("\"status\":\"paid\"", "\"status\":\"paid\",\"source\":{\"type\":\"card\",\"brand\":\"visa\",\"country\":\"US\"}");
+
+            webhook(body, true).andExpect(status().isOk());
+
+            java.util.Map<String, Object> order = jdbc.queryForMap("select gateway_fee_amount, gateway_fee_applied_amount, gateway_fee_card_origin, gateway_fee_foreign_percentage, total_amount from orders where buyer_id = ?", buyerId);
+            long domestic = java.math.BigDecimal.valueOf(amount).multiply(new java.math.BigDecimal("3.5")).divide(java.math.BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP).longValueExact() + 1500;
+            long foreign = java.math.BigDecimal.valueOf(amount).multiply(new java.math.BigDecimal("4.5")).divide(java.math.BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP).longValueExact() + 1500;
+            assertThat(order.get("gateway_fee_card_origin")).isEqualTo("FOREIGN");
+            assertThat(((Number) order.get("gateway_fee_amount")).longValue()).isEqualTo(domestic);
+            assertThat(((Number) order.get("gateway_fee_applied_amount")).longValue()).isEqualTo(foreign);
+            assertThat(new java.math.BigDecimal(order.get("gateway_fee_foreign_percentage").toString())).isEqualByComparingTo("4.5");
+            assertThat(((Number) order.get("total_amount")).longValue()).isEqualTo(amount);   // the organization bears it: the buyer paid no fee
+        } finally {
+            jdbc.update("update payment_gateway_fee_settings set percentage = ?, flat_amount = ?, flat_currency = ?, payer = ?, foreign_percentage = ?, foreign_flat_amount = ? where id = 1",
+                    original.get("percentage"), original.get("flat_amount"), original.get("flat_currency"), original.get("payer"), original.get("foreign_percentage"), original.get("foreign_flat_amount"));
+        }
+    }
+
+    @Test
     void aWebhookWithABadSignature_isRejected_andChangesNothing() throws Exception {
         UUID cartId = cartWithOneTicket(buyer);
         JsonNode started = json(start(buyer, cartId, UUID.randomUUID()).andExpect(status().isAccepted()));

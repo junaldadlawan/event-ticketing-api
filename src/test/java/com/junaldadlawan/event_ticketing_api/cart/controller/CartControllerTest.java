@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -55,12 +56,12 @@ class CartControllerTest {
     private DeviceAuthenticationFilter deviceAuthenticationFilter;
 
     private CartResponse cartResponse(UUID id) {
-        return new CartResponse(id, UUID.randomUUID(), List.of(), null, new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), Instant.now(), Instant.now());
+        return new CartResponse(id, UUID.randomUUID(), List.of(), null, new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), Instant.now(), Instant.now());
     }
 
     private CartResponse cartResponseWithItem(UUID id, UUID itemId) {
         CartItemResponse item = new CartItemResponse(itemId, UUID.randomUUID(), null, 2, Instant.now().plusSeconds(900), Instant.now());
-        return new CartResponse(id, UUID.randomUUID(), List.of(item), null, new MoneyDto(0L, "USD"), new MoneyDto(2000L, "USD"), Instant.now(), Instant.now());
+        return new CartResponse(id, UUID.randomUUID(), List.of(item), null, new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(2000L, "USD"), Instant.now(), Instant.now());
     }
 
     // ---- create() ----
@@ -80,7 +81,7 @@ class CartControllerTest {
     @Test
     void get_existingCart_returns200() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(cartService.get(cartId)).thenReturn(cartResponse(cartId));
+        when(cartService.get(eq(cartId), isNull())).thenReturn(cartResponse(cartId));
 
         mockMvc.perform(get("/api/v1/carts/{cartId}", cartId))
                 .andExpect(status().isOk())
@@ -90,7 +91,7 @@ class CartControllerTest {
     @Test
     void get_notOwner_returns403() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(cartService.get(cartId)).thenThrow(new ForbiddenException("Only the cart's own buyer may access this cart"));
+        when(cartService.get(eq(cartId), isNull())).thenThrow(new ForbiddenException("Only the cart's own buyer may access this cart"));
 
         mockMvc.perform(get("/api/v1/carts/{cartId}", cartId))
                 .andExpect(status().isForbidden());
@@ -99,7 +100,7 @@ class CartControllerTest {
     @Test
     void get_unknownCart_returns404() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(cartService.get(cartId)).thenThrow(new ResourceNotFoundException("Cart " + cartId + " not found"));
+        when(cartService.get(eq(cartId), isNull())).thenThrow(new ResourceNotFoundException("Cart " + cartId + " not found"));
 
         mockMvc.perform(get("/api/v1/carts/{cartId}", cartId))
                 .andExpect(status().isNotFound());
@@ -213,7 +214,7 @@ class CartControllerTest {
     void applyPromoCode_validRequest_returns200() throws Exception {
         UUID cartId = UUID.randomUUID();
         CartResponse withPromo = new CartResponse(cartId, UUID.randomUUID(), List.of(),
-                new AppliedPromoCodeResponse("SAVE10", new MoneyDto(100L, "USD")), new MoneyDto(0L, "USD"), new MoneyDto(900L, "USD"), Instant.now(), Instant.now());
+                new AppliedPromoCodeResponse("SAVE10", new MoneyDto(100L, "USD")), new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(900L, "USD"), Instant.now(), Instant.now());
         when(cartService.applyPromoCode(eq(cartId), eq("SAVE10"))).thenReturn(withPromo);
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/promo-code", cartId)

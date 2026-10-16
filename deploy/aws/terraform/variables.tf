@@ -82,6 +82,21 @@ variable "db_username" {
   default     = "app_user"
 }
 
+variable "cors_allowed_origins" {
+  description = <<-EOT
+    Browser origins allowed to call the API from another origin (CORS), exact scheme + host (+ port), no trailing slash and never "*",
+    e.g. ["https://app.example.com", "https://d1234abcd.cloudfront.net"]. Passed to the task as APP_CORS_ALLOWED_ORIGINS. Leave empty when
+    the web app is served from the same origin as the API (nothing cross-origin is then allowed).
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for o in var.cors_allowed_origins : !can(regex("\\*|/$", o)) && can(regex("^https?://", o))])
+    error_message = "Each origin must start with http:// or https://, have no trailing slash and contain no wildcard."
+  }
+}
+
 variable "log_retention_days" {
   description = "CloudWatch Logs retention for the app's container logs."
   type        = number

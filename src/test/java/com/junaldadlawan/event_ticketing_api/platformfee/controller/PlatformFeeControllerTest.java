@@ -54,7 +54,7 @@ class PlatformFeeControllerTest {
 
     private PlatformFeeRuleResponse percentageRule(FeeScope scope, UUID scopeId, String percent) {
         return new PlatformFeeRuleResponse(UUID.randomUUID(), scope, scopeId, FeeType.PERCENTAGE, new BigDecimal(percent), null,
-                Instant.now(), Instant.now());
+                null, Instant.now(), Instant.now());
     }
 
     // ---- PUT ----
@@ -80,7 +80,7 @@ class PlatformFeeControllerTest {
         UUID orgId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
         PlatformFeeRuleResponse flat = new PlatformFeeRuleResponse(UUID.randomUUID(), FeeScope.ORGANIZATION, orgId, FeeType.FLAT, null,
-                new MoneyDto(250, "USD"), Instant.now(), Instant.now());
+                new MoneyDto(250, "USD"), null, Instant.now(), Instant.now());
         when(platformFeeService.upsert(eq(FeeScope.ORGANIZATION), eq(orgId), any())).thenReturn(flat);
         when(platformFeeService.upsert(eq(FeeScope.EVENT), eq(eventId), any())).thenReturn(percentageRule(FeeScope.EVENT, eventId, "0"));
 
@@ -98,8 +98,7 @@ class PlatformFeeControllerTest {
     @Test
     void put_invalidBodies_return400() throws Exception {
         for (String body : new String[] {
-                "{}",
-                "{\"percentage\":5}",
+                "{\"percentage\":5,\"payer\":\"NOBODY\"}",
                 "{\"type\":\"BANANA\",\"percentage\":5}",
                 "{\"type\":\"PERCENTAGE\",\"percentage\":-1}",
                 "{\"type\":\"PERCENTAGE\",\"percentage\":100.01}",

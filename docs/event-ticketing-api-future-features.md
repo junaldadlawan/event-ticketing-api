@@ -41,7 +41,7 @@ each item can be re-verified rather than taken on faith.
 | S-4 | **Data-subject rights** — export-my-data and true erasure/anonymization (not just soft-delete) | P0 | ⬜ | Deletion is soft-delete only (`deletedAt`); no export endpoint; not on the roadmap. Needs a retention policy decision first. | BR-NFR-006 |
 | S-5 | **Real payment gateway** (tokenized/hosted fields, webhooks, async payment states, reconciliation) | P0 | ⬜ | Only `MockPaymentGatewayClient`. Raw card data must never touch the API. | §5.3 PCI-DSS |
 | S-6 | **AWS WAF** in front of the ALB (managed rule sets, bot control, IP reputation) | P1 | ⬜ | Not present. Complements S-2. | BR-NFR-004 |
-| S-7 | **CORS policy** for browser clients | P1 | ⬜ | No CORS configuration in `src/main/java`. | — |
+| S-7 | **CORS policy** for browser clients | P1 | ✅ | `SecurityConfig.corsConfigurationSource`: explicit origins from `app.cors.allowed-origins` (prod: `APP_CORS_ALLOWED_ORIGINS`, set by Terraform `cors_allowed_origins`), `/api/v1/**`, no credentials. See `deploy/aws/README.md`. | — |
 | S-8 | **Replace order-dependent URL matchers with method security** (`@PreAuthorize`) plus a test that asserts the auth requirement of every endpoint | P1 | ⬜ | `SecurityConfig` is ~100 lines of ordered matchers with repeated "must precede the broader permitAll" comments; one reorder silently exposes an endpoint. | — |
 | S-9 | **Refresh-token hardening** — rotation with reuse detection, per-device sessions, "log out everywhere" | P2 | ⬜ | Refresh tokens exist (`V5`); rotation/reuse-detection behavior not verified. Review before launch. | — |
 | S-10 | **Dependency & code scanning** — Dependabot, CodeQL/SAST, secret scanning, SBOM | P1 | ⬜ | `.github/` contains only `ci.yml` and `deploy.yml`. | — |

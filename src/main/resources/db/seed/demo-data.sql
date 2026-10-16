@@ -11,7 +11,7 @@
 --       - 1 organizer  (CUSTOMER account + organization role ORGANIZER)
 --       - 1 scanner    (CUSTOMER account + organization role CHECK_IN_STAFF)
 --   * 1 sample event "Demo Sunset Concert" (ON_SALE, starts in 30 days) with two ticket types
---       (General Admission $50.00 and VIP $120.00), run by Demo Events Co.
+--       (General Admission PHP 50.00 and VIP PHP 120.00), run by Demo Events Co.
 --   * a second organization "Demo Productions" with just its own owner (owner2@demo.test), no organizer, scanner or event
 --
 -- The two owners, the organizer and the scanner are four extra accounts, so 12 accounts in all. "Organizer", "scanner" and
@@ -169,10 +169,10 @@ ON CONFLICT DO NOTHING;
 INSERT INTO ticket_types (id, event_id, name, kind, price_amount, price_currency, quantity_total, quantity_available,
                           sale_start_at, sale_end_at, max_per_order, position, sales_paused, created_by, created_at)
 VALUES ('d0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000002', 'General Admission',
-        'GENERAL_ADMISSION', 5000, 'USD', 200, 200, now() - interval '1 day', now() + interval '30 days', 8, 0, FALSE,
+        'GENERAL_ADMISSION', 5000, 'PHP', 200, 200, now() - interval '1 day', now() + interval '30 days', 8, 0, FALSE,
         'Demo Seed', now()),
        ('d0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000002', 'VIP',
-        'GENERAL_ADMISSION', 12000, 'USD', 50, 50, now() - interval '1 day', now() + interval '30 days', 4, 1, FALSE,
+        'GENERAL_ADMISSION', 12000, 'PHP', 50, 50, now() - interval '1 day', now() + interval '30 days', 4, 1, FALSE,
         'Demo Seed', now())
 ON CONFLICT DO NOTHING;
 

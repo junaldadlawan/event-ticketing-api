@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.cart.service;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemCreateRequest;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartResponse;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -19,12 +20,26 @@ public interface CartService {
 
     CartResponse get(UUID cartId);
 
+    /**
+     * As {@link #get(UUID)} but priced for only the given items (null = the whole cart): same shape and fee rules as checkout. 400 when an id is
+     * not in the cart (or empty list), 409 when a selected item's hold has expired. A promo code counts only if it fits the selected items.
+     */
+    CartResponse get(UUID cartId, List<UUID> itemIds);
+
     /** Same as {@link #get} for a named buyer instead of the logged-in caller: used by the payment webhook, which has no login. */
     CartResponse getForBuyer(UUID cartId, UUID buyerId);
+
+    CartResponse getForBuyer(UUID cartId, UUID buyerId, List<UUID> itemIds);
 
     CartResponse addItem(UUID cartId, CartItemCreateRequest request);
 
     void removeItem(UUID cartId, UUID itemId);
+
+    /**
+     * Sets the quantity of a general-admission line, adjusting the held inventory by the difference. The hold expiry is kept (a change never
+     * extends it). 409 for a seated line, an expired hold, more than is available, or more than the ticket type's per-order limit.
+     */
+    CartResponse updateItemQuantity(UUID cartId, UUID itemId, int quantity);
 
     CartResponse applyPromoCode(UUID cartId, String code);
 

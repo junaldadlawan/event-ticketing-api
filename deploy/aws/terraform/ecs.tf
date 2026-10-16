@@ -57,6 +57,8 @@ resource "aws_ecs_task_definition" "app" {
         # that ever changes the schema. See CLAUDE.md "Database &
         # migrations" for why both being on at once is flagged as a gap.
         { name = "SPRING_JPA_HIBERNATE_DDL_AUTO", value = "validate" },
+        # Browser origins allowed to call the API cross-origin (CORS); empty = none. See variables.tf.
+        { name = "APP_CORS_ALLOWED_ORIGINS", value = join(",", var.cors_allowed_origins) },
       ]
 
       secrets = [

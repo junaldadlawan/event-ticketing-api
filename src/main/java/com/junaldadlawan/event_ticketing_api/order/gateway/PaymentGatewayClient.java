@@ -57,6 +57,37 @@ public interface PaymentGatewayClient {
         throw new UnsupportedOperationException("This payment gateway charges synchronously");
     }
 
+    /** As above, and the card paid with is vaulted on the provider's customer for later (PayMongo setup_future_usage, on-session). */
+    default PaymentIntentInfo createPaymentIntent(Money amount, String description, String reference, String saveForCustomerId) {
+        throw new UnsupportedOperationException("This payment gateway cannot save cards this way");
+    }
+
+    /** Creates the provider's customer a card is saved on. */
+    default String createCustomer(String email, String firstName, String lastName) {
+        throw new UnsupportedOperationException("This payment gateway has no customers");
+    }
+
+    /** The cards saved on the customer (description and payment-method id only). */
+    default java.util.List<VaultedCard> customerCards(String customerId) {
+        throw new UnsupportedOperationException("This payment gateway has no saved cards");
+    }
+
+    /**
+     * Pays the intent with a saved card from the server: the security code (when given) is set on the payment method, then the method is
+     * attached to the intent. Never throws for a declined card; {@link AttachOutcome#failureReason()} says why. The code is never stored or logged.
+     */
+    default AttachOutcome attachSavedCard(String intentId, String clientKey, String paymentMethodId, String securityCode, String returnUrl) {
+        throw new UnsupportedOperationException("This payment gateway cannot charge a saved card");
+    }
+
+    /** A card saved on a provider customer. */
+    record VaultedCard(String id, String brand, String last4, int expMonth, int expYear) {
+    }
+
+    /** What attaching a saved card did: {@code redirectUrl} is set when the bank asks for 3-D Secure; {@code failureReason} when it was declined. */
+    record AttachOutcome(String status, String redirectUrl, String failureReason) {
+    }
+
     /** The provider's payment intent id and the key the browser needs to attach a card to it. */
     record PaymentIntentInfo(String intentId, String clientKey) {
     }

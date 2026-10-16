@@ -41,6 +41,10 @@ public class PaymentMethod extends Auditable {
     @Column(name = "stripe_payment_method_id", length = 100)
     private String stripePaymentMethodId;
 
+    /** The PayMongo {@code pm_...} id of the vaulted card. Null for a card saved without a payment (it cannot be charged again). Never returned or logged. */
+    @Column(name = "paymongo_payment_method_id", length = 100)
+    private String paymongoPaymentMethodId;
+
     @Column(name = "holder_name", nullable = false, length = 100)
     private String holderName;
 

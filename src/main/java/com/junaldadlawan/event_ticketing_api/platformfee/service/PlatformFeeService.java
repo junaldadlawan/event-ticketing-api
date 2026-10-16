@@ -11,12 +11,12 @@ import java.util.UUID;
 public interface PlatformFeeService {
 
     /**
-     * The fee for a purchase whose ticket total (after promo discounts) is {@code ticketTotal} minor units in
-     * {@code currency}, for an event of {@code organizationId}. The most specific live rule applies: the event's, else the
+     * The fee for a purchase of {@code ticketCount} tickets whose ticket total (after promo discounts) is {@code ticketTotal} minor
+     * units in {@code currency}, for an event of {@code organizationId}: {@code ticketTotal x percentage + fixedAmount x ticketCount}. The most specific live rule applies: the event's, else the
      * organization's, else the platform default; none = no fee. A zero ticket total never pays a fee, and a FLAT rule in a
      * different currency than the order is skipped (no fee) rather than mixing currencies.
      */
-    PlatformFeeQuote quote(UUID organizationId, UUID eventId, long ticketTotal, String currency);
+    PlatformFeeQuote quote(UUID organizationId, UUID eventId, long ticketTotal, String currency, int ticketCount);
 
     /** Admin only. All live rules, optionally only those of one scope. */
     List<PlatformFeeRuleResponse> list(FeeScope scope);

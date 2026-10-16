@@ -17,6 +17,13 @@ public interface PendingCheckoutRepository extends JpaRepository<PendingCheckout
     @Query("select p from PendingCheckout p where p.providerIntentId = :intentId")
     Optional<PendingCheckout> findByProviderIntentIdForUpdate(@Param("intentId") String intentId);
 
+    Optional<PendingCheckout> findByProviderIntentId(String intentId);
+
+    /** Locks the row so two attaches of a saved card for one checkout cannot both reach the provider. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from PendingCheckout p where p.id = :id and p.buyerId = :buyerId")
+    Optional<PendingCheckout> findByIdAndBuyerIdForUpdate(@Param("id") UUID id, @Param("buyerId") UUID buyerId);
+
     /** The newest checkout started with this idempotency key (an earlier one may have failed and the key was reused). */
     Optional<PendingCheckout> findFirstByIdempotencyKeyOrderByCreatedAtDesc(UUID idempotencyKey);
 

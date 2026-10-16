@@ -86,6 +86,27 @@ public class Payout {
     @Column(name = "payout_card_id")
     private UUID payoutCardId;
 
+    /** The event this payout settles (a batch payout line); null for a period payout, which settles all the organization's due orders. */
+    @Column(name = "event_id")
+    private UUID eventId;
+
+    /** The payout account (bank or e-wallet) this payout was sent to; set when it is sent. Null for card payouts. */
+    @Column(name = "payout_account_id")
+    private UUID payoutAccountId;
+
+    /** The payment provider's id for the transfer (PayMongo's tr_...); null until it is sent. */
+    @Column(name = "transfer_id", length = 64)
+    private String transferId;
+
+    /** How many times it was sent; each retry uses a new reference number. */
+    @Column(name = "transfer_attempts", nullable = false)
+    @Builder.Default
+    private int transferAttempts = 0;
+
+    /** Why the last attempt failed; null otherwise. */
+    @Column(name = "failure_reason", length = 255)
+    private String failureReason;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;

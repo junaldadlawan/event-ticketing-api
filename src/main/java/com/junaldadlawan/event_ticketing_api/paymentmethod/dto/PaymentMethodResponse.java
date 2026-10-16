@@ -13,10 +13,12 @@ public record PaymentMethodResponse(
         String last4,
         int expMonth,
         int expYear,
-        boolean primary) implements Serializable {
+        boolean primary,
+        boolean canChargeAgain) implements Serializable {
 
-    public static PaymentMethodResponse from(PaymentMethod card) {
+    /** {@code canChargeAgain} false = the card cannot be charged without typing it again (saved before the provider's payment method was kept). */
+    public static PaymentMethodResponse from(PaymentMethod card, boolean canChargeAgain) {
         return new PaymentMethodResponse(card.getId(), card.getHolderName(), card.getBrand(), card.getLast4(),
-                card.getExpMonth(), card.getExpYear(), card.isPrimary());
+                card.getExpMonth(), card.getExpYear(), card.isPrimary(), canChargeAgain);
     }
 }

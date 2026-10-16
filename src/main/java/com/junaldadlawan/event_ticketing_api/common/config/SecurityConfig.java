@@ -195,6 +195,8 @@ public class SecurityConfig {
                         // admin-only, no per-resource owner/organizer branch - same idiom as
                         // audit-log above.
                         .requestMatchers(HttpMethod.GET, "/api/v1/analytics/platform").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                        // the admin's money summary: same unconditional admin-only rule
+                        .requestMatchers(HttpMethod.GET, "/api/v1/analytics/platform/finance").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         // Phase 10: openapi.yaml's `security: [deviceAuth: []]` override
                         // on these three - device-credential-only, a user JWT must NOT
                         // work here (a user could otherwise validate/scan tickets it has
@@ -236,19 +238,29 @@ public class SecurityConfig {
     }
 
     /**
-     * CORS for uploaded images only. The ticket designer's auto-fit reads the
-     * background's pixels through a canvas, which the browser allows for a
-     * cross-origin image only if the server answers with CORS headers. Nothing
-     * else on the API is opened up.
+     * CORS for browser clients served from another origin (the web app on its own domain, e.g. CloudFront, in front of the ALB / ECS service).
+     * Only the origins listed in {@code app.cors.allowed-origins} (comma-separated, exact scheme + host + port, never {@code *}) may call
+     * {@code /api/v1/**}; with none listed no cross-origin call is allowed (the safe default for a same-origin deployment). Authentication is
+     * the JWT in the Authorization header, never a cookie, so credentials are not allowed. Preflight (OPTIONS) is answered by the CORS filter
+     * before authentication. The ticket designer also reads uploaded images through a canvas, which needs these headers on
+     * {@code /api/v1/uploads/files/**} (covered by the same pattern). Webhooks are server to server and need none.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
             @Value("${app.cors.allowed-origins:http://localhost:5173}") List<String> allowedOrigins) {
+        List<String> origins = allowedOrigins.stream().map(String::trim).filter(o -> !o.isEmpty()).toList();
+        if (origins.stream().anyMatch(o -> o.contains("*"))) {
+            throw new IllegalStateException("app.cors.allowed-origins must list explicit origins (https://app.example.com), not a wildcard");
+        }
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(allowedOrigins);
-        config.setAllowedMethods(List.of("GET", "HEAD"));
+        config.setAllowedOrigins(origins);
+        config.setAllowedMethods(List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-Request-Id"));
+        config.setExposedHeaders(List.of("X-Request-Id", "Location", "Retry-After", "Content-Disposition"));
+        config.setAllowCredentials(false);
+        config.setMaxAge(java.time.Duration.ofHours(1));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/v1/uploads/files/**", config);
+        source.registerCorsConfiguration("/api/v1/**", config);
         return source;
     }
 
