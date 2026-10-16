@@ -23,9 +23,7 @@ resource "aws_cloudwatch_log_group" "app" {
   tags              = local.common_tags
 }
 
-variable "payments_gateway" {
-  default = ""
-}
+
 resource "aws_ecs_task_definition" "app" {
   family                   = local.name
   requires_compatibilities = ["FARGATE"]
