@@ -82,6 +82,15 @@ variable "db_username" {
   default     = "app_user"
 }
 
+variable "seed_demo_data" {
+  description = <<-EOT
+    DEMO ONLY. true loads the demo accounts (known passwords, see db/seed/demo-data.sql) and a sample event into the database when the task
+    starts (APP_SEED_DEMO_DATA). The script is idempotent. Set it true for the first apply, wait for the new task, then set it back to false.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "cors_allowed_origins" {
   description = <<-EOT
     Browser origins allowed to call the API from another origin (CORS), exact scheme + host (+ port), no trailing slash and never "*",

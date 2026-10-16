@@ -188,6 +188,20 @@ the comment at the top of `github_oidc.tf` for the two ways to handle
 that (import the existing one, or point the role's trust policy at it
 directly).
 
+## Demo data (demo deployments only)
+
+The database is private, so the demo script cannot be run by hand. Instead the app can load it itself on startup:
+
+1. Set `seed_demo_data = true` in `terraform.tfvars` and `terraform apply`. The new task runs Flyway, then `db/seed/demo-data.sql` (12 demo
+   accounts with the passwords written in that file, two organizations, one sample event). The script only inserts what is missing, so it is
+   safe to run again.
+2. Check the CloudWatch log for `Demo data loaded (or already there).` (a failure logs `The demo data could not be loaded` and the app still
+   starts).
+3. Set `seed_demo_data = false` and apply again so the next tasks stop loading it. The data stays in the database.
+
+**These accounts have known passwords, including a super admin.** Use this for a demo only, never with real data, and change or remove the
+accounts you do not need.
+
 ## CORS (web app on another origin)
 
 The API answers cross-origin browser calls only for the origins you list. Set them in `terraform.tfvars` (or `-var`), exact origin, no
