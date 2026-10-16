@@ -2,6 +2,8 @@ package com.junaldadlawan.event_ticketing_api.payout.entity;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
 import jakarta.persistence.Column;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -46,9 +48,11 @@ public class PayoutCard extends Auditable {
     @Column(name = "last4", nullable = false, length = 4)
     private String last4;
 
+    @JdbcTypeCode(SqlTypes.SMALLINT)   // the column is SMALLINT; prod validates the schema against the entities
     @Column(name = "exp_month", nullable = false)
     private int expMonth;
 
+    @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "exp_year", nullable = false)
     private int expYear;
 
