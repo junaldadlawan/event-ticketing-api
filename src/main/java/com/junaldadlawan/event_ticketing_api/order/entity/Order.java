@@ -95,8 +95,9 @@ public class Order {
     private Money total;
 
     /**
-     * The platform fee ("admin cut") charged on top of the ticket price; already part of {@code total}, in the same
-     * currency. The organizer's share of the order is {@code total - platformFeeAmount}. 0 when no fee rule applied.
+     * What the platform fee ("admin cut") came to on this order, in the same currency as {@code total} (0 when no fee rule applied).
+     * It is part of {@code total} only when {@link #platformFeePayer} is CUSTOMER (or null, an order from before the payer existed);
+     * when it is ORGANIZATION it is deducted from the payout, and when PLATFORM it is waived.
      */
     @Builder.Default
     @Column(name = "platform_fee_amount", nullable = false)
@@ -116,6 +117,75 @@ public class Order {
 
     @Column(name = "platform_fee_flat_amount")
     private Long platformFeeFlatAmount;
+
+    /** Snapshot of who bears the platform fee (null on orders from before the payer existed: the customer paid it). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "platform_fee_payer", length = 20)
+    private com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer platformFeePayer;
+
+    /** The part of the platform fee the buyer paid on top of the price (the whole fee when the customer bears it, else 0). */
+    public long buyerPlatformFee() {
+        return platformFeePayer == null || platformFeePayer == com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.CUSTOMER ? platformFeeAmount : 0L;
+    }
+
+    /**
+     * What the payment gateway's processing fee came to on this order (0 when none applied). It is part of {@code total} only when
+     * {@link #gatewayFeePayer} is CUSTOMER; when it is ORGANIZATION it is deducted from the payout, and when PLATFORM it is absorbed.
+     */
+    @Builder.Default
+    @Column(name = "gateway_fee_amount", nullable = false)
+    private long gatewayFeeAmount = 0L;
+
+    /** Snapshot of who bears the gateway fee (null when none applied), so setting changes never rewrite old orders. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gateway_fee_payer", length = 20)
+    private com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer gatewayFeePayer;
+
+    @Column(name = "gateway_fee_percentage", precision = 6, scale = 3)
+    private BigDecimal gatewayFeePercentage;
+
+    @Column(name = "gateway_fee_flat_amount")
+    private Long gatewayFeeFlatAmount;
+
+    /** What the gateway really kept (its fee plus any foreign-card fee), from its own payment record; null until known (see GatewayFeeActualSyncService). */
+    @Column(name = "gateway_fee_actual_amount")
+    private Long gatewayFeeActualAmount;
+
+    /** Where the card was issued, as the gateway reported with the payment; null when it did not say (and on older orders). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gateway_fee_card_origin", length = 10)
+    private com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeeCardOrigin gatewayFeeCardOrigin;
+
+    /** The fee that really applied given the card: the foreign fee for a foreign card, otherwise {@link #gatewayFeeAmount}. Null on older orders. */
+    @Column(name = "gateway_fee_applied_amount")
+    private Long gatewayFeeAppliedAmount;
+
+    /** Snapshot of the foreign rate in force when the order was placed (null when the foreign card costs the domestic rate). */
+    @Column(name = "gateway_fee_foreign_percentage", precision = 6, scale = 3)
+    private BigDecimal gatewayFeeForeignPercentage;
+
+    @Column(name = "gateway_fee_foreign_flat_amount")
+    private Long gatewayFeeForeignFlatAmount;
+
+    /**
+     * What comes off the organizer's payout for the gateway fee: nothing when the platform bears it; the fee the customer paid when the customer
+     * bears it (a foreign card costing more is absorbed by the platform, the organizer keeps the ticket price); the fee that really applied when
+     * the organization bears it.
+     */
+    public long gatewayFeeDeduction() {
+        if (gatewayFeePayer == null || gatewayFeePayer == com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.PLATFORM) {
+            return 0L;
+        }
+        if (gatewayFeePayer == com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.ORGANIZATION && gatewayFeeAppliedAmount != null) {
+            return gatewayFeeAppliedAmount;
+        }
+        return gatewayFeeAmount;
+    }
+
+    /** The part of the gateway fee the buyer paid on top of the price (the whole fee when the customer bears it, else 0). */
+    public long buyerGatewayFee() {
+        return gatewayFeePayer == com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.CUSTOMER ? gatewayFeeAmount : 0L;
+    }
 
     /** The payout this order was settled in; null until an admin generates the payout that covers it. */
     @Column(name = "payout_id")

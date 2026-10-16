@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -59,7 +60,7 @@ class CartCheckoutControllerTest {
 
     private OrderResponse orderResponse(UUID orderId) {
         return new OrderResponse(orderId, UUID.randomUUID(), PayeeType.ORGANIZATION, UUID.randomUUID(),
-                OrderStatus.PAID, null, new MoneyDto(0L, "USD"), new MoneyDto(1000L, "USD"), List.of(), Instant.now(),
+                OrderStatus.PAID, null, new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(1000L, "USD"), List.of(), Instant.now(),
                 UUID.randomUUID().toString(), Instant.now());
     }
 
@@ -121,7 +122,7 @@ class CartCheckoutControllerTest {
         UUID cartId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         UUID idempotencyKey = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), eq(idempotencyKey), eq("tok_ok")))
+        when(checkoutService.checkout(eq(cartId), eq(idempotencyKey), eq("tok_ok"), isNull(), isNull()))
                 .thenReturn(orderResponse(orderId));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -143,7 +144,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_nonOwner_returns403() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new ForbiddenException("Only the cart's own buyer may check out this cart"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -158,7 +159,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_unknownCart_returns404() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new ResourceNotFoundException("Cart " + cartId + " not found"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -173,7 +174,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_emptyCart_returns409() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new ConflictException("Cart has no items to check out"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -188,7 +189,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_expiredHold_returns410() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new GoneException("A hold expired before checkout completed."));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -203,7 +204,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_paymentDeclined_returns402() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new PaymentFailedException("Payment declined by gateway for the provided payment method token"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -218,7 +219,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_promoUsageLimitExhausted_returns422() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new UnprocessableEntityException("Promo code has reached its total usage limit"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -233,7 +234,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_inFlightDuplicateIdempotencyKey_returns409() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new ConflictException("Checkout already in progress for this idempotency key"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -248,7 +249,7 @@ class CartCheckoutControllerTest {
     @Test
     void checkout_crossBuyerIdempotencyKeyReuse_returns403() throws Exception {
         UUID cartId = UUID.randomUUID();
-        when(checkoutService.checkout(eq(cartId), any(), any()))
+        when(checkoutService.checkout(eq(cartId), any(), any(), any(), any()))
                 .thenThrow(new ForbiddenException("This idempotency key was issued by a different buyer"));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)
@@ -269,7 +270,7 @@ class CartCheckoutControllerTest {
         UUID idempotencyKey = UUID.randomUUID();
         when(paymentMethodService.resolveForCheckout(cardId))
                 .thenReturn(new com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService.SavedCardCharge("pm_saved", "cus_buyer"));
-        when(checkoutService.checkout(eq(cartId), eq(idempotencyKey), eq("pm_saved"), eq("cus_buyer")))
+        when(checkoutService.checkout(eq(cartId), eq(idempotencyKey), eq("pm_saved"), eq("cus_buyer"), isNull()))
                 .thenReturn(orderResponse(UUID.randomUUID()));
 
         mockMvc.perform(post("/api/v1/carts/{cartId}/checkout", cartId)

@@ -66,6 +66,27 @@ public class PendingCheckout {
     @Column(name = "order_id")
     private UUID orderId;
 
+    /** The cart items this checkout pays (sorted ids, comma-separated); null = the whole cart. */
+    @Column(name = "item_ids")
+    private String itemIds;
+
+    /** The buyer asked to save the card used for this payment (the intent was created with setup_future_usage). */
+    @Column(name = "save_card", nullable = false)
+    private boolean saveCard;
+
+    /** REQUESTED, UNAVAILABLE (PayMongo refused vaulting; paid without saving) or NOT_REQUESTED. */
+    @Column(name = "card_saving", nullable = false, length = 16)
+    @Builder.Default
+    private String cardSaving = "NOT_REQUESTED";
+
+    /** When the server attached a saved card to the intent; null for a card typed in the browser. */
+    @Column(name = "attached_at")
+    private Instant attachedAt;
+
+    /** The 3-D Secure page the buyer must visit after a saved card was attached; null = no further action. */
+    @Column(name = "redirect_url", columnDefinition = "text")
+    private String redirectUrl;
+
     @Column(name = "failure_reason", length = 500)
     private String failureReason;
 

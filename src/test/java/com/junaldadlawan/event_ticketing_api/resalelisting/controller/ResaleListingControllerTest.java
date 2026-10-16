@@ -59,7 +59,7 @@ class ResaleListingControllerTest {
 
     private OrderResponse orderResponse(UUID orderId, UUID sellerId) {
         return new OrderResponse(orderId, UUID.randomUUID(), PayeeType.USER, sellerId, OrderStatus.PAID, null,
-                new MoneyDto(0L, "USD"), new MoneyDto(1000L, "USD"), List.of(), Instant.now(), UUID.randomUUID().toString(), Instant.now());
+                new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(1000L, "USD"), List.of(), Instant.now(), UUID.randomUUID().toString(), Instant.now());
     }
 
     // ---- DELETE /resale-listings/{listingId} ----

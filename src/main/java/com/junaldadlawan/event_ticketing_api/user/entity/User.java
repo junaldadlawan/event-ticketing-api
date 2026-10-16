@@ -87,4 +87,9 @@ public class User extends Auditable {
     @Column(name = "stripe_customer_id", length = 64)
     private String stripeCustomerId;
 
+    /** The user's PayMongo customer, created the first time a card is saved with a payment; null until then. Never returned by the API. */
+    @Size(max = 64)
+    @Column(name = "paymongo_customer_id", length = 64)
+    private String paymongoCustomerId;
+
 }

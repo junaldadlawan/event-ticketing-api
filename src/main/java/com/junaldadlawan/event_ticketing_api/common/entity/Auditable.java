@@ -39,4 +39,9 @@ public abstract class Auditable {
     public void markDeleted() {
         this.deletedAt = Instant.now();
     }
+
+    /** Undoes {@link #markDeleted()}. */
+    public void markRestored() {
+        this.deletedAt = null;
+    }
 }

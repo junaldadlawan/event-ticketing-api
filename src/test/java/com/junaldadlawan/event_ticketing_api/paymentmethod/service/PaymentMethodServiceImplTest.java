@@ -46,6 +46,8 @@ class PaymentMethodServiceImplTest {
     private StripeGateway stripeGateway;
     @Mock
     private OrganizationAccessGuard accessGuard;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.order.gateway.PaymentGatewayClient paymentGatewayClient;
 
     private PaymentMethodServiceImpl service;
     private UUID userId;
@@ -53,7 +55,7 @@ class PaymentMethodServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentMethodServiceImpl(paymentMethodRepository, userRepository, stripeCustomerService, stripeGateway, accessGuard);
+        service = new PaymentMethodServiceImpl(paymentMethodRepository, userRepository, stripeCustomerService, stripeGateway, accessGuard, paymentGatewayClient);
         userId = UUID.randomUUID();
         lenient().when(accessGuard.currentUserId()).thenReturn(userId);
         lenient().when(userRepository.findById(userId)).thenReturn(Optional.of(

@@ -14,7 +14,8 @@ import java.util.UUID;
 
 /**
  * DTO for {@link Order}, matching openapi.yaml's {@code Order} schema. {@code total} is what the buyer paid; it
- * includes {@code platformFee}, the platform fee added on top of the ticket price (0 when none applied).
+ * includes {@code platformFee}, the platform fee added on top of the ticket price (0 when none applied or when the organizer or the
+ * platform bears it).
  * {@code tickets} is now populated with the order's actually-issued Tickets
  * (Phase 6a) — {@code from} requires the caller to supply them (resolved via
  * {@code TicketRepository.findByOrderId}) rather than defaulting to empty,
@@ -28,6 +29,7 @@ public record OrderResponse(
         OrderStatus status,
         String promoCode,
         MoneyDto platformFee,
+        MoneyDto gatewayFee,
         MoneyDto total,
         List<TicketResponse> tickets,
         Instant createdAt,
@@ -42,7 +44,8 @@ public record OrderResponse(
                 order.getPayeeId(),
                 order.getStatus(),
                 order.getPromoCode(),
-                new MoneyDto(order.getPlatformFeeAmount(), order.getTotal().getCurrency()),
+                new MoneyDto(order.buyerPlatformFee(), order.getTotal().getCurrency()),
+                new MoneyDto(order.buyerGatewayFee(), order.getTotal().getCurrency()),
                 new MoneyDto(order.getTotal().getAmount(), order.getTotal().getCurrency()),
                 tickets.stream().map(TicketResponse::from).toList(),
                 order.getCreatedAt(),

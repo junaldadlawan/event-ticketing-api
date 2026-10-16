@@ -5,6 +5,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.platformfee.dto.EffectivePlatformFeeResponse;
@@ -37,7 +38,7 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
     // ---- the fee itself ----
 
     @Override
-    public PlatformFeeQuote quote(UUID organizationId, UUID eventId, long ticketTotal, String currency) {
+    public PlatformFeeQuote quote(UUID organizationId, UUID eventId, long ticketTotal, String currency, int ticketCount) {
         if (ticketTotal <= 0) {
             return PlatformFeeQuote.NONE;
         }
@@ -45,19 +46,25 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
         if (rule == null) {
             return PlatformFeeQuote.NONE;
         }
-        long fee;
-        if (rule.getType() == FeeType.PERCENTAGE) {
-            fee = BigDecimal.valueOf(ticketTotal).multiply(rule.getPercentage())
-                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).longValueExact();
-        } else {
-            if (rule.getFlatCurrency() == null || !rule.getFlatCurrency().equalsIgnoreCase(currency)) {
-                log.warn("Platform fee rule {} is a flat fee in {} but the order is in {}; no fee charged",
-                        rule.getId(), rule.getFlatCurrency(), currency);
-                return PlatformFeeQuote.NONE;
-            }
-            fee = rule.getFlatAmount();
+        // A rule can hold a percentage, a fixed amount per TICKET, or both (then the fee is the two added); a fixed amount in
+        // another currency than the order is skipped rather than mixing currencies.
+        boolean flatApplies = rule.getFlatAmount() != null && rule.getFlatCurrency() != null && rule.getFlatCurrency().equalsIgnoreCase(currency);
+        if (rule.getFlatAmount() != null && !flatApplies) {
+            log.warn("Platform fee rule {} has a flat amount in {} but the order is in {}; the flat part is skipped",
+                    rule.getId(), rule.getFlatCurrency(), currency);
         }
-        return new PlatformFeeQuote(fee, rule.getScope(), rule.getType(), rule.getPercentage(), rule.getFlatAmount());
+        if (rule.getPercentage() == null && !flatApplies) {
+            return PlatformFeeQuote.NONE;
+        }
+        long fee = 0;
+        if (rule.getPercentage() != null) {
+            fee += BigDecimal.valueOf(ticketTotal).multiply(rule.getPercentage())
+                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).longValueExact();
+        }
+        if (flatApplies) {
+            fee += Math.multiplyExact(rule.getFlatAmount(), (long) Math.max(ticketCount, 0));
+        }
+        return new PlatformFeeQuote(fee, rule.getScope(), rule.getType(), rule.getPercentage(), rule.getFlatAmount(), rule.getPayer());
     }
 
     /** Event rule, else organization rule, else the platform default. */
@@ -92,21 +99,16 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
 
         PlatformFeeRule rule = findLive(scope, scopeId).orElseGet(() -> PlatformFeeRule.builder()
                 .scope(scope).scopeId(scope == FeeScope.PLATFORM ? null : scopeId).build());
-        rule.setType(request.type());
-        if (request.type() == FeeType.PERCENTAGE) {
-            rule.setPercentage(request.percentage());
-            rule.setFlatAmount(null);
-            rule.setFlatCurrency(null);
-        } else {
-            rule.setPercentage(null);
-            rule.setFlatAmount(request.flatAmount().amount());
-            rule.setFlatCurrency(request.flatAmount().currency());
-        }
+        rule.setType(request.percentage() == null ? FeeType.FLAT : request.flatAmount() == null ? FeeType.PERCENTAGE : FeeType.COMBINED);
+        rule.setPercentage(request.percentage());
+        rule.setFlatAmount(request.flatAmount() == null ? null : request.flatAmount().amount());
+        rule.setFlatCurrency(request.flatAmount() == null ? null : request.flatAmount().currency());
+        rule.setPayer(request.payer() == null ? GatewayFeePayer.CUSTOMER : request.payer());
         PlatformFeeRule saved = ruleRepository.save(rule);
         BusinessAuditLogger.record("platform_fee.set", "PlatformFeeRule", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS,
                 "scope=" + scope + (scopeId == null ? "" : " scopeId=" + scopeId) + " type=" + saved.getType()
-                        + (saved.getType() == FeeType.PERCENTAGE ? " percentage=" + saved.getPercentage()
-                        : " flat=" + saved.getFlatAmount() + " " + saved.getFlatCurrency()));
+                        + " percentage=" + saved.getPercentage() + " flat=" + saved.getFlatAmount() + " " + saved.getFlatCurrency()
+                        + " payer=" + saved.getPayer());
         return PlatformFeeRuleResponse.from(saved);
     }
 
@@ -146,20 +148,11 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
     }
 
     private static void validate(PlatformFeeRuleRequest request) {
-        if (request.type() == FeeType.PERCENTAGE) {
-            if (request.percentage() == null) {
-                throw new BadRequestException("percentage is required for a PERCENTAGE fee");
-            }
-            if (request.flatAmount() != null) {
-                throw new BadRequestException("flatAmount cannot be combined with a PERCENTAGE fee");
-            }
-        } else {
-            if (request.flatAmount() == null) {
-                throw new BadRequestException("flatAmount is required for a FLAT fee");
-            }
-            if (request.percentage() != null) {
-                throw new BadRequestException("percentage cannot be combined with a FLAT fee");
-            }
+        if (request.payer() == GatewayFeePayer.PLATFORM) {
+            throw new BadRequestException("payer must be CUSTOMER or ORGANIZATION: the platform cannot be the payer of its own fee");
+        }
+        if (request.percentage() == null && request.flatAmount() == null) {
+            throw new BadRequestException("percentage or flatAmount is required (or both)");
         }
     }
 }

@@ -8,6 +8,7 @@ import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.cart.service.CartService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.ApiException;
+import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.GoneException;
@@ -18,8 +19,11 @@ import com.junaldadlawan.event_ticketing_api.common.exception.UnprocessableEntit
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.paymentmethod.service.PayMongoCustomerService;
+import com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService;
 import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.order.dto.CheckoutStartResponse;
+import com.junaldadlawan.event_ticketing_api.order.gateway.CardSavingUnavailableException;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
 import com.junaldadlawan.event_ticketing_api.order.entity.CheckoutIdempotencyKey;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
@@ -36,6 +40,9 @@ import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.PaymentRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.PendingCheckoutRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeeCardOrigin;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeService;
 import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeQuote;
 import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
 import com.junaldadlawan.event_ticketing_api.promocode.entity.PromoCode;
@@ -51,6 +58,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -60,8 +68,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Checkout orchestration (Phase 5b). Kept as its own service/module rather
@@ -71,6 +84,7 @@ import java.util.UUID;
  * in one place. See {@link CheckoutIdempotencyKeyManager} for why the
  * idempotency-key claim/release steps live on a separate bean.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CheckoutServiceImpl implements CheckoutService {
@@ -103,17 +117,17 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final PlatformFeeService platformFeeService;
     private final PendingCheckoutRepository pendingCheckoutRepository;
     private final PlatformTransactionManager transactionManager;
+    private final GatewayFeeService gatewayFeeService;
+    private final PayMongoCustomerService payMongoCustomerService;
+    private final PaymentMethodService paymentMethodService;
+    private final CardVaultingStatus cardVaultingStatus;
     private final SecureRandom random = new SecureRandom();
 
     @Override
     @Transactional(noRollbackFor = GoneException.class)
-    public OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken) {
-        return checkout(cartId, idempotencyKey, paymentMethodToken, null);
-    }
-
-    @Override
-    @Transactional(noRollbackFor = GoneException.class)
-    public OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken, String customerId) {
+    public OrderResponse checkout(UUID cartId, UUID idempotencyKey, String paymentMethodToken, String customerId, List<UUID> itemIds) {
+        Set<UUID> selection = toSelection(itemIds);
+        String selectionKey = selectionKey(selection);
         UUID buyerId = accessGuard.currentUserId();
 
         Cart cart = cartRepository.findById(cartId)
@@ -125,7 +139,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             throw new ForbiddenException("Only the cart's own buyer may check out this cart");
         }
 
-        CheckoutIdempotencyKeyManager.ClaimOutcome claim = idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId);
+        CheckoutIdempotencyKeyManager.ClaimOutcome claim = idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, selectionKey);
         if (!claim.freshlyClaimed()) {
             CheckoutIdempotencyKey existing = claim.key();
             // Defense against key reuse across users: this idempotency key
@@ -133,6 +147,7 @@ public class CheckoutServiceImpl implements CheckoutService {
             if (!existing.getBuyerId().equals(buyerId)) {
                 throw new ForbiddenException("This idempotency key was issued by a different buyer");
             }
+            requireSameSelection(existing, selectionKey);
             if (existing.getOrderId() != null) {
                 // Replay of an already-completed checkout: return the same
                 // Order, don't recharge, don't re-touch inventory.
@@ -144,9 +159,8 @@ public class CheckoutServiceImpl implements CheckoutService {
             // request is in-flight right now.
             throw new ConflictException("Checkout already in progress for this idempotency key");
         }
-
         try {
-            return doCheckout(cart, buyerId, paymentMethodToken, customerId, idempotencyKey);
+            return doCheckout(cart, buyerId, paymentMethodToken, customerId, idempotencyKey, selection);
         } catch (RuntimeException ex) {
             // Any failure past this point means the key was never actually
             // used for a completed checkout - free it for retry. This
@@ -161,11 +175,12 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     /** Everything a checkout needs to be priced and issued, worked out once from the locked cart. */
     private record Quote(Cart lockedCart, List<CartItem> items, Event event, UUID payeeId, String promoCode,
-                         PlatformFeeQuote fee, Money total) {
+                         PlatformFeeQuote fee, GatewayFeeQuote gatewayFee, Money total, boolean partial) {
     }
 
-    private OrderResponse doCheckout(Cart cart, UUID buyerId, String paymentMethodToken, String customerId, UUID idempotencyKey) {
-        Quote quote = prepare(cart, buyerId, false);
+    private OrderResponse doCheckout(Cart cart, UUID buyerId, String paymentMethodToken, String customerId, UUID idempotencyKey,
+                                     Set<UUID> selection) {
+        Quote quote = prepare(cart, buyerId, false, selection);
         Money total = quote.total();
 
         // the checkout's own idempotency key goes to the gateway too, so a retried checkout cannot charge twice
@@ -180,14 +195,14 @@ public class CheckoutServiceImpl implements CheckoutService {
                     result.failureReason() != null ? result.failureReason() : "Payment failed");
         }
 
-        return fulfill(quote, buyerId, result.gatewayRef(), idempotencyKey);
+        return fulfill(quote, buyerId, result.gatewayRef(), idempotencyKey, null);
     }
 
     /**
      * Locks the cart and checks everything that must hold before money moves: items, expired holds, paused ticket types, promo
      * usage, and the price (tickets minus promo plus the platform fee). Throws without charging when something is wrong.
      */
-    private Quote prepare(Cart cart, UUID buyerId, boolean onBehalfOfBuyer) {
+    private Quote prepare(Cart cart, UUID buyerId, boolean onBehalfOfBuyer, Set<UUID> selection) {
         UUID cartId = cart.getId();
 
         // Lock the Cart row FIRST, before reading any CartItems (code-reviewer
@@ -205,6 +220,13 @@ public class CheckoutServiceImpl implements CheckoutService {
                 .orElseThrow(() -> new ResourceNotFoundException("Cart " + cartId + " not found"));
 
         List<CartItem> items = cartItemRepository.findByCartId(cartId);
+        if (selection != null) {
+            // only the selected items are priced, held to their expiry and sold; the rest of the cart is left exactly as it is
+            if (!items.stream().map(CartItem::getId).collect(Collectors.toSet()).containsAll(selection)) {
+                throw new BadRequestException("A selected item is not in this cart");
+            }
+            items = items.stream().filter(item -> selection.contains(item.getId())).toList();
+        }
         if (items.isEmpty()) {
             throw new ConflictException("Cart has no items to check out");
         }
@@ -236,17 +258,21 @@ public class CheckoutServiceImpl implements CheckoutService {
         // platform fee) instead of duplicating that pricing/discount math here. The ticket total is the cart total
         // without the fee; the fee itself is quoted again below, next to the event, so the order can snapshot the rule.
         // the payment webhook has no logged-in user, so it reads the cart for the buyer who started the checkout
-        CartResponse cartView = onBehalfOfBuyer ? cartService.getForBuyer(cartId, buyerId) : cartService.get(cartId);
+        List<UUID> selectedIds = selection == null ? null : List.copyOf(selection);
+        CartResponse cartView = selection == null
+                ? (onBehalfOfBuyer ? cartService.getForBuyer(cartId, buyerId) : cartService.get(cartId))
+                : (onBehalfOfBuyer ? cartService.getForBuyer(cartId, buyerId, selectedIds) : cartService.get(cartId, selectedIds));
         MoneyDto totalDto = cartView.total();
         String promoCode = cartView.appliedPromoCode() != null ? cartView.appliedPromoCode().code() : null;
-        long ticketTotal = totalDto.amount() - cartView.platformFee().amount();
+        long ticketTotal = totalDto.amount() - cartView.platformFee().amount() - cartView.gatewayFee().amount();
 
         // BR-PROMO-006 (code-reviewer HIGH finding): re-validate the applied
         // promo code's usage limits immediately before charging, not just at
         // applyPromoCode() time - other buyers may have exhausted the code's
         // usageLimitTotal/usageLimitPerBuyer in the window between this
         // buyer's applyPromoCode() call and this checkout() call.
-        if (lockedCart.getPromoCodeId() != null) {
+        // (priced for a selection, the cart's code counts only when it fits those items: cartView then shows it, otherwise it stays on the cart)
+        if (selection == null ? lockedCart.getPromoCodeId() != null : cartView.appliedPromoCode() != null) {
             PromoCode appliedPromoCode = promoCodeRepository.findById(lockedCart.getPromoCodeId()).orElse(null);
             // Paused or deleted since it was applied: refuse before charging (the buyer can remove the code, or retry
             // once it is resumed). Same message as an unknown code - nothing is revealed about why.
@@ -263,14 +289,26 @@ public class CheckoutServiceImpl implements CheckoutService {
 
         // The platform fee is added on top of the ticket price: the buyer is charged ticket total + fee, the organizer
         // keeps the ticket total (the fee is deducted from the organizer's side when the payout is generated).
-        PlatformFeeQuote fee = platformFeeService.quote(payeeId, event.getId(), ticketTotal, totalDto.currency());
-        Money total = Money.builder().amount(ticketTotal + fee.amount()).currency(totalDto.currency()).build();
+        int ticketCount = items.stream().mapToInt(CartItem::getQuantity).sum();
+        PlatformFeeQuote fee = platformFeeService.quote(payeeId, event.getId(), ticketTotal, totalDto.currency(), ticketCount);
+        // The payment gateway's fee is charged to the buyer only when management made the customer bear it; otherwise it is kept on the
+        // order for the payout (organization) or absorbed (platform). It is worked out on ticket + platform fee, like the cart shows it.
+        GatewayFeeQuote gatewayFee = gatewayFeeService.quote(ticketTotal + fee.chargedToBuyer(), totalDto.currency());
+        Money total = Money.builder().amount(ticketTotal + fee.chargedToBuyer() + gatewayFee.chargedToBuyer()).currency(totalDto.currency()).build();
 
-        return new Quote(lockedCart, items, event, payeeId, promoCode, fee, total);
+        return new Quote(lockedCart, items, event, payeeId, promoCode, fee, gatewayFee, total, selection != null);
+    }
+
+    /** DOMESTIC for a card issued in the Philippines, FOREIGN for one issued anywhere else, null when the gateway did not say. */
+    private static GatewayFeeCardOrigin cardOrigin(String cardCountry) {
+        if (cardCountry == null || cardCountry.isBlank()) {
+            return null;
+        }
+        return "PH".equalsIgnoreCase(cardCountry.trim()) ? GatewayFeeCardOrigin.DOMESTIC : GatewayFeeCardOrigin.FOREIGN;
     }
 
     /** Issues the order, payment record and tickets for a payment that succeeded, and converts the holds into sold seats. */
-    private OrderResponse fulfill(Quote quote, UUID buyerId, String gatewayRef, UUID idempotencyKey) {
+    private OrderResponse fulfill(Quote quote, UUID buyerId, String gatewayRef, UUID idempotencyKey, String cardCountry) {
         Cart lockedCart = quote.lockedCart();
         UUID cartId = lockedCart.getId();
         List<CartItem> items = quote.items();
@@ -278,6 +316,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         UUID payeeId = quote.payeeId();
         String promoCode = quote.promoCode();
         PlatformFeeQuote fee = quote.fee();
+        GatewayFeeQuote gatewayFee = quote.gatewayFee();
         Money total = quote.total();
 
         Order order = Order.builder()
@@ -291,6 +330,15 @@ public class CheckoutServiceImpl implements CheckoutService {
                 .platformFeeType(fee.type())
                 .platformFeePercentage(fee.percentage())
                 .platformFeeFlatAmount(fee.flatAmount())
+                .platformFeePayer(fee.payer())
+                .gatewayFeeAmount(gatewayFee.amount())
+                .gatewayFeePayer(gatewayFee.payer())
+                .gatewayFeePercentage(gatewayFee.percentage())
+                .gatewayFeeFlatAmount(gatewayFee.flatAmount())
+                .gatewayFeeCardOrigin(cardOrigin(cardCountry))
+                .gatewayFeeAppliedAmount(cardOrigin(cardCountry) == GatewayFeeCardOrigin.FOREIGN ? gatewayFee.foreignAmount() : gatewayFee.amount())
+                .gatewayFeeForeignPercentage(gatewayFee.foreignPercentage())
+                .gatewayFeeForeignFlatAmount(gatewayFee.foreignFlatAmount())
                 .total(total)
                 .cartId(cartId)
                 .createdBy(buyerId.toString())
@@ -339,8 +387,11 @@ public class CheckoutServiceImpl implements CheckoutService {
         // auto-flush first) serialize createdAt/updatedAt as null.
         ticketRepository.flush();
 
-        lockedCart.setPromoCodeId(null);
-        cartRepository.save(lockedCart);
+        // a code that did not fit the selection stays on the cart for the rest
+        if (!quote.partial() || promoCode != null) {
+            lockedCart.setPromoCodeId(null);
+            cartRepository.save(lockedCart);
+        }
 
         idempotencyKeyRepository.findById(idempotencyKey).ifPresent(key -> {
             key.setOrderId(savedOrder.getId());
@@ -369,7 +420,9 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     @Override
     @Transactional(noRollbackFor = GoneException.class)
-    public CheckoutStartResponse startCheckout(UUID cartId, UUID idempotencyKey) {
+    public CheckoutStartResponse startCheckout(UUID cartId, UUID idempotencyKey, List<UUID> itemIds, boolean saveCard) {
+        Set<UUID> selection = toSelection(itemIds);
+        String selectionKey = selectionKey(selection);
         UUID buyerId = accessGuard.currentUserId();
         Cart cart = cartRepository.findById(cartId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cart " + cartId + " not found"));
@@ -377,11 +430,12 @@ public class CheckoutServiceImpl implements CheckoutService {
             throw new ForbiddenException("Only the cart's own buyer may check out this cart");
         }
 
-        CheckoutIdempotencyKeyManager.ClaimOutcome claim = idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId);
+        CheckoutIdempotencyKeyManager.ClaimOutcome claim = idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, selectionKey);
         if (!claim.freshlyClaimed()) {
             if (!claim.key().getBuyerId().equals(buyerId)) {
                 throw new ForbiddenException("This idempotency key was issued by a different buyer");
             }
+            requireSameSelection(claim.key(), selectionKey);
             // A repeated start with the same key returns the checkout it already created (still waiting, or already paid).
             return pendingCheckoutRepository.findFirstByIdempotencyKeyOrderByCreatedAtDesc(idempotencyKey)
                     .map(CheckoutStartResponse::from)
@@ -389,9 +443,33 @@ public class CheckoutServiceImpl implements CheckoutService {
         }
 
         try {
-            Quote quote = prepare(cart, buyerId, false);
-            PaymentGatewayClient.PaymentIntentInfo intent = paymentGatewayClient.createPaymentIntent(
-                    quote.total(), "Event ticket order", "checkout-" + idempotencyKey);
+            Quote quote = prepare(cart, buyerId, false, selection);
+            // Saving the card is secondary: if the PayMongo customer cannot be made, the buyer still pays, the card is just not saved
+            String saveForCustomer = null;
+            if (saveCard && cardVaultingStatus.unavailable()) {
+                log.info("The card will not be saved for user {}: PayMongo refused card vaulting a moment ago", buyerId);
+            } else if (saveCard) {
+                try {
+                    saveForCustomer = payMongoCustomerService.getOrCreate(buyerId);
+                } catch (RuntimeException e) {
+                    log.warn("The card will not be saved for user {}: the PayMongo customer could not be created: {}", buyerId, e.toString());
+                }
+            }
+            PaymentGatewayClient.PaymentIntentInfo intent = null;
+            if (saveForCustomer != null) {
+                try {
+                    intent = paymentGatewayClient.createPaymentIntent(quote.total(), "Event ticket order", "checkout-" + idempotencyKey, saveForCustomer);
+                } catch (CardSavingUnavailableException e) {
+                    // only this refusal falls back: any other 4xx or a 5xx still fails the checkout as before
+                    log.warn("PayMongo refused to save the card; the payment goes ahead without saving it: {}", e.getMessage());
+                    cardVaultingStatus.markUnavailable();
+                    saveForCustomer = null;
+                }
+            }
+            if (intent == null) {
+                intent = paymentGatewayClient.createPaymentIntent(quote.total(), "Event ticket order", "checkout-" + idempotencyKey);
+            }
+            String cardSaving = !saveCard ? "NOT_REQUESTED" : saveForCustomer != null ? "REQUESTED" : "UNAVAILABLE";
             PendingCheckout pending = pendingCheckoutRepository.save(PendingCheckout.builder()
                     .cartId(cartId)
                     .buyerId(buyerId)
@@ -400,6 +478,9 @@ public class CheckoutServiceImpl implements CheckoutService {
                     .clientKey(intent.clientKey())
                     .amount(quote.total().getAmount())
                     .currency(quote.total().getCurrency())
+                    .itemIds(selectionKey)
+                    .saveCard(saveForCustomer != null)
+                    .cardSaving(cardSaving)
                     .status(PendingCheckoutStatus.PENDING)
                     .build());
             BusinessAuditLogger.recordAs(buyerId, "checkout.started", "Cart", cartId, BusinessAuditLogger.Outcome.SUCCESS,
@@ -417,35 +498,82 @@ public class CheckoutServiceImpl implements CheckoutService {
      * technical failure (database down) is NOT treated as "cannot issue": it propagates, the webhook answers 500 and PayMongo retries.
      */
     @Override
-    public void onPaymentPaid(String providerIntentId, String providerPaymentId, long amount, String currency) {
+    public void onPaymentPaid(String providerIntentId, String providerPaymentId, long amount, String currency, String cardCountry) {
         Money paid = Money.builder().amount(amount).currency(currency.toUpperCase()).build();
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         String problem = null;
         try {
-            tx.executeWithoutResult(status -> issueOrder(providerIntentId, providerPaymentId, paid));
+            tx.executeWithoutResult(status -> issueOrder(providerIntentId, providerPaymentId, paid, cardCountry));
         } catch (ApiException e) {
             problem = e.getMessage() != null ? e.getMessage() : "The order could not be issued";
         }
         if (problem != null) {
             String reason = problem;
             tx.executeWithoutResult(status -> refundUnissuable(providerIntentId, providerPaymentId, paid, reason));
+        } else {
+            rememberVaultedCard(providerIntentId);
         }
     }
 
+    /** "Save this card": the payment went through, so read what PayMongo vaulted and keep it. Best effort: it never undoes the order. */
+    private void rememberVaultedCard(String providerIntentId) {
+        try {
+            PendingCheckout pending = pendingCheckoutRepository.findByProviderIntentId(providerIntentId).orElse(null);
+            if (pending == null) {
+                log.info("Save card after payment {}: no pending checkout found", providerIntentId);
+                return;
+            }
+            log.info("Save card after payment {}: checkout={} saveCard={} status={}", providerIntentId, pending.getId(), pending.isSaveCard(), pending.getStatus());
+            if (!pending.isSaveCard() || pending.getStatus() != PendingCheckoutStatus.PAID) {
+                return;
+            }
+            String customerId = payMongoCustomerService.getOrCreate(pending.getBuyerId());
+            int saved = paymentMethodService.saveVaultedCards(pending.getBuyerId(), customerId);
+            log.info("Save card after payment {}: paymongoCustomer={} cardsSaved={}", providerIntentId, customerId, saved);
+        } catch (RuntimeException e) {
+            log.warn("The card paid with could not be saved for later (payment {}): {}", providerIntentId, e.toString());
+        }
+    }
+
+    @Override
+    @Transactional(noRollbackFor = PaymentFailedException.class)
+    public CheckoutStartResponse attachSavedCard(UUID checkoutId, String paymentMethodId, String securityCode, String returnUrl) {
+        PendingCheckout pending = pendingCheckoutRepository.findByIdAndBuyerIdForUpdate(checkoutId, accessGuard.currentUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout " + checkoutId + " not found"));
+        if (pending.getStatus() != PendingCheckoutStatus.PENDING || pending.getAttachedAt() != null) {
+            return CheckoutStartResponse.from(pending);   // a repeated call: the card was already attached, never attach twice
+        }
+        PaymentGatewayClient.AttachOutcome outcome = paymentGatewayClient.attachSavedCard(
+                pending.getProviderIntentId(), pending.getClientKey(), paymentMethodId, securityCode, returnUrl);
+        if (outcome.failureReason() != null) {
+            // nothing was charged and the cart was never touched: the buyer can try again with the same cart
+            pending.setStatus(PendingCheckoutStatus.FAILED);
+            pending.setFailureReason(truncate(outcome.failureReason()));
+            pendingCheckoutRepository.save(pending);
+            idempotencyKeyManager.delete(pending.getIdempotencyKey());
+            BusinessAuditLogger.recordAs(pending.getBuyerId(), "checkout.payment_failed", "Cart", pending.getCartId(),
+                    BusinessAuditLogger.Outcome.FAILURE, pending.getFailureReason());
+            throw new PaymentFailedException(outcome.failureReason());
+        }
+        pending.setAttachedAt(Instant.now());
+        pending.setRedirectUrl(outcome.redirectUrl());
+        return CheckoutStartResponse.from(pendingCheckoutRepository.save(pending));
+    }
+
     /** Inside the webhook's transaction: issues the order for a paid checkout, or throws an ApiException to roll everything back. */
-    private void issueOrder(String providerIntentId, String providerPaymentId, Money paid) {
+    private void issueOrder(String providerIntentId, String providerPaymentId, Money paid, String cardCountry) {
         PendingCheckout pending = pendingCheckoutRepository.findByProviderIntentIdForUpdate(providerIntentId).orElse(null);
         if (pending == null || pending.getStatus() != PendingCheckoutStatus.PENDING) {
             return;   // not ours, or a webhook delivered twice: already handled
         }
         Cart cart = cartRepository.findById(pending.getCartId())
                 .orElseThrow(() -> new ResourceNotFoundException("Cart " + pending.getCartId() + " not found"));
-        Quote quote = prepare(cart, pending.getBuyerId(), true);
+        Quote quote = prepare(cart, pending.getBuyerId(), true, parseSelection(pending.getItemIds()));
         if (quote.total().getAmount() != paid.getAmount() || !quote.total().getCurrency().equalsIgnoreCase(paid.getCurrency())) {
             throw new ConflictException("The amount paid does not match the order");
         }
-        OrderResponse order = fulfill(quote, pending.getBuyerId(), providerPaymentId, pending.getIdempotencyKey());
+        OrderResponse order = fulfill(quote, pending.getBuyerId(), providerPaymentId, pending.getIdempotencyKey(), cardCountry);
         pending.setStatus(PendingCheckoutStatus.PAID);
         pending.setOrderId(order.id());
         pendingCheckoutRepository.save(pending);
@@ -488,6 +616,31 @@ public class CheckoutServiceImpl implements CheckoutService {
         return pendingCheckoutRepository.findByIdAndBuyerId(checkoutId, accessGuard.currentUserId())
                 .map(CheckoutStartResponse::from)
                 .orElseThrow(() -> new ResourceNotFoundException("Checkout " + checkoutId + " not found"));
+    }
+
+    /** null = the whole cart; an empty list is a mistake (it would otherwise charge everything), not "nothing". */
+    private static Set<UUID> toSelection(List<UUID> itemIds) {
+        if (itemIds == null) {
+            return null;
+        }
+        if (itemIds.isEmpty()) {
+            throw new BadRequestException("itemIds must not be empty: leave it out to pay the whole cart");
+        }
+        return new LinkedHashSet<>(itemIds);
+    }
+
+    private static String selectionKey(Set<UUID> selection) {
+        return selection == null ? null : selection.stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
+    }
+
+    private static Set<UUID> parseSelection(String key) {
+        return key == null ? null : Arrays.stream(key.split(",")).map(UUID::fromString).collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static void requireSameSelection(CheckoutIdempotencyKey existing, String selectionKey) {
+        if (!Objects.equals(existing.getItemIds(), selectionKey)) {
+            throw new ConflictException("This idempotency key was already used for a different selection of items");
+        }
     }
 
     private static String truncate(String text) {

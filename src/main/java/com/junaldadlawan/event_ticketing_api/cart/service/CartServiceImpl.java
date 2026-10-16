@@ -17,6 +17,8 @@ import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeService;
 import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeService;
 import com.junaldadlawan.event_ticketing_api.promocode.entity.PromoCode;
 import com.junaldadlawan.event_ticketing_api.promocode.enums.DiscountType;
@@ -41,7 +43,9 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -73,6 +77,7 @@ public class CartServiceImpl implements CartService {
     private final OrganizationAccessGuard accessGuard;
     private final EntityManager entityManager;
     private final PlatformFeeService platformFeeService;
+    private final GatewayFeeService gatewayFeeService;
 
     @Override
     @Transactional
@@ -92,26 +97,64 @@ public class CartServiceImpl implements CartService {
     @Override
     @Transactional
     public CartResponse get(UUID cartId) {
+        return get(cartId, null);
+    }
+
+    @Override
+    @Transactional
+    public CartResponse get(UUID cartId, List<UUID> itemIds) {
         Cart cart = getCartOrThrow(cartId);
         requireOwnerBuyer(cart);
+        Set<UUID> selection = validateSelection(cart.getId(), itemIds);
         // Read-only from the caller's point of view (no new holds placed),
         // but still performs the same release side effects as any other
         // contention point: a buyer revisiting their own stale cart should
         // see accurate state, not silently-expired-but-not-yet-cleaned-up
         // holds.
         releaseExpiredHoldsForCart(cart.getId());
-        return toResponse(cart);
+        return toResponse(cart, selection);
     }
 
     @Override
     @Transactional
     public CartResponse getForBuyer(UUID cartId, UUID buyerId) {
+        return getForBuyer(cartId, buyerId, null);
+    }
+
+    @Override
+    @Transactional
+    public CartResponse getForBuyer(UUID cartId, UUID buyerId, List<UUID> itemIds) {
         Cart cart = getCartOrThrow(cartId);
         if (!buyerId.equals(cart.getBuyerId())) {
             throw new ForbiddenException("Only the cart's own buyer may access this cart");
         }
+        Set<UUID> selection = validateSelection(cart.getId(), itemIds);
         releaseExpiredHoldsForCart(cart.getId());
-        return toResponse(cart);
+        return toResponse(cart, selection);
+    }
+
+    /** null = the whole cart. Otherwise every id must be an item of this cart (400) whose hold is still running (409). */
+    private Set<UUID> validateSelection(UUID cartId, List<UUID> itemIds) {
+        if (itemIds == null) {
+            return null;
+        }
+        if (itemIds.isEmpty()) {
+            throw new BadRequestException("itemIds must not be empty: leave it out to use the whole cart");
+        }
+        Set<UUID> selection = new LinkedHashSet<>(itemIds);
+        Map<UUID, CartItem> inCart = cartItemRepository.findByCartId(cartId).stream()
+                .collect(Collectors.toMap(CartItem::getId, item -> item));
+        Instant now = Instant.now();
+        for (UUID id : selection) {
+            CartItem item = inCart.get(id);
+            if (item == null) {
+                throw new BadRequestException("Cart item " + id + " is not in this cart");
+            }
+            if (item.getHoldExpiresAt().isBefore(now)) {
+                throw new ConflictException("The hold on cart item " + id + " has expired");
+            }
+        }
+        return selection;
     }
 
     @Override
@@ -129,18 +172,8 @@ public class CartServiceImpl implements CartService {
         // on sale is purchasable. Allow-listed (rather than DRAFT/CANCELLED/
         // COMPLETED deny-listed) so a future new EventStatus value doesn't
         // silently become purchasable by omission.
-        if (!PURCHASABLE_EVENT_STATUSES.contains(event.getStatus())) {
-            throw new ConflictException("Ticket type is not currently on sale");
-        }
-
-        if (ticketType.isSalesPaused()) {
-            throw new ConflictException("Sales for this ticket type are paused");
-        }
-
         Instant now = Instant.now();
-        if (now.isBefore(ticketType.getSaleStartAt()) || now.isAfter(ticketType.getSaleEndAt())) {
-            throw new ConflictException("Ticket type is not currently on sale");
-        }
+        requireOnSale(ticketType, event, now);
 
         // A cart is constrained to items from a single event at a time: a
         // PromoCode is event-scoped (see applyPromoCode below) and the
@@ -168,6 +201,34 @@ public class CartServiceImpl implements CartService {
         }
 
         return toResponse(cart);
+    }
+
+    /** On sale: the event is purchasable, the ticket type is not paused and inside its sale window. 409 otherwise. */
+    private void requireOnSale(TicketType ticketType, Event event, Instant now) {
+        if (!PURCHASABLE_EVENT_STATUSES.contains(event.getStatus())) {
+            throw new ConflictException("Ticket type is not currently on sale");
+        }
+
+        if (ticketType.isSalesPaused()) {
+            throw new ConflictException("Sales for this ticket type are paused");
+        }
+
+        if (now.isBefore(ticketType.getSaleStartAt()) || now.isAfter(ticketType.getSaleEndAt())) {
+            throw new ConflictException("Ticket type is not currently on sale");
+        }
+    }
+
+    /** The cart's general-admission lines of this ticket type (one after this change; several only in carts made before lines merged). */
+    private List<CartItem> gaLines(UUID cartId, UUID ticketTypeId) {
+        return cartItemRepository.findByCartId(cartId).stream()
+                .filter(line -> line.getSeatId() == null && line.getTicketTypeId().equals(ticketTypeId))
+                .toList();
+    }
+
+    private static void requireWithinMaxPerOrder(TicketType ticketType, int quantityInCart) {
+        if (quantityInCart > ticketType.getMaxPerOrder()) {
+            throw new ConflictException("At most " + ticketType.getMaxPerOrder() + " tickets of this type per order");
+        }
     }
 
     private void addGaItem(Cart cart, TicketType ticketTypeRef, CartItemCreateRequest request, Instant now) {
@@ -199,12 +260,23 @@ public class CartServiceImpl implements CartService {
 
         releaseExpiredGaHolds(ticketType, now);
 
+        // read after the release above, so an expired line of this cart is not merged into
+        List<CartItem> lines = gaLines(cart.getId(), ticketType.getId());
+        requireWithinMaxPerOrder(ticketType, lines.stream().mapToInt(CartItem::getQuantity).sum() + quantity);
         if (ticketType.getQuantityAvailable() < quantity) {
             throw new ConflictException("Seat or GA quantity no longer available");
         }
         ticketType.setQuantityAvailable(ticketType.getQuantityAvailable() - quantity);
         ticketTypeRepository.save(ticketType);
 
+        if (!lines.isEmpty()) {
+            // one line per ticket type: the quantity is added to the existing line, which keeps its hold expiry (a new add never extends
+            // the hold of tickets already held)
+            CartItem line = lines.get(0);
+            line.setQuantity(line.getQuantity() + quantity);
+            cartItemRepository.save(line);
+            return;
+        }
         CartItem item = CartItem.builder()
                 .cartId(cart.getId())
                 .ticketTypeId(ticketType.getId())
@@ -276,6 +348,59 @@ public class CartServiceImpl implements CartService {
 
         releaseHold(item);
         cartItemRepository.delete(item);
+    }
+
+    @Override
+    @Transactional
+    public CartResponse updateItemQuantity(UUID cartId, UUID itemId, int quantity) {
+        if (quantity < 1) {
+            throw new BadRequestException("quantity must be at least 1 (use DELETE to remove the line)");
+        }
+        Cart cart = getCartOrThrow(cartId);
+        requireOwnerBuyer(cart);
+        CartItem line = cartItemRepository.findById(itemId)
+                .filter(ci -> ci.getCartId().equals(cartId))
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item " + itemId + " not found"));
+        if (line.getSeatId() != null) {
+            throw new ConflictException("A reserved seat is one ticket: its quantity cannot change");
+        }
+
+        // Same locking as addGaItem: the ticket type row first, then refresh what was read before the lock, so a concurrent add or change
+        // for the last tickets cannot both succeed.
+        TicketType ticketType = ticketTypeRepository.findByIdForUpdate(line.getTicketTypeId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket type " + line.getTicketTypeId() + " not found"));
+        entityManager.refresh(ticketType);
+        try {
+            entityManager.refresh(line);
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            throw new ResourceNotFoundException("Cart item " + itemId + " not found");
+        }
+
+        Instant now = Instant.now();
+        if (line.getHoldExpiresAt().isBefore(now)) {
+            throw new ConflictException("The hold on this cart item has expired; remove it and add the tickets again");
+        }
+        int difference = quantity - line.getQuantity();
+        if (difference != 0) {
+            int others = gaLines(cartId, ticketType.getId()).stream().filter(other -> !other.getId().equals(itemId))
+                    .mapToInt(CartItem::getQuantity).sum();
+            requireWithinMaxPerOrder(ticketType, others + quantity);
+            if (difference > 0) {
+                Event event = eventRepository.findByIdAndDeletedAtIsNull(ticketType.getEventId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Event " + ticketType.getEventId() + " not found"));
+                requireOnSale(ticketType, event, now);
+                releaseExpiredGaHolds(ticketType, now);
+                if (ticketType.getQuantityAvailable() < difference) {
+                    throw new ConflictException("Seat or GA quantity no longer available");
+                }
+            }
+            // lowering gives the difference back at once; the hold expiry stays as it was
+            ticketType.setQuantityAvailable(ticketType.getQuantityAvailable() - difference);
+            ticketTypeRepository.save(ticketType);
+            line.setQuantity(quantity);
+            cartItemRepository.save(line);
+        }
+        return toResponse(cart);
     }
 
     /** Same release logic used by expired-hold reclaim, for explicit removal. */
@@ -393,7 +518,15 @@ public class CartServiceImpl implements CartService {
     }
 
     private CartResponse toResponse(Cart cart) {
+        return toResponse(cart, null);
+    }
+
+    /** Priced for the items in {@code selection} only (null = every item of the cart). */
+    private CartResponse toResponse(Cart cart, Set<UUID> selection) {
         List<CartItem> items = cartItemRepository.findByCartId(cart.getId());
+        if (selection != null) {
+            items = items.stream().filter(item -> selection.contains(item.getId())).toList();
+        }
         List<CartItemResponse> itemResponses = items.stream().map(CartItemResponse::from).toList();
 
         long subtotal = 0L;
@@ -423,7 +556,7 @@ public class CartServiceImpl implements CartService {
         if (cart.getPromoCodeId() != null) {
             PromoCode promoCode = promoCodeRepository.findById(cart.getPromoCodeId()).orElse(null);
             // A code that was paused or deleted after it was applied no longer gives a discount (the cart still loads).
-            if (promoCode != null && promoCode.isRedeemable()) {
+            if (promoCode != null && promoCode.isRedeemable() && (selection == null || fitsItems(promoCode, items))) {
                 long discount = computeDiscount(promoCode, subtotal);
                 total = subtotal - discount;
                 appliedPromoCode = new AppliedPromoCodeResponse(promoCode.getCode(), new MoneyDto(discount, currency));
@@ -436,9 +569,15 @@ public class CartServiceImpl implements CartService {
         if (feeEventId != null) {
             Event feeEvent = eventRepository.findByIdAndDeletedAtIsNull(feeEventId).orElse(null);
             if (feeEvent != null) {
-                platformFee = platformFeeService.quote(feeEvent.getOrganizationId(), feeEvent.getId(), total, currency).amount();
+                // only the part the customer bears is added to the cart (the organizer's or the platform's share is not)
+                int ticketCount = items.stream().mapToInt(CartItem::getQuantity).sum();
+                platformFee = platformFeeService.quote(feeEvent.getOrganizationId(), feeEvent.getId(), total, currency, ticketCount).chargedToBuyer();
             }
         }
+
+        // The payment gateway's fee, when management made the customer bear it, goes on top of ticket + platform fee.
+        GatewayFeeQuote gatewayFee = gatewayFeeService.quote(total + platformFee, currency);
+        long buyerGatewayFee = gatewayFee.chargedToBuyer();
 
         return new CartResponse(
                 cart.getId(),
@@ -446,9 +585,17 @@ public class CartServiceImpl implements CartService {
                 itemResponses,
                 appliedPromoCode,
                 new MoneyDto(platformFee, currency),
-                new MoneyDto(total + platformFee, currency),
+                new MoneyDto(buyerGatewayFee, currency),
+                new MoneyDto(total + platformFee + buyerGatewayFee, currency),
                 cart.getCreatedAt(),
                 cart.getUpdatedAt());
+    }
+
+    /** A code limited to some ticket types gives no discount to a selection that includes other types; an unlimited code fits any. */
+    private static boolean fitsItems(PromoCode promoCode, List<CartItem> items) {
+        Set<UUID> applicable = promoCode.getApplicableTicketTypeIds();
+        return applicable == null || applicable.isEmpty()
+                || applicable.containsAll(items.stream().map(CartItem::getTicketTypeId).collect(Collectors.toSet()));
     }
 
     private long computeDiscount(PromoCode promoCode, long subtotal) {

@@ -50,6 +50,10 @@ build/
 ### Uploaded images (local dev) ###
 /uploads/
 
+### graphify (local cost/cache) ###
+graphify-out/cost.json
+graphify-out/cache/
+
 ### Local secrets (never commit) ###
 .env
 .env.*

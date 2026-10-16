@@ -19,6 +19,9 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
      * order's total. {@code coalesce} so an order with zero refunds yet
      * sums to 0, not null.
      */
+    /** True when any of the orders has a refund of that status (a pending refund holds the orders back from a payout). */
+    boolean existsByOrderIdInAndStatus(java.util.Collection<UUID> orderIds, com.junaldadlawan.event_ticketing_api.refund.enums.RefundStatus status);
+
     @Query("select coalesce(sum(r.amount.amount), 0) from Refund r where r.orderId = :orderId and r.status = com.junaldadlawan.event_ticketing_api.refund.enums.RefundStatus.COMPLETED")
     long sumCompletedAmountByOrderId(@Param("orderId") UUID orderId);
 }

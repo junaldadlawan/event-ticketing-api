@@ -54,6 +54,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -106,6 +107,8 @@ class CheckoutServiceImplPendingTest {
     @Mock
     private PlatformFeeService platformFeeService;
     @Mock
+    private com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeService gatewayFeeService;
+    @Mock
     private PendingCheckoutRepository pendingCheckoutRepository;
     @Mock
     private PlatformTransactionManager transactionManager;
@@ -124,13 +127,14 @@ class CheckoutServiceImplPendingTest {
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
                 notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
-                pendingCheckoutRepository, transactionManager);
+                pendingCheckoutRepository, transactionManager, gatewayFeeService, null, null, null);
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();
         idempotencyKey = UUID.randomUUID();
         ticketTypeId = UUID.randomUUID();
         lenient().when(accessGuard.currentUserId()).thenReturn(buyerId);
-        lenient().when(platformFeeService.quote(any(), any(), anyLong(), any())).thenReturn(PlatformFeeQuote.NONE);
+        lenient().when(platformFeeService.quote(any(), any(), anyLong(), any(), anyInt())).thenReturn(PlatformFeeQuote.NONE);
+        lenient().when(gatewayFeeService.quote(anyLong(), any())).thenReturn(com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote.NONE);
     }
 
     // ---- fixtures ----
@@ -147,7 +151,7 @@ class CheckoutServiceImplPendingTest {
         lenient().when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(CartItem.builder().id(UUID.randomUUID()).cartId(cartId)
                 .ticketTypeId(ticketTypeId).quantity(1).holdExpiresAt(holdExpiresAt).build()));
         CartResponse view = new CartResponse(cartId, buyerId, List.of(), null,
-                new MoneyDto(0L, "PHP"), new MoneyDto(1000L, "PHP"), Instant.now(), Instant.now());
+                new MoneyDto(0L, "PHP"), new MoneyDto(0L, "PHP"), new MoneyDto(1000L, "PHP"), Instant.now(), Instant.now());
         lenient().when(cartService.get(cartId)).thenReturn(view);
         lenient().when(cartService.getForBuyer(cartId, buyerId)).thenReturn(view);   // the webhook has no logged-in user
         lenient().when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(TicketType.builder()
@@ -159,7 +163,7 @@ class CheckoutServiceImplPendingTest {
     }
 
     private void stubFreshClaim() {
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(null, true));
     }
 
@@ -221,7 +225,7 @@ class CheckoutServiceImplPendingTest {
     void startCheckout_repeatedWithTheSameKey_returnsTheSameCheckout_withoutAnotherIntent() {
         when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart()));
         CheckoutIdempotencyKey existingKey = CheckoutIdempotencyKey.builder().id(idempotencyKey).buyerId(buyerId).cartId(cartId).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(existingKey, false));
         PendingCheckout existing = pending(PendingCheckoutStatus.PENDING, 1000L);
         when(pendingCheckoutRepository.findFirstByIdempotencyKeyOrderByCreatedAtDesc(idempotencyKey)).thenReturn(Optional.of(existing));
@@ -236,7 +240,7 @@ class CheckoutServiceImplPendingTest {
     void startCheckout_aKeyUsedByAnotherBuyer_isForbidden() {
         when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart()));
         CheckoutIdempotencyKey someoneElses = CheckoutIdempotencyKey.builder().id(idempotencyKey).buyerId(UUID.randomUUID()).cartId(cartId).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(someoneElses, false));
 
         assertThatThrownBy(() -> service.startCheckout(cartId, idempotencyKey)).isInstanceOf(ForbiddenException.class);
@@ -246,7 +250,7 @@ class CheckoutServiceImplPendingTest {
     void startCheckout_aKeyInUseWithNoCheckoutYet_isAConflict() {
         when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart()));
         CheckoutIdempotencyKey inFlight = CheckoutIdempotencyKey.builder().id(idempotencyKey).buyerId(buyerId).cartId(cartId).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(inFlight, false));
         when(pendingCheckoutRepository.findFirstByIdempotencyKeyOrderByCreatedAtDesc(idempotencyKey)).thenReturn(Optional.empty());
 
@@ -291,6 +295,34 @@ class CheckoutServiceImplPendingTest {
         assertThat(payment.getValue().getGatewayRef()).isEqualTo("pay_1");   // the payment id a refund needs
         assertThat(payment.getValue().getAmount().getAmount()).isEqualTo(1000L);
         verify(paymentGatewayClient, never()).refund(any(), any());
+    }
+
+    @Test
+    void onPaymentPaid_withAForeignCard_recordsTheForeignFeeThatApplied_andADomesticCardTheDomesticOne() {
+        var feeQuote = new com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote(50, com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.ORGANIZATION,
+                new java.math.BigDecimal("5"), 0L, 80, new java.math.BigDecimal("8"), 0L);
+        when(gatewayFeeService.quote(anyLong(), any())).thenReturn(feeQuote);
+        when(pendingCheckoutRepository.findByProviderIntentIdForUpdate("pi_1")).thenReturn(
+                Optional.of(pending(PendingCheckoutStatus.PENDING, 1000L)), Optional.of(pending(PendingCheckoutStatus.PENDING, 1000L)),
+                Optional.of(pending(PendingCheckoutStatus.PENDING, 1000L)));
+        stubPriceable(Instant.now().plus(10, ChronoUnit.MINUTES));
+        stubIssuing();
+
+        for (String country : new String[] {"US", "PH", null}) {
+            service.onPaymentPaid("pi_1", "pay_1", 1000L, "PHP", country);
+        }
+
+        ArgumentCaptor<Order> orders = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository, org.mockito.Mockito.atLeast(3)).saveAndFlush(orders.capture());
+        var saved = orders.getAllValues();
+        assertThat(saved.get(0).getGatewayFeeCardOrigin()).isEqualTo(com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeeCardOrigin.FOREIGN);
+        assertThat(saved.get(0).getGatewayFeeAppliedAmount()).isEqualTo(80L);
+        assertThat(saved.get(0).getGatewayFeeAmount()).isEqualTo(50L);
+        assertThat(saved.get(0).getGatewayFeeForeignPercentage()).isEqualByComparingTo("8");
+        assertThat(saved.get(1).getGatewayFeeCardOrigin()).isEqualTo(com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeeCardOrigin.DOMESTIC);
+        assertThat(saved.get(1).getGatewayFeeAppliedAmount()).isEqualTo(50L);
+        assertThat(saved.get(2).getGatewayFeeCardOrigin()).isNull();   // the gateway did not say: the domestic fee, as before
+        assertThat(saved.get(2).getGatewayFeeAppliedAmount()).isEqualTo(50L);
     }
 
     @Test

@@ -188,6 +188,28 @@ the comment at the top of `github_oidc.tf` for the two ways to handle
 that (import the existing one, or point the role's trust policy at it
 directly).
 
+## CORS (web app on another origin)
+
+The API answers cross-origin browser calls only for the origins you list. Set them in `terraform.tfvars` (or `-var`), exact origin, no
+trailing slash, never `*`:
+
+```hcl
+cors_allowed_origins = ["https://app.example.com", "https://d1234abcd.cloudfront.net"]
+```
+
+Terraform passes them to the task as `APP_CORS_ALLOWED_ORIGINS` (read by `application-prod.properties` as `app.cors.allowed-origins`), then
+`terraform apply` and let the service roll. The app allows `GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS` on `/api/v1/**`, the request headers
+`Authorization, Content-Type, Accept, Idempotency-Key, X-Request-Id`, exposes `X-Request-Id, Location, Retry-After, Content-Disposition`, and
+caches preflight answers for an hour. No credentials/cookies are allowed (the JWT travels in `Authorization`). The ALB and ECS need nothing
+else: CORS is decided in the app. Leave the list empty when the web app and the API share one origin (for example CloudFront routing
+`/api/*` to the ALB), which needs no CORS at all. Check with:
+
+```bash
+curl -i -X OPTIONS http://<alb_dns_name>/api/v1/events -H "Origin: https://app.example.com" -H "Access-Control-Request-Method: GET"
+```
+
+`Access-Control-Allow-Origin` must echo your origin; an unlisted origin gets `403 Invalid CORS request`.
+
 ## Adding HTTPS
 
 Once you have a domain:

@@ -12,6 +12,7 @@ import com.junaldadlawan.event_ticketing_api.platformfee.dto.PlatformFeeRuleRequ
 import com.junaldadlawan.event_ticketing_api.platformfee.dto.PlatformFeeRuleResponse;
 import com.junaldadlawan.event_ticketing_api.platformfee.entity.PlatformFeeRule;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType;
 import com.junaldadlawan.event_ticketing_api.platformfee.repository.PlatformFeeRuleRepository;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
@@ -89,14 +90,14 @@ class PlatformFeeServiceImplTest {
 
     @Test
     void quote_noRuleAnywhere_isNoFee() {
-        assertThat(service.quote(orgId, eventId, 10_000, "USD")).isEqualTo(PlatformFeeQuote.NONE);
+        assertThat(service.quote(orgId, eventId, 10_000, "USD", 1)).isEqualTo(PlatformFeeQuote.NONE);
     }
 
     @Test
     void quote_percentage_isAPercentOfTheTicketTotal() {
         platformRule(percentage(FeeScope.PLATFORM, null, "5"));
 
-        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD");
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD", 1);
 
         assertThat(quote.amount()).isEqualTo(500L);
         assertThat(quote.scope()).isEqualTo(FeeScope.PLATFORM);
@@ -109,17 +110,17 @@ class PlatformFeeServiceImplTest {
     void quote_percentage_roundsHalfUpToTheMinorUnit() {
         platformRule(percentage(FeeScope.PLATFORM, null, "2.5"));
 
-        assertThat(service.quote(orgId, eventId, 999, "USD").amount()).isEqualTo(25L);   // 24.975
-        assertThat(service.quote(orgId, eventId, 1000, "USD").amount()).isEqualTo(25L);  // 25.0
-        assertThat(service.quote(orgId, eventId, 10, "USD").amount()).isEqualTo(0L);     // 0.25
-        assertThat(service.quote(orgId, eventId, 30, "USD").amount()).isEqualTo(1L);     // 0.75
+        assertThat(service.quote(orgId, eventId, 999, "USD", 1).amount()).isEqualTo(25L);   // 24.975
+        assertThat(service.quote(orgId, eventId, 1000, "USD", 1).amount()).isEqualTo(25L);  // 25.0
+        assertThat(service.quote(orgId, eventId, 10, "USD", 1).amount()).isEqualTo(0L);     // 0.25
+        assertThat(service.quote(orgId, eventId, 30, "USD", 1).amount()).isEqualTo(1L);     // 0.75
     }
 
     @Test
     void quote_flat_isAFixedAmountPerOrder_inTheSameCurrency() {
         platformRule(flat(FeeScope.PLATFORM, null, 250, "USD"));
 
-        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "usd");
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "usd", 1);
 
         assertThat(quote.amount()).isEqualTo(250L);
         assertThat(quote.type()).isEqualTo(FeeType.FLAT);
@@ -131,15 +132,15 @@ class PlatformFeeServiceImplTest {
     void quote_flatInAnotherCurrencyThanTheOrder_isSkipped() {
         platformRule(flat(FeeScope.PLATFORM, null, 250, "EUR"));
 
-        assertThat(service.quote(orgId, eventId, 10_000, "USD")).isEqualTo(PlatformFeeQuote.NONE);
+        assertThat(service.quote(orgId, eventId, 10_000, "USD", 1)).isEqualTo(PlatformFeeQuote.NONE);
     }
 
     @Test
     void quote_aFreeOrder_neverPaysAFee_evenWithAFlatRule() {
         platformRule(flat(FeeScope.PLATFORM, null, 250, "USD"));
 
-        assertThat(service.quote(orgId, eventId, 0, "USD")).isEqualTo(PlatformFeeQuote.NONE);
-        assertThat(service.quote(orgId, eventId, -5, "USD")).isEqualTo(PlatformFeeQuote.NONE);
+        assertThat(service.quote(orgId, eventId, 0, "USD", 1)).isEqualTo(PlatformFeeQuote.NONE);
+        assertThat(service.quote(orgId, eventId, -5, "USD", 1)).isEqualTo(PlatformFeeQuote.NONE);
     }
 
     @Test
@@ -147,7 +148,7 @@ class PlatformFeeServiceImplTest {
         platformRule(percentage(FeeScope.PLATFORM, null, "10"));
         eventRule(percentage(FeeScope.EVENT, eventId, "0"));
 
-        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD");
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD", 1);
 
         assertThat(quote.amount()).isZero();
         assertThat(quote.scope()).isEqualTo(FeeScope.EVENT);
@@ -161,7 +162,7 @@ class PlatformFeeServiceImplTest {
         orgRule(percentage(FeeScope.ORGANIZATION, orgId, "7"));
         eventRule(flat(FeeScope.EVENT, eventId, 123, "USD"));
 
-        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD");
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD", 1);
 
         assertThat(quote.scope()).isEqualTo(FeeScope.EVENT);
         assertThat(quote.amount()).isEqualTo(123L);
@@ -172,7 +173,7 @@ class PlatformFeeServiceImplTest {
         platformRule(percentage(FeeScope.PLATFORM, null, "10"));
         orgRule(percentage(FeeScope.ORGANIZATION, orgId, "7"));
 
-        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD");
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10_000, "USD", 1);
 
         assertThat(quote.scope()).isEqualTo(FeeScope.ORGANIZATION);
         assertThat(quote.amount()).isEqualTo(700L);
@@ -182,7 +183,7 @@ class PlatformFeeServiceImplTest {
     void quote_withNeitherOverride_thePlatformDefaultApplies() {
         platformRule(percentage(FeeScope.PLATFORM, null, "10"));
 
-        assertThat(service.quote(orgId, eventId, 10_000, "USD").amount()).isEqualTo(1000L);
+        assertThat(service.quote(orgId, eventId, 10_000, "USD", 1).amount()).isEqualTo(1000L);
     }
 
     // ---- upsert() ----
@@ -192,7 +193,7 @@ class PlatformFeeServiceImplTest {
         when(ruleRepository.save(any(PlatformFeeRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         PlatformFeeRuleResponse response = service.upsert(FeeScope.PLATFORM, null,
-                new PlatformFeeRuleRequest(FeeType.PERCENTAGE, new BigDecimal("7.5"), null));
+                new PlatformFeeRuleRequest(FeeType.PERCENTAGE, new BigDecimal("7.5"), null, null));
 
         assertThat(response.scope()).isEqualTo(FeeScope.PLATFORM);
         assertThat(response.scopeId()).isNull();
@@ -208,7 +209,7 @@ class PlatformFeeServiceImplTest {
         when(ruleRepository.save(any(PlatformFeeRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         PlatformFeeRuleResponse response = service.upsert(FeeScope.ORGANIZATION, orgId,
-                new PlatformFeeRuleRequest(FeeType.FLAT, null, new MoneyDto(300, "USD")));
+                new PlatformFeeRuleRequest(FeeType.FLAT, null, new MoneyDto(300, "USD"), null));
 
         assertThat(response.scope()).isEqualTo(FeeScope.ORGANIZATION);
         assertThat(response.scopeId()).isEqualTo(orgId);
@@ -224,7 +225,7 @@ class PlatformFeeServiceImplTest {
         when(ruleRepository.save(any(PlatformFeeRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         PlatformFeeRuleResponse response = service.upsert(FeeScope.ORGANIZATION, orgId,
-                new PlatformFeeRuleRequest(FeeType.FLAT, null, new MoneyDto(300, "USD")));
+                new PlatformFeeRuleRequest(FeeType.FLAT, null, new MoneyDto(300, "USD"), null));
 
         ArgumentCaptor<PlatformFeeRule> saved = ArgumentCaptor.forClass(PlatformFeeRule.class);
         verify(ruleRepository).save(saved.capture());
@@ -239,15 +240,15 @@ class PlatformFeeServiceImplTest {
     void upsert_aZeroRate_isAccepted() {
         when(ruleRepository.save(any(PlatformFeeRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ZERO, null));
-        service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.FLAT, null, new MoneyDto(0, "USD")));
+        service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ZERO, null, null));
+        service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.FLAT, null, new MoneyDto(0, "USD"), null));
     }
 
     @Test
     void upsert_forAnUnknownOrganizationOrEvent_throwsResourceNotFound_andSavesNothing() {
         when(organizationRepository.existsById(orgId)).thenReturn(false);
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.empty());
-        PlatformFeeRuleRequest request = new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ONE, null);
+        PlatformFeeRuleRequest request = new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ONE, null, null);
 
         assertThatThrownBy(() -> service.upsert(FeeScope.ORGANIZATION, orgId, request)).isInstanceOf(ResourceNotFoundException.class);
         assertThatThrownBy(() -> service.upsert(FeeScope.EVENT, eventId, request)).isInstanceOf(ResourceNotFoundException.class);
@@ -255,25 +256,68 @@ class PlatformFeeServiceImplTest {
     }
 
     @Test
-    void upsert_aMismatchedRate_throwsBadRequest() {
-        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.PERCENTAGE, null, null)))
-                .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null,
-                new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ONE, new MoneyDto(1, "USD"))))
-                .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.FLAT, null, null)))
-                .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null,
-                new PlatformFeeRuleRequest(FeeType.FLAT, BigDecimal.ONE, new MoneyDto(1, "USD"))))
+    void upsert_withNeitherAPercentageNorAFlatAmount_throwsBadRequest() {
+        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(null, null, null, null)))
                 .isInstanceOf(BadRequestException.class);
         verify(ruleRepository, never()).save(any());
+    }
+
+    @Test
+    void upsert_aPercentageAndAFlatAmountTogether_isStoredAsACombinedRule_andTheTypeSentIsIgnored() {
+        when(ruleRepository.save(any(PlatformFeeRule.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PlatformFeeRuleResponse response = service.upsert(FeeScope.PLATFORM, null,
+                new PlatformFeeRuleRequest(FeeType.PERCENTAGE, new BigDecimal("5"), new MoneyDto(2000, "PHP"), null));
+
+        assertThat(response.type()).isEqualTo(FeeType.COMBINED);
+        assertThat(response.percentage()).isEqualByComparingTo("5");
+        assertThat(response.flatAmount()).isEqualTo(new MoneyDto(2000, "PHP"));
+    }
+
+    @Test
+    void upsert_thePayerDefaultsToTheCustomer_andIsStoredWhenSent() {
+        when(ruleRepository.save(any(PlatformFeeRule.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(null, BigDecimal.ONE, null, null)).payer())
+                .isEqualTo(GatewayFeePayer.CUSTOMER);
+        assertThat(service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(null, BigDecimal.ONE, null, GatewayFeePayer.ORGANIZATION)).payer())
+                .isEqualTo(GatewayFeePayer.ORGANIZATION);
+    }
+
+    @Test
+    void quote_aCombinedRule_isThePercentagePlusTheFlatAmount_andCarriesThePayer() {
+        PlatformFeeRule rule = percentage(FeeScope.PLATFORM, null, "5");
+        rule.setType(FeeType.COMBINED);
+        rule.setFlatAmount(2000L);
+        rule.setFlatCurrency("PHP");
+        rule.setPayer(GatewayFeePayer.ORGANIZATION);
+        platformRule(rule);
+
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10000, "PHP", 1);
+
+        assertThat(quote.amount()).isEqualTo(500L + 2000L);
+        assertThat(quote.payer()).isEqualTo(GatewayFeePayer.ORGANIZATION);
+        assertThat(quote.chargedToBuyer()).isZero();
+    }
+
+    @Test
+    void quote_aCombinedRuleWithAFlatAmountInAnotherCurrency_chargesOnlyThePercentage() {
+        PlatformFeeRule rule = percentage(FeeScope.PLATFORM, null, "5");
+        rule.setFlatAmount(2000L);
+        rule.setFlatCurrency("USD");
+        platformRule(rule);
+
+        PlatformFeeQuote quote = service.quote(orgId, eventId, 10000, "PHP", 1);
+
+        assertThat(quote.amount()).isEqualTo(500L);
+        assertThat(quote.chargedToBuyer()).isEqualTo(500L);
     }
 
     @Test
     void upsert_aNonAdmin_isForbidden_andNothingElseIsTouched() {
         doThrow(new ForbiddenException("Admin access required")).when(accessGuard).requireAdmin();
 
-        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ONE, null)))
+        assertThatThrownBy(() -> service.upsert(FeeScope.PLATFORM, null, new PlatformFeeRuleRequest(FeeType.PERCENTAGE, BigDecimal.ONE, null, null)))
                 .isInstanceOf(ForbiddenException.class);
         verify(ruleRepository, never()).save(any());
     }
