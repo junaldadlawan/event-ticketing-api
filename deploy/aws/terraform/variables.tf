@@ -82,6 +82,20 @@ variable "db_username" {
   default     = "app_user"
 }
 
+variable "payments_gateway" {
+  description = <<-EOT
+    Payment gateway the API uses (PAYMENTS_GATEWAY): "mock" (no real payments) or "paymongo". With "paymongo" the task needs the PayMongo secret
+    key and webhook secret in Secrets Manager (see secrets.tf), or payments and webhooks fail.
+  EOT
+  type        = string
+  default     = "mock"
+
+  validation {
+    condition     = contains(["mock", "paymongo"], var.payments_gateway)
+    error_message = "payments_gateway must be \"mock\" or \"paymongo\"."
+  }
+}
+
 variable "seed_demo_data" {
   description = <<-EOT
     DEMO ONLY. true loads the demo accounts (known passwords, see db/seed/demo-data.sql) and a sample event into the database when the task
