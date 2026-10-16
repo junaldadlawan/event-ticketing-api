@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.platformfee.entity;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Auditable;
+import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType;
 import jakarta.persistence.Column;
@@ -22,8 +23,8 @@ import java.util.UUID;
 
 /**
  * An admin-set platform fee ("admin cut"). At most one live rule per scope: the platform default
- * ({@code scopeId} null), one organization, or one event. A PERCENTAGE rule uses {@code percentage}; a FLAT rule uses
- * {@code flatAmount} + {@code flatCurrency}. Soft-deleted through {@link Auditable#markDeleted()}; deleting an
+ * ({@code scopeId} null), one organization, or one event. A rule has a {@code percentage}, a {@code flatAmount} +
+ * {@code flatCurrency}, or both (then the fee is the percentage plus the flat amount, which is charged for every ticket); {@code payer} says who bears it. Soft-deleted through {@link Auditable#markDeleted()}; deleting an
  * override makes the next less specific rule apply again.
  */
 @Entity
@@ -52,14 +53,20 @@ public class PlatformFeeRule extends Auditable {
     @Column(name = "fee_type", nullable = false, length = 20)
     private FeeType type;
 
-    /** 0-100 with up to two decimals; set for PERCENTAGE, null for FLAT. */
+    /** 0-100 with up to two decimals; null when the rule has no percentage part. */
     @Column(name = "percentage", precision = 5, scale = 2)
     private BigDecimal percentage;
 
-    /** Minor units per order; set for FLAT, null for PERCENTAGE. */
+    /** Minor units per TICKET; null when the rule has no fixed part. */
     @Column(name = "flat_amount")
     private Long flatAmount;
 
     @Column(name = "flat_currency", length = 3)
     private String flatCurrency;
+
+    /** CUSTOMER: added on top of the price. ORGANIZATION: deducted from the organizer's payout. (PLATFORM is no longer accepted.) */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payer", nullable = false, length = 20)
+    @Builder.Default
+    private GatewayFeePayer payer = GatewayFeePayer.CUSTOMER;
 }

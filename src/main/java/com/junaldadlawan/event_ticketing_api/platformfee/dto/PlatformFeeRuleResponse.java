@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.platformfee.dto;
 
+import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer;
 import com.junaldadlawan.event_ticketing_api.platformfee.entity.PlatformFeeRule;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType;
@@ -18,6 +19,7 @@ public record PlatformFeeRuleResponse(
         FeeType type,
         BigDecimal percentage,
         MoneyDto flatAmount,
+        GatewayFeePayer payer,
         Instant createdAt,
         Instant updatedAt) implements Serializable {
 
@@ -25,6 +27,6 @@ public record PlatformFeeRuleResponse(
         return new PlatformFeeRuleResponse(rule.getId(), rule.getScope(), rule.getScopeId(), rule.getType(),
                 rule.getPercentage(),
                 rule.getFlatAmount() == null ? null : new MoneyDto(rule.getFlatAmount(), rule.getFlatCurrency()),
-                rule.getCreatedAt(), rule.getUpdatedAt());
+                rule.getPayer(), rule.getCreatedAt(), rule.getUpdatedAt());
     }
 }

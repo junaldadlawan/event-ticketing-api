@@ -107,6 +107,9 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
      API).
   3. On success, API creates an order, converts each hold into a sale,
      and issues one ticket credential (+ ticket number) per item.
+- **Alternative flow:** The attendee selects some of the cart's items; the
+  quote and the payment are for those only, and the rest stay in the cart
+  with their holds (BR-CART-005).
 - **Exception flow:** Payment fails → cart and holds remain intact for
   retry; a hold that expires mid-checkout fails the attempt.
 - **Postconditions:** Order exists in `pending`→`paid` state; tickets are
@@ -114,6 +117,20 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Related rules:** BR-CART-002, BR-CART-003, BR-PAY-001, BR-TICKET-001,
   BR-TICKET-002, BR-NFR-008 (idempotent — a retried checkout must not
   double-charge or double-issue)
+
+### UC-ATTND-04b: Checkout with PayMongo (card entered in the browser)
+
+- **Preconditions:** `payments.gateway=paymongo`; cart has at least one held item; the order is in PHP.
+- **Main flow:**
+  1. Attendee starts the checkout (`POST /carts/{id}/checkout`, Idempotency-Key, empty body). API prices the cart, creates a PayMongo
+     payment intent and a pending checkout, and answers 202 with `checkoutId` and `clientKey`. No order exists yet.
+  2. The web app collects the card with PayMongo.js (public key), attaches it to the intent with the client key, and follows any
+     3-D Secure redirect back to the return URL.
+  3. PayMongo calls the webhook. On `payment.paid` the API issues the order, payment and tickets; the web app polls
+     `GET /checkouts/{checkoutId}` until it shows PAID with the `orderId`.
+- **Exception flow:** `payment.failed` → status FAILED, cart and holds intact, the same key can be used to try again. Paid but the hold
+  expired meanwhile (or the amount differs) → automatic refund, status REFUNDED. Bad webhook signature → 401. A checkout of another buyer → 404.
+- **Related rules:** BR-CART-002, BR-PM-001 to BR-PM-005
 
 ### UC-ATTND-05: View My Orders & Tickets
 
@@ -211,6 +228,16 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
      (e.g. an owner also acting as organizer or scanner).
   2. No separate approval is required.
 - **Related rules:** BR-AUTH-007, BR-AUTH-008
+
+### UC-OWNER-04: View the Organization's Income
+
+- **Preconditions:** Caller is the organization's owner (or an admin).
+- **Main flow:**
+  1. Owner picks a period (default the last 30 days) and a currency (default PHP).
+  2. API returns the organization's sales, refunds, what came off (platform fee and gateway fee) and its income, with how much is paid out, in
+     payouts, or still owed, and its payouts by status.
+- **Exception flow:** Unknown organization → 404. An organizer or member, or another organization's owner → 403. A bad period or currency → 400.
+- **Related rules:** BR-FIN-003, BR-FIN-004
 
 ### UC-OWNER-03: Manage the Organization's Payout Cards
 
@@ -409,6 +436,16 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
   1. Admin reviews the dispute and takes action.
 - **Related rules:** BR-ADMIN-003
 
+### UC-ADMIN-10: View the Platform's Finance Summary
+
+- **Preconditions:** Caller is an admin.
+- **Main flow:**
+  1. Admin picks a period (default the last 30 days) and a currency (default PHP).
+  2. API returns gross sales, refunds and net sales; the platform's fee income, the gateway cost it bears and its net income; the gateway fees by who
+     bore them; what the organizations are owed (paid out, in payouts, not yet in a payout); and the payouts by status.
+- **Exception flow:** From after to, a period over 366 days or a bad currency → 400. Non-admin → 403.
+- **Related rules:** BR-FIN-001 to BR-FIN-003
+
 ### UC-ADMIN-04: View Platform-Wide Analytics
 
 - **Preconditions:** Caller is an admin.
@@ -434,15 +471,40 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 
 - **Preconditions:** Caller is an admin.
 - **Main flow:**
-  1. Admin sets the platform-wide default fee as a percentage or a flat amount per order.
+  1. Admin sets the platform-wide default fee as a percentage, a flat amount per ticket, or both.
   2. Admin may override it for one organization or one event (a rate of 0 waives the fee), and may remove an override again.
   3. Admin may check which rule currently applies to an event.
 - **Exception flow:** Unknown organization or event → 404. Missing, negative or over-100 percentage, a flat amount without currency, or a rule that mixes both kinds → 400. Non-admin → 403.
 - **Related rules:** BR-FEE-001, BR-FEE-002, BR-FEE-003
 
+### UC-ADMIN-11: Generate Payouts in a Batch
+
+- **Preconditions:** Caller is an admin.
+- **Main flow:**
+  1. Admin picks a period and whether to include only completed events or all events, and optionally one organization.
+  2. API lists what can be paid out, one line per organization and event, with the amount and READY or ON_HOLD.
+  3. Admin ticks the READY lines and generates the payouts. API creates one scheduled payout per line, each recording its event, and marks those
+     orders as settled.
+- **Alternate flow:** A line is on hold (a refund is still pending, or two currencies) → it cannot be ticked; if it became held since the list was
+  shown, the whole batch is refused and nothing is created.
+- **Exception flow:** Nothing due for a line, an organization without a payout destination, or an already settled line → 409. Empty or duplicated
+  list, or a bad period → 400. Unknown organization or an event that is not the organization's → 404. Non-admin → 403.
+- **Related rules:** BR-PAY-016, BR-PAY-017, BR-PAY-018
+
+### UC-ADMIN-09: Send a Payout to the Organizer (PayMongo)
+
+- **Preconditions:** Caller is an admin; a SCHEDULED (or FAILED) payout exists; the organization has a payout account; the PayMongo wallet is funded.
+- **Main flow:**
+  1. Admin sends the payout. API marks it PROCESSING and sends its net amount from the platform wallet to the organization's bank or e-wallet account.
+  2. PayMongo reports the transfer ending (webhook, or the admin refreshes the payout). API marks the payout PAID.
+  3. The organization's owner or organizer sees the payout PAID.
+- **Alternate flow:** The transfer fails (wrong account, wallet balance, bank down) → the payout is FAILED with the reason; fix it and send again.
+- **Exception flow:** The payout is already PROCESSING or PAID, has nothing to send, or the organization has no payout account → 409. PayMongo cannot be reached → 502 and the payout is FAILED with a warning to check PayMongo first. Non-admin → 403.
+- **Related rules:** BR-PAY-012, BR-PAY-013, BR-PAY-014
+
 ### UC-ADMIN-07: Generate an Organization Payout
 
-- **Preconditions:** Caller is an admin; the organization has a primary payout card and has paid orders in the period that are not in a payout yet.
+- **Preconditions:** Caller is an admin; the organization has a primary payout card (a payout account with PayMongo) and has paid orders in the period that are not in a payout yet.
 - **Main flow:**
   1. Admin picks the organization and a period (start and end day).
   2. API totals the due orders: gross (paid minus refunds), the platform fees, and the net the organizer is owed.
@@ -451,6 +513,22 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
   4. The organization's owner or organizer can then see the payout with its fees.
 - **Exception flow:** The organization has no primary payout card, nothing is due in the period, or the orders use more than one currency → 409. End before start or in the future → 400. Non-admin → 403.
 - **Related rules:** BR-FEE-007, BR-FEE-008, BR-PAY-006, BR-PAY-011
+
+### UC-ADMIN-08: Set the Payment Gateway Fee
+
+- **Preconditions:** Caller is an admin.
+- **Main flow:**
+  1. Admin reads the current setting (`GET /payment-gateway-fee`).
+  2. Admin sets the two numbers of the gateway's rate, the percentage (up to three decimals, for example 3.125) and the fixed amount
+     (for example PHP 13.39), and who pays it: the customer or the organization
+     (`PUT /payment-gateway-fee`).
+  3. Admin may also set the rate for cards issued abroad (`foreignPercentage`, `foreignFlatAmount`), which PayMongo charges more; left out, a
+     foreign card costs the domestic rate.
+  4. From then on a cart shows the fee when the customer pays it and adds it to the total; orders placed afterwards carry their own
+     snapshot, and payouts deduct it when the customer or the organization bears it.
+- **Exception flow:** Non-admin → 403. A percentage outside 0-100 or with more than three decimals, a negative or lower-case-currency flat
+  amount, a foreign flat amount in another currency than the domestic one, or an unknown payer → 400.
+- **Related rules:** BR-GWFEE-001 to BR-GWFEE-009
 
 ## Not covered (no requirement to derive a use case from)
 

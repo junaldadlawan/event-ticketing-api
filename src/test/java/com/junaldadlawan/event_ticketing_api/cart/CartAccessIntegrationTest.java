@@ -29,6 +29,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRep
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -72,6 +73,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@ExtendWith(com.junaldadlawan.event_ticketing_api.common.NoFeesExtension.class)
 class CartAccessIntegrationTest {
 
     @Autowired

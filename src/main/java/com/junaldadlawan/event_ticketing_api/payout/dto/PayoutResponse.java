@@ -20,10 +20,20 @@ public record PayoutResponse(
         LocalDate periodEnd,
         PayoutStatus status,
         UUID payoutCardId,
+        UUID payoutAccountId,
+        String transferId,
+        String failureReason,
+        UUID eventId,
+        String eventTitle,
         Instant createdAt,
         Instant updatedAt) implements Serializable {
 
     public static PayoutResponse from(Payout payout) {
+        return from(payout, null);
+    }
+
+    /** {@code eventTitle} is the title of the event a batch payout settles (null for a period payout). */
+    public static PayoutResponse from(Payout payout, String eventTitle) {
         return new PayoutResponse(
                 payout.getId(),
                 payout.getOrganizationId(),
@@ -34,6 +44,11 @@ public record PayoutResponse(
                 payout.getPeriodEnd(),
                 payout.getStatus(),
                 payout.getPayoutCardId(),
+                payout.getPayoutAccountId(),
+                payout.getTransferId(),
+                payout.getFailureReason(),
+                payout.getEventId(),
+                eventTitle,
                 payout.getCreatedAt(),
                 payout.getUpdatedAt());
     }

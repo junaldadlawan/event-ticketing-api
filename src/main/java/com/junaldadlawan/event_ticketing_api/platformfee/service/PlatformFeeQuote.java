@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.platformfee.service;
 
+import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope;
 import com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType;
 
@@ -14,8 +15,14 @@ public record PlatformFeeQuote(
         FeeScope scope,
         FeeType type,
         BigDecimal percentage,
-        Long flatAmount) {
+        Long flatAmount,
+        GatewayFeePayer payer) {
 
     /** No rule applies: no fee. */
-    public static final PlatformFeeQuote NONE = new PlatformFeeQuote(0, null, null, null, null);
+    public static final PlatformFeeQuote NONE = new PlatformFeeQuote(0, null, null, null, null, null);
+
+    /** The part the buyer pays on top of the price: the whole fee when the customer bears it, otherwise nothing. */
+    public long chargedToBuyer() {
+        return payer == GatewayFeePayer.CUSTOMER ? amount : 0;
+    }
 }

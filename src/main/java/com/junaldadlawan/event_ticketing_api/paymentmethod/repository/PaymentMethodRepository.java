@@ -20,4 +20,9 @@ public interface PaymentMethodRepository extends JpaRepository<PaymentMethod, UU
     long countByUserIdAndDeletedAtIsNull(UUID userId);
 
     boolean existsByUserIdAndStripePaymentMethodIdAndDeletedAtIsNull(UUID userId, String stripePaymentMethodId);
+
+    /** Including removed cards (a removed card is only brought back by an explicit "save this card"). */
+    Optional<PaymentMethod> findFirstByUserIdAndPaymongoPaymentMethodId(UUID userId, String paymongoPaymentMethodId);
+
+    List<PaymentMethod> findByUserIdAndPaymongoPaymentMethodIdIsNullAndDeletedAtIsNull(UUID userId);
 }

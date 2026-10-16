@@ -47,8 +47,12 @@ organization's events only.
 | Manage check-in config and scanner devices | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | View orders, event analytics | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Issue refunds | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| View the organization's income summary | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| View the platform's finance summary (income, gross, net, payouts) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | View the organization's payouts and payout cards | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Add, remove or choose the primary payout card | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Set or remove the payout account (bank or e-wallet) | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Send a payout, refresh its transfer, view the payout wallet (balance, status, limits) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | **Check-in** | | | | | | | | |
 | Download the offline ticket list, validate tickets, send fallback scans | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Platform administration** | | | | | | | | |
@@ -57,7 +61,9 @@ organization's events only.
 | Suspend, reinstate, remove, delete or demote an **admin** account | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Make someone an admin | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Manage users, categories, posts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| List what can be paid out and generate payouts in a batch | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Set platform fee rules, generate payouts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Set the payment gateway fee and who pays it (customer, organization or platform) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Platform analytics, audit log, handle disputes | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 
 Notes

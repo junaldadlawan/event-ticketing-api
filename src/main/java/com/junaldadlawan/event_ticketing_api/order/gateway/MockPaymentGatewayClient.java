@@ -1,7 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.order.gateway;
 
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -17,7 +17,7 @@ import java.util.UUID;
  * succeeds with a fake {@code gatewayRef}.
  */
 @Component
-@ConditionalOnProperty(name = "payments.gateway", havingValue = "mock", matchIfMissing = true)
+@ConditionalOnExpression("'${payments.gateway:mock}' == 'mock'")
 public class MockPaymentGatewayClient implements PaymentGatewayClient {
 
     private static final String FAILING_TOKEN_PREFIX = "tok_fail";

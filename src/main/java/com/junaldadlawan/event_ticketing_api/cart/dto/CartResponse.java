@@ -13,8 +13,9 @@ import java.util.UUID;
  * {@code appliedPromoCode}, and {@code total} require cross-referencing
  * {@code CartItem}/{@code TicketType}/{@code PromoCode} and are computed
  * live by {@code CartServiceImpl}, not stored on {@code Cart} itself. {@code platformFee} is the platform fee that
- * will be added on top of the ticket price (after any promo discount); {@code total} is what the buyer will pay,
- * fee included.
+ * will be added on top of the ticket price (after any promo discount; its fixed part is charged per ticket); {@code gatewayFee} is the payment
+ * gateway's fee the buyer pays on top (0 unless management made the customer bear it); {@code total} is what the buyer will pay,
+ * fees included. Priced for a selection ({@code ?itemIds=}), {@code items} and every amount are for those items only.
  */
 public record CartResponse(
         UUID id,
@@ -22,6 +23,7 @@ public record CartResponse(
         List<CartItemResponse> items,
         AppliedPromoCodeResponse appliedPromoCode,
         MoneyDto platformFee,
+        MoneyDto gatewayFee,
         MoneyDto total,
         Instant createdAt,
         Instant updatedAt) implements Serializable {

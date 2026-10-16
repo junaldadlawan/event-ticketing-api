@@ -66,6 +66,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -130,6 +131,11 @@ class CheckoutServiceImplTest {
 
     @Mock
     private PlatformFeeService platformFeeService;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeService gatewayFeeService;
+
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.order.repository.PendingCheckoutRepository pendingCheckoutRepository;
 
     private CheckoutServiceImpl service;
 
@@ -143,8 +149,10 @@ class CheckoutServiceImplTest {
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
-                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService);
-        lenient().when(platformFeeService.quote(any(), any(), anyLong(), any())).thenReturn(PlatformFeeQuote.NONE);
+                notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
+                pendingCheckoutRepository, org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class), gatewayFeeService, null, null, null);
+        lenient().when(platformFeeService.quote(any(), any(), anyLong(), any(), anyInt())).thenReturn(PlatformFeeQuote.NONE);
+        lenient().when(gatewayFeeService.quote(anyLong(), any())).thenReturn(com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote.NONE);
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();
         idempotencyKey = UUID.randomUUID();
@@ -211,11 +219,11 @@ class CheckoutServiceImplTest {
         AppliedPromoCodeResponse applied = promoCode != null
                 ? new AppliedPromoCodeResponse(promoCode, new MoneyDto(0L, "USD"))
                 : null;
-        return new CartResponse(cartId, buyerId, List.of(), applied, new MoneyDto(0L, "USD"), new MoneyDto(total, "USD"), Instant.now(), Instant.now());
+        return new CartResponse(cartId, buyerId, List.of(), applied, new MoneyDto(0L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(total, "USD"), Instant.now(), Instant.now());
     }
 
     private void stubFreshClaim() {
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(null, true));
     }
 
@@ -251,7 +259,7 @@ class CheckoutServiceImplTest {
         when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
         CheckoutIdempotencyKey existing = CheckoutIdempotencyKey.builder()
                 .id(idempotencyKey).buyerId(UUID.randomUUID()).cartId(UUID.randomUUID()).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(existing, false));
 
         assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
@@ -269,7 +277,7 @@ class CheckoutServiceImplTest {
         UUID existingOrderId = UUID.randomUUID();
         CheckoutIdempotencyKey existing = CheckoutIdempotencyKey.builder()
                 .id(idempotencyKey).buyerId(buyerId).cartId(cartId).orderId(existingOrderId).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(existing, false));
         Order existingOrder = Order.builder()
                 .id(existingOrderId).buyerId(buyerId).payeeType(PayeeType.ORGANIZATION).payeeId(UUID.randomUUID())
@@ -294,7 +302,7 @@ class CheckoutServiceImplTest {
         // orderId still null: a genuinely concurrent request already claimed this key, not yet completed.
         CheckoutIdempotencyKey existing = CheckoutIdempotencyKey.builder()
                 .id(idempotencyKey).buyerId(buyerId).cartId(cartId).orderId(null).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(existing, false));
 
         assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
@@ -688,7 +696,7 @@ class CheckoutServiceImplTest {
         UUID existingOrderId = UUID.randomUUID();
         CheckoutIdempotencyKey existing = CheckoutIdempotencyKey.builder()
                 .id(idempotencyKey).buyerId(buyerId).cartId(cartId).orderId(existingOrderId).build();
-        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId))
+        when(idempotencyKeyManager.claim(idempotencyKey, buyerId, cartId, null))
                 .thenReturn(new CheckoutIdempotencyKeyManager.ClaimOutcome(existing, false));
         Order existingOrder = Order.builder()
                 .id(existingOrderId).buyerId(buyerId).payeeType(PayeeType.ORGANIZATION).payeeId(UUID.randomUUID())
@@ -741,12 +749,13 @@ class CheckoutServiceImplTest {
                 gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES))));
         // the cart view already shows ticket total 1000 + fee 100 = 1100
         when(cartService.get(cartId)).thenReturn(new CartResponse(cartId, buyerId, List.of(), null,
-                new MoneyDto(100L, "USD"), new MoneyDto(1100L, "USD"), Instant.now(), Instant.now()));
+                new MoneyDto(100L, "USD"), new MoneyDto(0L, "USD"), new MoneyDto(1100L, "USD"), Instant.now(), Instant.now()));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
-        when(platformFeeService.quote(orgId, eventId, 1000L, "USD")).thenReturn(new PlatformFeeQuote(100L,
+        when(platformFeeService.quote(orgId, eventId, 1000L, "USD", 1)).thenReturn(new PlatformFeeQuote(100L,
                 com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeScope.ORGANIZATION,
-                com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType.PERCENTAGE, BigDecimal.TEN, null));
+                com.junaldadlawan.event_ticketing_api.platformfee.enums.FeeType.PERCENTAGE, BigDecimal.TEN, null,
+                com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.CUSTOMER));
         when(paymentGatewayClient.charge(org.mockito.ArgumentMatchers.eq("tok_ok"), org.mockito.ArgumentMatchers.isNull(), any(), org.mockito.ArgumentMatchers.anyString())).thenReturn(PaymentResult.success("mock_ref_fee"));
         when(orderRepository.saveAndFlush(any())).thenAnswer(inv -> {
             Order o = inv.getArgument(0);

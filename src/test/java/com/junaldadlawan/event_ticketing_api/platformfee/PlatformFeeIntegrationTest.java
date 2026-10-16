@@ -121,6 +121,7 @@ class PlatformFeeIntegrationTest {
     private final List<UUID> payoutIds = new ArrayList<>();
     private final List<UUID> payoutCardIds = new ArrayList<>();
     private UUID setAsideDefault;
+    private java.util.Map<String, Object> originalGatewayFee;
     private Instant startedAt;
 
     private String admin;
@@ -130,6 +131,9 @@ class PlatformFeeIntegrationTest {
     @BeforeEach
     void setUp() {
         startedAt = Instant.now().minusSeconds(1);
+        // the payment gateway fee setting is the admin's real one; these tests are about the platform fee, so it is switched off and put back
+        originalGatewayFee = jdbc.queryForMap("select percentage, flat_amount, flat_currency, payer, foreign_percentage, foreign_flat_amount from payment_gateway_fee_settings where id = 1");
+        jdbc.update("update payment_gateway_fee_settings set percentage = 0, flat_amount = 0, payer = 'PLATFORM', foreign_percentage = null, foreign_flat_amount = null where id = 1");
         PlatformFeeRule existing = ruleRepository.findByScopeAndScopeIdIsNullAndDeletedAtIsNull(FeeScope.PLATFORM).orElse(null);
         if (existing != null) {
             setAsideDefault = existing.getId();
@@ -163,6 +167,8 @@ class PlatformFeeIntegrationTest {
         if (setAsideDefault != null) {
             jdbc.update("update platform_fee_rules set deleted_at = null where id = ?", setAsideDefault);
         }
+        jdbc.update("update payment_gateway_fee_settings set percentage = ?, flat_amount = ?, flat_currency = ?, payer = ?, foreign_percentage = ?, foreign_flat_amount = ? where id = 1",
+                originalGatewayFee.get("percentage"), originalGatewayFee.get("flat_amount"), originalGatewayFee.get("flat_currency"), originalGatewayFee.get("payer"), originalGatewayFee.get("foreign_percentage"), originalGatewayFee.get("foreign_flat_amount"));
     }
 
     // ---- fixtures ----
@@ -298,10 +304,70 @@ class PlatformFeeIntegrationTest {
         putRule("/api/v1/platform-fees/default", "{\"type\":\"PERCENTAGE\",\"percentage\":101}", 400);
         putRule("/api/v1/platform-fees/default", "{\"type\":\"PERCENTAGE\",\"percentage\":-1}", 400);
         putRule("/api/v1/platform-fees/default", "{\"type\":\"FLAT\"}", 400);
-        putRule("/api/v1/platform-fees/default", "{\"type\":\"FLAT\",\"percentage\":5,\"flatAmount\":{\"amount\":5,\"currency\":\"USD\"}}", 400);
+        putRule("/api/v1/platform-fees/default", "{\"percentage\":5,\"payer\":\"NOBODY\"}", 400);
+        putRule("/api/v1/platform-fees/default", "{}", 400);
         putRule("/api/v1/platform-fees/organizations/" + UUID.randomUUID(), "{\"type\":\"PERCENTAGE\",\"percentage\":5}", 404);
         putRule("/api/v1/platform-fees/events/" + UUID.randomUUID(), "{\"type\":\"PERCENTAGE\",\"percentage\":5}", 404);
         assertThat(ruleRepository.findByScopeAndScopeIdIsNullAndDeletedAtIsNull(FeeScope.PLATFORM)).isEmpty();
+    }
+
+    // ---- a rule can hold both numbers, and says who bears the fee ----
+
+    @Test
+    void aRuleCanHoldAPercentageAndAFlatAmount_andTheCustomerOrTheOrganizationBearsIt() throws Exception {
+        UUID orgId = org();
+        payoutCard(orgId);
+        UUID tt = ticketType(event(orgId), 1000);   // 10% + 50 = 150 on this ticket
+        String both = "{\"percentage\":10,\"flatAmount\":{\"amount\":50,\"currency\":\"USD\"},\"payer\":\"";
+
+        // the organization bears it: the buyer pays the price only, the fee comes off the organizer's payout
+        putRule("/api/v1/platform-fees/default", both + "ORGANIZATION\"}", 200);
+        JsonNode cartView = cart(cartWith(tt, 1));
+        assertThat(cartView.get("platformFee").get("amount").asLong()).isZero();
+        assertThat(cartView.get("total").get("amount").asLong()).isEqualTo(1000L);
+        JsonNode order = checkout(cartWith(tt, 1));
+        assertThat(order.get("total").get("amount").asLong()).isEqualTo(1000L);
+        Order stored = orderRepository.findById(UUID.fromString(order.get("id").asText())).orElseThrow();
+        assertThat(stored.getPlatformFeeAmount()).isEqualTo(150L);
+        assertThat(stored.getPlatformFeePayer()).isEqualTo(com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer.ORGANIZATION);
+        assertThat(stored.getPlatformFeeType()).isEqualTo(FeeType.COMBINED);
+        JsonNode payout = generatePayout(orgId, admin, 201);
+        assertThat(payout.get("gross").get("amount").asLong()).isEqualTo(1000L);
+        assertThat(payout.get("fees").get("amount").asLong()).isEqualTo(150L);
+        assertThat(payout.get("net").get("amount").asLong()).isEqualTo(850L);
+
+        // the customer bears it (also what a rule without a payer means): added on top, the organizer still nets the price
+        putRule("/api/v1/platform-fees/default", "{\"percentage\":10,\"flatAmount\":{\"amount\":50,\"currency\":\"USD\"}}", 200);
+        order = checkout(cartWith(tt, 1));
+        assertThat(order.get("platformFee").get("amount").asLong()).isEqualTo(150L);
+        assertThat(order.get("total").get("amount").asLong()).isEqualTo(1150L);
+        payout = generatePayout(orgId, admin, 201);
+        assertThat(payout.get("gross").get("amount").asLong()).isEqualTo(1150L);
+        assertThat(payout.get("net").get("amount").asLong()).isEqualTo(1000L);
+    }
+
+    // ---- the platform is never the payer ----
+
+    @Test
+    void platformIsRefusedAsThePayer_forBothFees_andOldRowsBecomeCustomer() throws Exception {
+        putRule("/api/v1/platform-fees/default", "{\"percentage\":5,\"payer\":\"PLATFORM\"}", 400);
+        mockMvc.perform(put("/api/v1/payment-gateway-fee").header("Authorization", admin).contentType("application/json")
+                .content("{\"percentage\":3.5,\"payer\":\"PLATFORM\"}")).andExpect(status().isBadRequest());
+        assertThat(ruleRepository.findByScopeAndScopeIdIsNullAndDeletedAtIsNull(FeeScope.PLATFORM)).isEmpty();   // nothing was saved
+
+        // a rule and a gateway setting stored before this was refused: the migration turns them into CUSTOMER
+        percentage("/api/v1/platform-fees/default", "5");
+        jdbc.update("update platform_fee_rules set payer = 'PLATFORM' where created_at >= ?", java.sql.Timestamp.from(startedAt));
+        jdbc.update("update payment_gateway_fee_settings set payer = 'PLATFORM' where id = 1");
+
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
+                    new org.springframework.core.io.ClassPathResource("db/migration/V51__payer_never_platform.sql"));
+        }
+
+        assertThat(jdbc.queryForObject("select payer from payment_gateway_fee_settings where id = 1", String.class)).isEqualTo("CUSTOMER");
+        assertThat(jdbc.queryForObject("select payer from platform_fee_rules where created_at >= ? and deleted_at is null and scope = 'PLATFORM'",
+                String.class, java.sql.Timestamp.from(startedAt))).isEqualTo("CUSTOMER");
     }
 
     // ---- the cart shows the fee, the most specific rule wins ----
@@ -324,15 +390,15 @@ class PlatformFeeIntegrationTest {
         assertThat(platform.get("platformFee").get("currency").asText()).isEqualTo("USD");
 
         flat("/api/v1/platform-fees/organizations/" + orgId, 50);
-        assertThat(cart(cartId).get("platformFee").get("amount").asLong()).isEqualTo(50L);
-        assertThat(cart(cartId).get("total").get("amount").asLong()).isEqualTo(2050L);
+        assertThat(cart(cartId).get("platformFee").get("amount").asLong()).isEqualTo(100L);
+        assertThat(cart(cartId).get("total").get("amount").asLong()).isEqualTo(2100L);
 
         percentage("/api/v1/platform-fees/events/" + eventId, "0");   // a waiver for this event
         assertThat(cart(cartId).get("platformFee").get("amount").asLong()).isZero();
         assertThat(cart(cartId).get("total").get("amount").asLong()).isEqualTo(2000L);
 
         mockMvc.perform(delete("/api/v1/platform-fees/events/{id}", eventId).header("Authorization", admin)).andExpect(status().isNoContent());
-        assertThat(cart(cartId).get("platformFee").get("amount").asLong()).isEqualTo(50L);
+        assertThat(cart(cartId).get("platformFee").get("amount").asLong()).isEqualTo(100L);
         mockMvc.perform(delete("/api/v1/platform-fees/organizations/{id}", orgId).header("Authorization", admin)).andExpect(status().isNoContent());
         assertThat(cart(cartId).get("platformFee").get("amount").asLong()).isEqualTo(200L);
 
@@ -409,15 +475,15 @@ class PlatformFeeIntegrationTest {
     }
 
     @Test
-    void aFlatFeeIsPerOrder_notPerTicket() throws Exception {
+    void aFlatFeeIsPerTicket_notPerOrder() throws Exception {
         UUID orgId = org();
         flat("/api/v1/platform-fees/organizations/" + orgId, 75);
         UUID cartId = cartWith(ticketType(event(orgId), 1000), 4);
 
         JsonNode order = checkout(cartId);
 
-        assertThat(order.get("platformFee").get("amount").asLong()).isEqualTo(75L);
-        assertThat(order.get("total").get("amount").asLong()).isEqualTo(4075L);
+        assertThat(order.get("platformFee").get("amount").asLong()).isEqualTo(300L);
+        assertThat(order.get("total").get("amount").asLong()).isEqualTo(4300L);
     }
 
     @Test

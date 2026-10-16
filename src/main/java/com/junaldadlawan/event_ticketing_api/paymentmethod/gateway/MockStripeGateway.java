@@ -1,13 +1,16 @@
 package com.junaldadlawan.event_ticketing_api.paymentmethod.gateway;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/** The default gateway ({@code payments.gateway=mock}): no Stripe call is ever made. */
+/**
+ * The default gateway ({@code payments.gateway=mock}): no Stripe call is ever made. Also used while {@code payments.gateway=paymongo},
+ * where saved cards are not on PayMongo yet (only the stripe gateway swaps it for the real one).
+ */
 @Component
-@ConditionalOnProperty(name = "payments.gateway", havingValue = "mock", matchIfMissing = true)
+@ConditionalOnExpression("'${payments.gateway:mock}' != 'stripe'")
 public class MockStripeGateway implements StripeGateway {
 
     @Override

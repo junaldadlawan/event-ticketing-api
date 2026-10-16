@@ -326,6 +326,46 @@ paths:
       summary: Remove a saved card (soft delete, detached from Stripe)
       responses:
         "204": { description: Removed }
+    patch:
+      operationId: updateCartItemQuantity
+      tags: [Cart]
+      summary: Change the quantity of a general-admission line (owning buyer only)
+      description: |
+        Sets the line's quantity and adjusts the held inventory by the difference in one transaction: raising it needs enough tickets
+        available (and the ticket type still on sale), lowering it gives the difference back at once. The line keeps its hold expiry (a change
+        never extends it). The ticket type's `maxPerOrder` applies. A quantity below 1 is a 400 (use DELETE to remove the line). Prices, fees
+        and checkout work from the new quantity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400":
+          description: quantity below 1
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No such line in this cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: A reserved seat (quantity is fixed), an expired hold, not enough tickets available, over maxPerOrder, or no longer on sale
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: It is the primary card and other cards exist; make another card primary first }
@@ -531,6 +571,60 @@ paths:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /analytics/platform/finance:
+    get:
+      operationId: getPlatformFinanceSummary
+      tags: [Analytics]
+      summary: The platform's money for a period - sales, income, gateway fees, organizers' share, payouts (admin only)
+      description: |
+        Computed live from orders, refunds and payouts (no balance table). Counts the orders **placed** in the period (PAID, PARTIALLY_REFUNDED or
+        REFUNDED) with their completed refunds. `platform.netIncome` = the platform fee kept (none when the platform bore it, none on a refunded
+        order) minus the gateway cost the platform bears (the fee when it is the payer, the extra a foreign card cost over what the customer was
+        charged, and the whole fee of a fully refunded order). `organizers.share` is what the organizations are owed, the same net their payouts
+        pay, split into `paidOut`, `inPayouts` and `owedNotYetInPayout`. `payouts` counts the payouts created in the period by status.
+        Simplifications: a partial refund does not reduce the gateway cost; refunds count against the period the order was placed in.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: "First UTC day (default: 30 days up to `to`)." }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Last UTC day, included (default: today). The period is at most 366 days." }
+        - { name: currency, in: query, schema: { type: string, default: PHP }, description: "Three-letter code; orders in other currencies are left out and listed in `otherCurrencies`." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FinanceSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /organizations/{orgId}/finance:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: getOrganizationFinanceSummary
+      tags: [Analytics]
+      summary: An organization's own income for a period (its owner or an admin)
+      description: |
+        The same period rules and per-order calculation as the platform summary, for this organization only, and never the platform's figures.
+        `sales.gross` is what buyers paid (fees added on top included); `deductions` is everything between that and `income` (the platform fee and the
+        gateway fee that came or will come off, including fees customers paid on top); `income` = gross - refunds - deductions, exactly the net its
+        payouts pay. It is split into `paidOut` (PAID payouts), `inPayouts` (scheduled, processing or failed ones) and `owedNotYetInPayout`.
+        Only the organization's owner or an admin: an organizer or member, or another organization's owner, gets 403.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: "First UTC day (default: 30 days up to `to`)." }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Last UTC day, included (default: today). The period is at most 366 days." }
+        - { name: currency, in: query, schema: { type: string, default: PHP }, description: "Three-letter code; orders in other currencies are left out and listed in `otherCurrencies`." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationFinance" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /organizations/{orgId}/payouts:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -578,7 +672,240 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: The organization has no primary payout card; or no orders are due for payout in that period; or they use more than one currency }
+        409: { description: The organization has no primary payout card (no payout account when PayMongo is the gateway); or no orders are due for payout in that period; or they use more than one currency }
+
+  /organizations/{orgId}/payout-account:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: getOrganizationPayoutAccount
+      tags: [Payouts]
+      summary: The bank or e-wallet account the organization is paid out to (owner, organizer or admin)
+      description: Only the last 4 digits of the account number are returned.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutAccount" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: setOrganizationPayoutAccount
+      tags: [Payouts]
+      summary: Set or replace the payout account (owner or admin)
+      description: |
+        PayMongo pays organizers into a bank or e-wallet account, not a card. Pick the bank from `GET /payout-banks` and send its `code` as
+        `bankCode`. `accountName` must match the name the bank has on the account. The full number is stored AES-256-GCM encrypted and is
+        never returned or logged; 503 when the server has no encryption key (`PAYOUT_ENCRYPTION_KEY`). The organization must be approved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutAccountRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutAccount" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: removeOrganizationPayoutAccount
+      tags: [Payouts]
+      summary: Remove the payout account (owner or admin)
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /payout-banks:
+    get:
+      operationId: listPayoutBanks
+      tags: [Payouts]
+      summary: The banks and e-wallets a payout can be sent to
+      description: From PayMongo (InstaPay receivers) when it is the gateway; a single test bank otherwise.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: { type: string }
+                    code: { type: string, description: What `bankCode` takes. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { description: PayMongo is unavailable }
+
+  /payment-gateway-fee/check:
+    get:
+      operationId: checkPaymentGatewayFee
+      tags: [PlatformFees]
+      summary: Compare the fee setting with what the payment gateway really charged (admin only)
+      description: |
+        PayMongo publishes no endpoint for its fee rates, so this reads its latest paid payments (each carries the `fee`, the `foreign_fee`
+        surcharge for a card issued abroad and the `net_amount`) and shows them next to the setting. Each sample is recognised as
+        **DOMESTIC_CARD** (3.5% + PHP 15.00, VAT included) or **INTERNATIONAL_CARD** (4.5% + PHP 15.00: the same plus a 1% foreign-card
+        surcharge), or null when neither fits within a centavo. `suggestedSetting` is the rate of the newest recognised payment, ready to send
+        to PUT /payment-gateway-fee. The setting is applied to the amount before the fee while PayMongo takes its fee from the amount charged,
+        so a customer-paid fee can differ by a few centavos. Outside PayMongo mode `provider` is MOCK and there are no samples.
+        400 for a limit outside 1-20; 502 when PayMongo cannot be read.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+          description: How many of the latest paid payments to read.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayFeeCheck" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: PayMongo is unavailable }
+
+  /payout-wallet:
+    get:
+      operationId: getPayoutWallet
+      tags: [Payouts]
+      summary: The wallet organizers are paid from - status, balance, limits, usage and account (admin only)
+      description: |
+        Shows what PayMongo reports for the platform's wallet, so an admin can see whether a payout can be sent: only an `activated` wallet can
+        send, and `balance.available` has to cover the payout plus PayMongo's transfer fee. `balance.pending` is still in transit (card payments
+        settle into the wallet on PayMongo's payout cycle). A limit of 999999999999999999 means PayMongo sets none. `matchesConfiguredAccount`
+        says whether this is the wallet named in `PAYMONGO_WALLET_ACCOUNT_NUMBER` (null when nothing is configured to compare). Outside PayMongo
+        mode a simulated wallet is shown with `provider` MOCK. 404 when the PayMongo account has no wallet yet (activate one in the Dashboard);
+        502 when PayMongo cannot be reached.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutWallet" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: PayMongo is unavailable }
+
+  /payouts/eligible:
+    get:
+      operationId: listEligiblePayouts
+      tags: [Payouts]
+      summary: What can be paid out now, per organization and event (admin only)
+      description: |
+        One line per approved organization and event with orders that are due: paid or partly refunded, in no payout yet, placed in the UTC days
+        `periodStart`..`periodEnd` (both included, not in the future, at most 366 days). `eligible` is the net a payout of the line would pay
+        (gross after refunds minus the platform fee and the gateway fee that come off the organization). A line is **ON_HOLD** when any of its
+        orders has a refund still pending (`holdReason` "Pending refunds") or its orders use more than one currency ("More than one currency").
+        `eventScope` COMPLETED (default) keeps events that are over (status COMPLETED, or ended and not cancelled, suspended or a draft); ALL keeps
+        every event. The summary counts the organizations with a READY line and adds up the READY and the ON_HOLD amounts (in the currency of the first line).
+      parameters:
+        - { name: periodStart, in: query, required: true, schema: { type: string, format: date } }
+        - { name: periodEnd, in: query, required: true, schema: { type: string, format: date } }
+        - { name: organizationId, in: query, schema: { type: string, format: uuid }, description: Only this organization. }
+        - { name: eventScope, in: query, schema: { type: string, enum: [COMPLETED, ALL], default: COMPLETED } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EligiblePayouts" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /payouts/batch:
+    post:
+      operationId: generatePayoutBatch
+      tags: [Payouts]
+      summary: Generate one payout per chosen line (admin only)
+      description: |
+        Each line (an organization and one of its events) becomes its own SCHEDULED payout settling that event's due orders of the period
+        (`eventId` and `eventTitle` are on the payout). All or nothing: if any line has nothing due, is on hold (a refund is still pending), mixes
+        currencies, or its organization is not approved or has no payout destination (a primary card; a payout account with PayMongo), nothing is
+        created and the 409 names the line. 400 for an empty or duplicated list or a bad period; 404 for an unknown organization or an event that is
+        not the organization's. A line already settled is never paid twice (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutBatchRequest" }
+      responses:
+        "201":
+          description: The payouts created, in the order of the lines.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Payout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: A line has nothing due, is on hold, mixes currencies, or has no payout destination; nothing was created }
+
+  /payouts/{payoutId}/send:
+    parameters:
+      - name: payoutId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: sendPayout
+      tags: [Payouts]
+      summary: Send a payout to the organization's payout account (admin only)
+      description: |
+        Sends the `net` amount of a SCHEDULED or FAILED payout through the payment provider. The payout becomes PROCESSING and ends PAID or
+        FAILED when PayMongo reports it (the `transfer.outward.successful` / `transfer.outward.failed` webhook, or `POST /payouts/{id}/refresh`);
+        an InstaPay transfer can take up to 20 minutes, PESONet up to a banking day. Amounts up to PHP 50,000 go by InstaPay, larger by PESONet.
+        PayMongo charges the wallet a fee per transfer, which the platform bears. A FAILED payout carries `failureReason` and can be sent again;
+        when the reason says the transfer could not be confirmed, check the PayMongo dashboard first, because the money may have moved.
+        Outside PayMongo mode the transfer is only simulated: the payout becomes PAID at once and no money moves.
+        409 when the payout is PROCESSING or PAID, has nothing to send, or the organization has no payout account. 502 when PayMongo cannot be reached.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The payout cannot be sent in its current state }
+        "502": { description: PayMongo is unavailable; the transfer could not be confirmed }
+
+  /payouts/{payoutId}/refresh:
+    parameters:
+      - name: payoutId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: refreshPayout
+      tags: [Payouts]
+      summary: Ask the provider how a PROCESSING payout's transfer stands (admin only)
+      description: Use it when the webhook did not arrive. 409 when the payout is not PROCESSING.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The payout is not being processed }
 
   /organizations/{orgId}/payout-cards:
     parameters:
@@ -776,6 +1103,49 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /payment-gateway-fee:
+    get:
+      operationId: getPaymentGatewayFee
+      tags: [PlatformFees]
+      summary: The payment gateway fee setting (admin only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayFeeSetting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      operationId: setPaymentGatewayFee
+      tags: [PlatformFees]
+      summary: Set how much payment gateway fee to apply and who pays it (admin only)
+      description: |
+        One platform-wide setting with the gateway's two numbers, for example PayMongo's card rate 3.125% + PHP 13.39 is
+        `{"percentage": 3.125, "flatAmount": {"amount": 1339, "currency": "PHP"}}`. That is the **domestic** rate: a card issued abroad costs more with
+        PayMongo, so `foreignPercentage` / `foreignFlatAmount` set the whole rate for such cards (PayMongo: 3.5% + PHP 15.00 domestic, 4.5% + PHP 15.00
+        foreign); leave both out and a foreign card costs the domestic rate. The customer pays the domestic rate in the cart (the card is not known yet);
+        when the payment arrives and its card was issued outside the Philippines, the order records the foreign fee that applied and the payout
+        deducts it when the organization bears the fee (when the customer bears it the organizer keeps the ticket price and the platform absorbs the
+        difference). The fee is `(ticket total after promo + platform fee) x percentage`, rounded half up, plus the flat amount
+        when the order is in its currency. `payer` decides who bears it: **CUSTOMER** (added to the price, shown in the cart as `gatewayFee`,
+        and taken off the gross at payout so the organizer keeps the ticket price), **ORGANIZATION** (deducted from the organizer's payout, the
+        buyer pays nothing extra). The platform cannot be the payer: PLATFORM is refused with 400. 0% with no flat amount switches it off. Orders already placed keep their own snapshot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatewayFeeSettingRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayFeeSetting" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /platform-fees/default:
     put:
       operationId: setDefaultPlatformFee
@@ -783,7 +1153,8 @@ paths:
       summary: Set (or replace) the platform-wide default fee (admin only)
       description: |
         The fee ("admin cut") added on top of the ticket price of every purchase that has no more specific rule.
-        A percentage is worked out on the ticket total after promo discounts; a flat amount is per order.
+        A percentage is worked out on the ticket total after promo discounts; a flat amount is charged for every ticket
+        (fee = ticket total x percentage + flat amount x number of tickets).
         A rate of 0 is allowed and means no fee.
       requestBody:
         required: true
@@ -1740,14 +2111,37 @@ paths:
     get:
       operationId: getCart
       tags: [Cart]
-      summary: Get a Cart (owning buyer only)
+      summary: Get a Cart (owning buyer only), optionally priced for only some of its items
+      description: |
+        With `itemIds` the response is the cart shape for ONLY those items (`items`, promo, platform fee, gateway fee and `total`), worked out
+        with the same rules as checkout, so it is exactly what `POST /carts/{cartId}/checkout` with the same `itemIds` will charge. Without it the
+        whole cart, as before. A promo code counts only if it fits the selected items (otherwise `appliedPromoCode` is null here and the code stays
+        on the cart). The platform fee's fixed part is per ticket, so the fees of a cart paid in parts add up to the fee of the whole cart.
+      parameters:
+        - name: itemIds
+          in: query
+          required: false
+          description: Cart item ids, comma-separated (`?itemIds=a,b`). Omit for the whole cart; an empty value is a 400.
+          schema: { type: array, items: { type: string, format: uuid } }
+          style: form
+          explode: false
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Cart" }
+        "400":
+          description: An item id is not in this cart (or itemIds is empty)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The hold on a selected item has expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /carts/{cartId}/items:
     parameters:
@@ -1756,6 +2150,10 @@ paths:
       operationId: addCartItem
       tags: [Cart]
       summary: Add an item to the cart; places a temporary Hold
+      description: |
+        A general-admission ticket type has ONE line per cart: adding it again adds the quantity to the existing line (a new line is created
+        only the first time), which keeps its hold expiry. The ticket type's `maxPerOrder` applies to the merged quantity (409 when
+        exceeded). A reserved seat is always its own line. Carts that already have several lines of one ticket type are left as they are.
       requestBody:
         required: true
         content:
@@ -1844,7 +2242,24 @@ paths:
     post:
       operationId: checkout
       tags: [Cart]
-      summary: Charge the cart and issue tickets
+      summary: "Charge the cart and issue tickets (with PayMongo: start the payment)"
+      description: |
+        Mock and Stripe gateways charge at once and answer 201 with the order. With the PayMongo gateway the card is entered in the
+        browser, so this only starts the payment: it answers 202 with a `checkoutId` and the intent's `clientKey` (send an empty body
+        `{}`); the order exists once PayMongo's webhook confirms the payment, see `GET /checkouts/{checkoutId}`.
+
+        `itemIds` pays only those cart items: the order, the fee snapshots and the charge are for them alone, and the other items stay in the
+        cart with their holds unchanged (a cart can therefore have several orders). Quote it first with `GET /carts/{cartId}?itemIds=`. A promo
+        code applies only if its rules are met by the selected items; otherwise it is left out of that order and kept on the cart. The
+        platform fee's fixed part is per ticket, so paying in parts costs the same in total. The idempotency key covers the selection: the same key with other `itemIds` is a 409.
+        With PayMongo the selection is stored with the pending checkout and the webhook issues the order for exactly those items.
+
+        **Paying with a saved card (PayMongo):** send `paymentMethodId` (a card from `/users/me/payment-methods` with `canChargeAgain: true`),
+        `securityCode` and `returnUrl`. The server creates the payment intent and attaches the stored payment method itself, then answers
+        202 with `nextAction`: NONE (the webhook completes the order) or REDIRECT with `redirectUrl` (3-D Secure). Another user's card is a
+        404, a card without a stored payment method a 409 "Re-enter this card to use it again", a declined card a 402 (cart and holds
+        intact, the idempotency key is free again). A repeated call with the same idempotency key does not attach the card twice. A new card
+        keeps the browser flow (`clientKey`); add `saveCard: true` to vault it.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -1865,12 +2280,31 @@ paths:
                   type: string
                   format: uuid
                   description: A card the signed-in user saved under /users/me/payment-methods (another user's card is a 404).
+                itemIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: Optional. Pay only these cart items; omitted = the whole cart. Empty, or an id not in the cart, is a 400.
+                securityCode:
+                  type: string
+                  pattern: "^[0-9]{3,4}$"
+                  description: PayMongo, with paymentMethodId only (required then). The card's security code, set on the payment method for this one payment. Never stored or logged.
+                returnUrl:
+                  type: string
+                  description: PayMongo, with paymentMethodId only (required then, http or https). Where the bank sends the buyer back after 3-D Secure.
+                saveCard:
+                  type: boolean
+                  description: "PayMongo, new card (no paymentMethodId): vault the card typed in the browser for later. It is saved once the payment succeeds, and then listed in /users/me/payment-methods."
       responses:
         "201":
           description: Order created and tickets issued
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
+        "202":
+          description: PayMongo only. Payment started; attach the card in the browser with `clientKey` and poll `GET /checkouts/{checkoutId}`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutStart" }
         "402":
           description: |
             Payment failed (declined card, or a card that needs 3-D Secure, which is not supported yet); cart and holds remain
@@ -1879,10 +2313,49 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "410":
-          description: A hold expired before checkout completed
+          description: A hold expired before checkout completed (a selected item's hold, when itemIds is given)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Nothing to check out, a payment for this key is already in progress, or the idempotency key was used with another itemIds
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /checkouts/{checkoutId}:
+    parameters:
+      - name: checkoutId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCheckout
+      tags: [Cart]
+      summary: Status of a checkout waiting for the payment provider (PayMongo)
+      description: PENDING until the webhook arrives, then PAID (with the `orderId`), FAILED, or REFUNDED. Only the buyer who started it can read it (another buyer gets 404).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutStart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /webhooks/paymongo:
+    post:
+      operationId: payMongoWebhook
+      tags: [Cart]
+      summary: PayMongo's callback for payment.paid / payment.failed (PayMongo only, public, signature-checked)
+      description: |
+        Not called by the web app. Authenticated by the `Paymongo-Signature` header (`t=<timestamp>,te=<test>,li=<live>`: hex HMAC-SHA256
+        of "<timestamp>.<raw body>" with the webhook secret); a bad or missing signature is a 401 and changes nothing. Idempotent. Register this
+        URL in the PayMongo dashboard for the events payment.paid and payment.failed. Only exists when payments.gateway=paymongo.
+      responses:
+        "200": { description: Accepted (also for event types that are ignored) }
+        "400": { description: Body is not JSON }
+        "401": { description: Bad or missing signature }
 
   /orders/{orderId}:
     parameters:
@@ -3257,11 +3730,15 @@ components:
         platform_fee:
           allOf:
             - $ref: "#/components/schemas/Money"
-          description: The platform fee that will be added on top of the ticket price (worked out on the total after the promo discount; 0 when no fee rule applies).
+          description: The platform fee that will be added on top of the ticket price (the percentage on the total after the promo discount plus the rule's fixed amount for every ticket; 0 when no fee rule applies or when the organizer or the platform bears it).
+        gateway_fee:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: The payment gateway fee the buyer pays on top (0 unless management made the customer bear it, see /payment-gateway-fee). Shown as `gatewayFee` in the JSON.
         total:
           allOf:
             - $ref: "#/components/schemas/Money"
-          description: What the buyer will pay - ticket price minus any promo discount, plus platform_fee.
+          description: What the buyer will pay - ticket price minus any promo discount, plus platform_fee and gateway_fee.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -3287,11 +3764,15 @@ components:
         platform_fee:
           allOf:
             - $ref: "#/components/schemas/Money"
-          description: The platform fee charged on top of the ticket price (already part of total; 0 when no fee rule applied). Fixed when the order was placed - later rule changes do not alter it.
+          description: The platform fee charged on top of the ticket price (already part of total; 0 when no fee rule applied or when the organizer or the platform bore it). Fixed when the order was placed - later rule changes do not alter it.
+        gateway_fee:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: The payment gateway fee the buyer paid on top (already part of total; 0 unless the customer bore it). Fixed when the order was placed. Shown as `gatewayFee` in the JSON.
         total:
           allOf:
             - $ref: "#/components/schemas/Money"
-          description: What the buyer paid, platform_fee included.
+          description: What the buyer paid, platform_fee and gateway_fee included.
         tickets:
           type: array
           items: { $ref: "#/components/schemas/Ticket" }
@@ -3402,6 +3883,56 @@ components:
         scanned_at: { type: string, format: date-time }
         result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
 
+    GatewayFeeSettingRequest:
+      type: object
+      required: [percentage, payer]
+      properties:
+        percentage: { type: number, minimum: 0, maximum: 100, multipleOf: 0.001, description: "Percent of the purchase total before this fee, up to three decimals (PayMongo's card rate is 3.125). 0 = none." }
+        flatAmount:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: "The fixed part of the fee per order, in minor units (PHP 13.39 is amount 1339); skipped for an order in another currency. Left out means none."
+        payer: { type: string, enum: [CUSTOMER, ORGANIZATION] }
+        foreignPercentage: { type: number, minimum: 0, maximum: 100, multipleOf: 0.001, description: "The whole percentage for a card issued abroad (4.5 for PayMongo). Leave out with foreignFlatAmount: a foreign card costs the domestic rate." }
+        foreignFlatAmount:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: "The fixed part for a card issued abroad; must be in the same currency as flatAmount."
+
+    GatewayFeeSetting:
+      type: object
+      properties:
+        percentage: { type: number, description: The domestic percentage. }
+        flatAmount: { $ref: "#/components/schemas/Money" }
+        payer: { type: string, enum: [CUSTOMER, ORGANIZATION] }
+        foreignPercentage: { type: [number, "null"], description: "The percentage for a card issued abroad; null when it costs the domestic rate." }
+        foreignFlatAmount:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        updatedAt: { type: [string, "null"], format: date-time }
+
+    CheckoutStart:
+      type: object
+      description: "A checkout waiting for the payment provider (PayMongo). `clientKey` is a secret for this one payment, do not log it."
+      properties:
+        checkoutId: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, PAID, FAILED, REFUNDED] }
+        clientKey: { type: string, description: Attach the card to the payment intent with this (PayMongo.js). }
+        amount: { type: integer, description: Total in centavos, platform fee included. }
+        currency: { type: string, example: PHP }
+        orderId: { type: [string, "null"], format: uuid, description: Set once PAID. }
+        failureReason: { type: [string, "null"] }
+        nextAction:
+          type: [string, "null"]
+          enum: [NONE, REDIRECT, null]
+          description: "Only when a saved card was paid with from the server. NONE = nothing more to do, the webhook completes the order. REDIRECT = send the buyer to `redirectUrl` (the bank's 3-D Secure page); they come back to the `returnUrl` sent. Null for a card typed in the browser."
+        redirectUrl: { type: [string, "null"], description: "The bank's 3-D Secure page when nextAction is REDIRECT." }
+        cardSaving:
+          type: string
+          enum: [REQUESTED, UNAVAILABLE, NOT_REQUESTED]
+          description: "What became of `saveCard`. REQUESTED = the card will be saved once the payment succeeds. UNAVAILABLE = it was asked for but PayMongo cannot vault cards on this account (or the customer could not be created): the payment still goes ahead, show \"Your card could not be saved\". NOT_REQUESTED = saveCard was not sent."
+
     PaymentMethod:
       type: object
       description: A saved card as shown. The provider's id and any token are never returned.
@@ -3413,6 +3944,9 @@ components:
         expMonth: { type: integer }
         expYear: { type: integer }
         primary: { type: boolean }
+        canChargeAgain:
+          type: boolean
+          description: "False = this card cannot be paid with again without typing it (with PayMongo: it was saved before the provider's payment method was kept, or saved without a payment). Checkout with it is a 409 \"Re-enter this card to use it again\"."
 
     PaymentMethodRequest:
       type: object
@@ -3526,10 +4060,164 @@ components:
           description: gross - fees - what the organizer is owed.
         period_start: { type: string, format: date }
         period_end: { type: string, format: date }
-        status: { type: string, enum: [scheduled, paid, failed] }
-        payoutCardId: { type: [string, "null"], format: uuid, description: The primary payout card this payout was made out to (null on older payouts). }
+        status: { type: string, enum: [scheduled, processing, paid, failed], description: "processing = the transfer is with PayMongo and has not settled yet." }
+        payoutCardId: { type: [string, "null"], format: uuid, description: The primary payout card this payout was made out to (null on older payouts and with PayMongo). }
+        payoutAccountId: { type: [string, "null"], format: uuid, description: The bank or e-wallet account it was made out to (PayMongo). }
+        eventId: { type: [string, "null"], format: uuid, description: "The event this payout settles (a batch payout line); null for a period payout." }
+        eventTitle: { type: [string, "null"], description: The title of that event. }
+        transferId: { type: [string, "null"], description: PayMongo's id for the transfer (tr_...); null until it is sent. }
+        failureReason: { type: [string, "null"], description: Why the last send failed. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time, description: Reflects status transitions. }
+
+    GatewayFeeCheck:
+      type: object
+      properties:
+        provider: { type: string, enum: [PAYMONGO, MOCK] }
+        configured:
+          type: object
+          description: The fee setting as it is now.
+          properties:
+            percentage: { type: number }
+            flatAmount: { $ref: "#/components/schemas/Money" }
+            payer: { type: string, enum: [CUSTOMER, ORGANIZATION] }
+            foreignPercentage: { type: [number, "null"] }
+            foreignFlatAmount: { oneOf: [ { $ref: "#/components/schemas/Money" }, { type: "null" } ] }
+        samples:
+          type: array
+          description: The latest paid payments, newest first.
+          items:
+            type: object
+            properties:
+              paymentId: { type: string }
+              amount: { $ref: "#/components/schemas/Money" }
+              fee: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "The gateway's base fee." }
+              foreignFee: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "Surcharge for a card issued abroad; 0 otherwise." }
+              totalFee: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: fee + foreignFee. }
+              netAmount: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "What PayMongo left after the fees." }
+              effectivePercent: { type: number, description: "totalFee as a percent of the amount." }
+              sourceType: { type: [string, "null"] }
+              cardBrand: { type: [string, "null"] }
+              cardCountry: { type: [string, "null"] }
+              cardOrigin: { type: [string, "null"], enum: [DOMESTIC, FOREIGN, null], description: "DOMESTIC for a card issued in the Philippines, FOREIGN for any other country; decides which configured rate the payment is compared with." }
+              paidAt: { type: [string, "null"], format: date-time }
+              livemode: { type: boolean }
+              matchedRate: { type: [string, "null"], enum: [DOMESTIC_CARD, INTERNATIONAL_CARD, null] }
+              expectedWithConfigured: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: What the current setting would have charged on this amount. }
+              differenceFromConfigured: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "totalFee minus expectedWithConfigured: negative means the setting charges more than PayMongo took." }
+              matchesConfigured: { type: boolean, description: "Within one centavo of the setting." }
+        allSamplesMatchConfigured: { type: boolean }
+        suggestedSetting:
+          type: [object, "null"]
+          properties:
+            basedOn: { type: string }
+            percentage: { type: number }
+            flatAmount: { $ref: "#/components/schemas/Money" }
+        note: { type: [string, "null"], description: "Why there are no samples (mock mode, or no paid payments yet)." }
+
+    PayoutWallet:
+      type: object
+      properties:
+        provider: { type: string, enum: [PAYMONGO, MOCK] }
+        id: { type: string, example: wallet_xxxxxxxx }
+        status: { type: string, enum: [activated, deactivated], description: "PayMongo's own status. A new wallet is deactivated until the Statement of Acceptance is signed in the Dashboard; it also goes deactivated when locked." }
+        activated: { type: boolean, description: "True when status is activated: the wallet can send and receive." }
+        livemode: { type: boolean, description: "False for a test wallet." }
+        isDefault: { type: boolean }
+        type: { type: string, description: "basic or fully_verified: decides the limits." }
+        statementOfAcceptanceSignedAt: { type: [string, "null"], format: date-time }
+        balance:
+          type: object
+          properties:
+            available: { $ref: "#/components/schemas/Money" }
+            pending: { $ref: "#/components/schemas/Money" }
+        limits:
+          type: object
+          description: "999999999999999999 means no limit."
+          properties:
+            balance: { $ref: "#/components/schemas/Money" }
+            inwardDaily: { $ref: "#/components/schemas/Money" }
+            inwardMonthly: { $ref: "#/components/schemas/Money" }
+            outwardDaily: { $ref: "#/components/schemas/Money" }
+            outwardMonthly: { $ref: "#/components/schemas/Money" }
+        usage:
+          type: object
+          description: How much has moved through the wallet so far today and this month.
+          properties:
+            inwardDaily: { $ref: "#/components/schemas/Money" }
+            inwardMonthly: { $ref: "#/components/schemas/Money" }
+            outwardDaily: { $ref: "#/components/schemas/Money" }
+            outwardMonthly: { $ref: "#/components/schemas/Money" }
+        account:
+          type: object
+          description: "The wallet's own account: what a top-up is sent to."
+          properties:
+            provider: { type: string }
+            accountName: { type: string }
+            accountNumber: { type: string }
+            currency: { type: string }
+        createdAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: [string, "null"], format: date-time }
+        matchesConfiguredAccount: { type: [boolean, "null"], description: "Whether the wallet is the one in PAYMONGO_WALLET_ACCOUNT_NUMBER." }
+
+    EligiblePayouts:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            eligibleOrganizations: { type: integer, description: Organizations with a READY line. }
+            eligibleAmount: { $ref: "#/components/schemas/Money" }
+            onHold: { $ref: "#/components/schemas/Money" }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              organizationId: { type: string, format: uuid }
+              organizationName: { type: string }
+              eventId: { type: string, format: uuid }
+              eventTitle: { type: string }
+              eligible: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: The net a payout of this line would pay. }
+              status: { type: string, enum: [READY, ON_HOLD] }
+              holdReason: { type: [string, "null"], description: "Pending refunds, or More than one currency." }
+
+    PayoutBatchRequest:
+      type: object
+      required: [periodStart, periodEnd, items]
+      properties:
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date, description: Not in the future. }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [organizationId, eventId]
+            properties:
+              organizationId: { type: string, format: uuid }
+              eventId: { type: string, format: uuid }
+
+    PayoutAccountRequest:
+      type: object
+      required: [bankCode, bankName, accountName, accountNumber]
+      properties:
+        bankCode: { type: string, pattern: "^[A-Z0-9]{8,11}$", description: The bank's code from GET /payout-banks. }
+        bankName: { type: string, maxLength: 100 }
+        accountName: { type: string, maxLength: 150, description: Must match the name the bank has on the account. }
+        accountNumber: { type: string, pattern: "^[0-9]{5,20}$", description: Never returned; stored encrypted. }
+
+    PayoutAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        bankName: { type: string }
+        bankCode: { type: string }
+        accountName: { type: string }
+        accountNumberLast4: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, "null"], format: date-time }
 
     PayoutCardRequest:
       type: object
@@ -3567,15 +4255,18 @@ components:
 
     PlatformFeeRuleRequest:
       type: object
-      required: [type]
-      description: PERCENTAGE needs `percentage` and no `flatAmount`; FLAT needs `flatAmount` and no `percentage`.
+      description: "Send `percentage`, `flatAmount` or both (the fee is then the percentage on the ticket total plus the flat amount for each ticket); at least one is required. `payer` says who bears the fee."
       properties:
-        type: { type: string, enum: [PERCENTAGE, FLAT] }
+        type: { type: string, enum: [PERCENTAGE, FLAT, COMBINED], description: "Ignored: the kind of rule follows from which numbers are sent. Kept so older callers still work." }
         percentage: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01, description: "Percent of the ticket total after promo discounts, rounded half up to the minor unit. 0 = no fee." }
         flatAmount:
           allOf:
             - $ref: "#/components/schemas/Money"
-          description: A fixed fee per order. A flat rule in another currency than the order is skipped (no fee).
+          description: A fixed fee per TICKET (an order of 3 tickets pays it 3 times). A flat amount in another currency than the order is skipped (no flat part).
+        payer:
+          type: string
+          enum: [CUSTOMER, ORGANIZATION]
+          description: "Who bears the fee, default CUSTOMER. CUSTOMER: added on top of the ticket price. ORGANIZATION: the buyer pays nothing extra and the fee is deducted from the organizer's payout. PLATFORM is refused with 400."
 
     PlatformFeeRule:
       type: object
@@ -3583,12 +4274,14 @@ components:
         id: { type: string, format: uuid }
         scope: { type: string, enum: [PLATFORM, ORGANIZATION, EVENT], description: "The most specific scope wins: EVENT, then ORGANIZATION, then PLATFORM." }
         scopeId: { type: [string, "null"], format: uuid, description: "The organization or event id; null for the platform default." }
-        type: { type: string, enum: [PERCENTAGE, FLAT] }
+        type: { type: string, enum: [PERCENTAGE, FLAT, COMBINED], description: "COMBINED = a percentage plus a flat amount per ticket." }
         percentage: { type: [number, "null"] }
         flatAmount:
+          description: The fixed part, charged for each ticket.
           oneOf:
             - $ref: "#/components/schemas/Money"
             - type: "null"
+        payer: { type: string, enum: [CUSTOMER, ORGANIZATION] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: [string, "null"], format: date-time }
 
@@ -3621,6 +4314,90 @@ components:
               date: { type: string, format: date }
               tickets_sold: { type: integer }
               revenue: { $ref: "#/components/schemas/Money" }
+
+    FinancePayoutTotal:
+      type: object
+      properties:
+        count: { type: integer }
+        net: { $ref: "#/components/schemas/Money" }
+
+    FinancePayouts:
+      type: object
+      description: The payouts created in the period, by status.
+      properties:
+        scheduled: { $ref: "#/components/schemas/FinancePayoutTotal" }
+        processing: { $ref: "#/components/schemas/FinancePayoutTotal" }
+        paid: { $ref: "#/components/schemas/FinancePayoutTotal" }
+        failed: { $ref: "#/components/schemas/FinancePayoutTotal" }
+
+    FinanceSummary:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        currency: { type: string }
+        otherCurrencies: { type: array, items: { type: string }, description: "Other currencies with orders in the period, left out of every figure." }
+        orders:
+          type: object
+          properties:
+            count: { type: integer }
+            refunded: { type: integer, description: Orders with at least one completed refund. }
+        sales:
+          type: object
+          properties:
+            gross: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "What buyers paid, fees added on top included." }
+            refunds: { $ref: "#/components/schemas/Money" }
+            net: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: gross - refunds. }
+        platform:
+          type: object
+          properties:
+            feeIncome: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "Platform fee kept." }
+            gatewayCostBorne: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "Gateway fee the platform itself pays." }
+            netIncome: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: feeIncome - gatewayCostBorne. }
+        gatewayFees:
+          type: object
+          properties:
+            charged: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "What the gateway really kept in all, read from its own payment records (PayMongo's fee plus any foreign-card fee). An order whose fee is not known yet counts 0 (see unknownFeeOrders)." }
+            paidByCustomer: { $ref: "#/components/schemas/Money" }
+            borneByOrganization: { $ref: "#/components/schemas/Money" }
+            borneByPlatform: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "What the gateway kept that nobody else covered: the whole fee when the platform is the payer or no payer was recorded, and negative when customers were charged more than the gateway kept." }
+            foreignCardOrders: { type: integer }
+            unknownFeeOrders: { type: integer, description: "Orders with no fee information at all (placed before gateway fees were recorded, and not found in PayMongo's latest 100 payments yet); counted as 0 in charged." }
+        organizers:
+          type: object
+          properties:
+            share: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "What the organizations are owed in all (the net their payouts pay)." }
+            paidOut: { $ref: "#/components/schemas/Money" }
+            inPayouts: { $ref: "#/components/schemas/Money" }
+            owedNotYetInPayout: { $ref: "#/components/schemas/Money" }
+        payouts: { $ref: "#/components/schemas/FinancePayouts" }
+
+    OrganizationFinance:
+      type: object
+      properties:
+        organizationId: { type: string, format: uuid }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        currency: { type: string }
+        otherCurrencies: { type: array, items: { type: string } }
+        orders: { type: integer }
+        sales:
+          type: object
+          properties:
+            gross: { $ref: "#/components/schemas/Money" }
+            refunds: { $ref: "#/components/schemas/Money" }
+            net: { $ref: "#/components/schemas/Money" }
+        deductions:
+          type: object
+          properties:
+            platformFee: { $ref: "#/components/schemas/Money" }
+            gatewayFee: { $ref: "#/components/schemas/Money" }
+            total: { $ref: "#/components/schemas/Money" }
+        income: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "gross - refunds - deductions: the net its payouts pay." }
+        paidOut: { $ref: "#/components/schemas/Money" }
+        inPayouts: { $ref: "#/components/schemas/Money" }
+        owedNotYetInPayout: { $ref: "#/components/schemas/Money" }
+        payouts: { $ref: "#/components/schemas/FinancePayouts" }
 
     PlatformAnalytics:
       type: object
