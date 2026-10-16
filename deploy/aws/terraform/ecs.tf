@@ -104,8 +104,15 @@ resource "aws_ecs_service" "app" {
   }
 
   # Give Flyway/JPA time to run migrations on a cold start before ECS gives
-  # up on the container.
-  health_check_grace_period_seconds = 60
+  # up on the container. The app takes about 80s to start on 0.5 vCPU, so 60s was too tight.
+  health_check_grace_period_seconds = 180
+
+  # If new tasks keep failing to start or to pass the health check, stop retrying and go back to the last working task definition
+  # instead of looping forever. The old task keeps serving until a new one is healthy. It does not undo database migrations.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
 
   depends_on = [aws_lb_listener.http]
 
