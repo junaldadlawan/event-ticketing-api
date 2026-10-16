@@ -156,7 +156,7 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     # ReadOnlyAccess (attached below) deliberately excludes GetSecretValue -
     # it reveals actual secret content, not just metadata. Terraform still
     # needs it to refresh/diff these aws_secretsmanager_secret_version
-    # resources during plan/apply. Scoped to exactly this stack's 4 secrets,
+    # resources during plan/apply. Scoped to exactly this stack's secrets (the 4 generated ones and the 2 PayMongo placeholders),
     # same pattern as iam.tf's ecs_execution_secrets policy.
     sid = "ReadThisStacksSecretValues"
     actions = [
@@ -167,6 +167,8 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       aws_secretsmanager_secret.jwt_secret.arn,
       aws_secretsmanager_secret.ticket_credential_secret.arn,
       aws_secretsmanager_secret.device_credential_secret.arn,
+      aws_secretsmanager_secret.paymongo_secret_key.arn,
+      aws_secretsmanager_secret.paymongo_webhook_secret.arn,
     ]
   }
 }
