@@ -58,6 +58,7 @@ public class EventServiceImpl implements EventService {
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
     private final CategoryService categoryService;
+    private final EventCompletionService eventCompletionService;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -150,7 +151,7 @@ public class EventServiceImpl implements EventService {
         if (event.getStatus() == EventStatus.DRAFT) {
             requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         }
-        return event;
+        return eventCompletionService.completeIfEnded(event);
     }
 
     @Override
@@ -165,6 +166,7 @@ public class EventServiceImpl implements EventService {
         if (event.getStatus() == EventStatus.SUSPENDED) {
             throw new ConflictException("A suspended event cannot be updated");
         }
+        EventCompletionService.requireNotEnded(event);
 
         if (request.title() != null) {
             if (request.title().isBlank()) {
@@ -215,6 +217,7 @@ public class EventServiceImpl implements EventService {
     public Event cancelEvent(UUID eventId) {
         Event event = getOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         if (!CANCELLABLE_STATUSES.contains(event.getStatus())) {
             throw new ConflictException("Event is not in a cancellable state");
@@ -253,6 +256,19 @@ public class EventServiceImpl implements EventService {
     public void delete(UUID eventId) {
         Event event = getOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
+        softDelete(event);
+    }
+
+    @Override
+    public void removeByModeration(UUID eventId) {
+        Event event = getOrThrow(eventId);
+        requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        softDelete(event);
+    }
+
+    private void softDelete(Event event) {
+        UUID eventId = event.getId();
         event.markDeleted();
         eventRepository.save(event);
         BusinessAuditLogger.record("event.deleted", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);

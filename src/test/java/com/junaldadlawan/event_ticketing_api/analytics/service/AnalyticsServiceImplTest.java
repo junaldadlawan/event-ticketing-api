@@ -1,7 +1,10 @@
 package com.junaldadlawan.event_ticketing_api.analytics.service;
 
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAnalyticsResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAudienceResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.dto.EventSalesPatternsResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.PlatformAnalyticsResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.repository.EventInsightsRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
@@ -55,6 +58,10 @@ class AnalyticsServiceImplTest {
     private OrganizationRepository organizationRepository;
     @Mock
     private OrganizationAccessGuard accessGuard;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.analytics.repository.EventInsightsRepository insightsRepository;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.analytics.repository.FunnelRepository funnelRepository;
 
     private AnalyticsServiceImpl service;
 
@@ -63,7 +70,7 @@ class AnalyticsServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new AnalyticsServiceImpl(eventRepository, orderRepository, ticketRepository, ticketTypeRepository, organizationRepository, accessGuard);
+        service = new AnalyticsServiceImpl(eventRepository, orderRepository, ticketRepository, ticketTypeRepository, organizationRepository, accessGuard, insightsRepository, funnelRepository);
         eventId = UUID.randomUUID();
         orgId = UUID.randomUUID();
     }
@@ -200,5 +207,70 @@ class AnalyticsServiceImplTest {
         PlatformAnalyticsResponse response = service.getPlatformAnalytics();
 
         assertThat(response.totalGmv().currency()).isEqualTo("USD");
+    }
+
+    // ---- audience and sales patterns ----
+
+    private static List<EventInsightsRepository.AudienceBuyer> buyers(String group, int count) {
+        return java.util.stream.IntStream.range(0, count).mapToObj(i -> new EventInsightsRepository.AudienceBuyer(group, 2)).toList();
+    }
+
+    @Test
+    void audience_aSingleSmallGroup_hidesTheNextSmallestToo_soItCannotBeWorkedOutFromTheTotal() {
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event()));
+        when(accessGuard.isAdmin()).thenReturn(true);
+        List<EventInsightsRepository.AudienceBuyer> all = new java.util.ArrayList<>();
+        all.addAll(buyers("18-24", 3));
+        all.addAll(buyers("25-34", 6));
+        all.addAll(buyers("35-44", 9));
+        all.addAll(buyers(null, 2));
+        when(insightsRepository.audience(eventId)).thenReturn(all);
+
+        var audience = service.getEventAudience(eventId);
+
+        assertThat(audience.buyers()).isEqualTo(20);
+        assertThat(audience.unknownAge()).isEqualTo(2);
+        assertThat(audience.ageGroups()).extracting(EventAudienceResponse.AgeGroup::label)
+                .containsExactly("Under 18", "18-24", "25-34", "35-44", "45-54", "55+");
+        assertThat(audience.ageGroups().get(0).buyers()).isZero();   // empty groups identify nobody
+        assertThat(audience.ageGroups().get(1).buyers()).isNull();   // 3: fewer than 5
+        assertThat(audience.ageGroups().get(2).buyers()).isNull();   // 6, hidden too: else 20 - 2 - 9 = 11 - 6 would give the 3 away
+        assertThat(audience.ageGroups().get(2).tickets()).isNull();
+        assertThat(audience.ageGroups().get(3).buyers()).isEqualTo(9);
+        assertThat(audience.ageGroups().get(3).tickets()).isEqualTo(18);
+    }
+
+    @Test
+    void salesPatterns_fillEveryDayUpToToday_whenTheEventHasNotEnded() {
+        Event event = event();
+        event.setTimezone("UTC");
+        event.setEndAt(java.time.Instant.now().plus(30, java.time.temporal.ChronoUnit.DAYS));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
+        when(accessGuard.isAdmin()).thenReturn(true);
+        LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+        when(insightsRepository.salesSlots(eventId, "UTC")).thenReturn(List.of(
+                new EventInsightsRepository.SalesSlot(today.minusDays(2).toString(), 3, 9, 4, 2, 1)));
+
+        var patterns = service.getEventSalesPatterns(eventId);
+
+        assertThat(patterns.daily()).extracting(EventSalesPatternsResponse.Day::tickets).containsExactly(4L, 0L, 0L);
+        assertThat(patterns.daily().get(2).day()).isEqualTo(today);
+        assertThat(patterns.byWeekday()).containsExactly(0, 0, 4, 0, 0, 0, 0);
+        assertThat(patterns.byHour()[9]).isEqualTo(4);
+        assertThat(patterns.orders()).isEqualTo(2);
+        assertThat(patterns.promoOrders()).isEqualTo(1);
+    }
+
+    @Test
+    void salesPatterns_withNoSales_haveNoDays() {
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event()));
+        when(accessGuard.isAdmin()).thenReturn(true);
+        when(insightsRepository.salesSlots(eventId, "UTC")).thenReturn(List.of());
+
+        var patterns = service.getEventSalesPatterns(eventId);
+
+        assertThat(patterns.timezone()).isEqualTo("UTC");   // no zone recorded falls back to UTC
+        assertThat(patterns.daily()).isEmpty();
+        assertThat(patterns.byHour()).hasSize(24);
     }
 }

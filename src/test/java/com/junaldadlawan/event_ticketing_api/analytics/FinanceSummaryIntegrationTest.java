@@ -38,6 +38,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.nullValue;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -82,6 +86,10 @@ class FinanceSummaryIntegrationTest {
 
     private UUID orgA;
     private UUID orgB;
+    private UUID event1;
+    private UUID event2;
+    private UUID eventOfB;
+    private final List<UUID> eventIds = new ArrayList<>();
     private String admin;
     private String ownerA;
     private String ownerB;
@@ -101,7 +109,7 @@ class FinanceSummaryIntegrationTest {
         UUID o1 = order(orgA, 11_500, OrderStatus.PAID, 1_000, GatewayFeePayer.CUSTOMER, 500, GatewayFeePayer.CUSTOMER, 500L, null, "PHP", "2001-03-05");
         refund(o1, 500, RefundStatus.FAILED);   // a failed refund moves no money: it must not count
         UUID o2 = order(orgA, 5_000, OrderStatus.PAID, 500, GatewayFeePayer.ORGANIZATION, 300, GatewayFeePayer.ORGANIZATION, 450L, GatewayFeeCardOrigin.FOREIGN, "PHP", "2001-03-06");
-        order(orgA, 4_000, OrderStatus.PAID, 400, GatewayFeePayer.PLATFORM, 200, GatewayFeePayer.PLATFORM, 200L, null, "PHP", "2001-03-07");
+        UUID o3 = order(orgA, 4_000, OrderStatus.PAID, 400, GatewayFeePayer.PLATFORM, 200, GatewayFeePayer.PLATFORM, 200L, null, "PHP", "2001-03-07");
         UUID o4 = order(orgA, 10_000, OrderStatus.PARTIALLY_REFUNDED, 1_000, GatewayFeePayer.CUSTOMER, 0, null, null, null, "PHP", "2001-03-08");
         refund(o4, 4_000, RefundStatus.COMPLETED);
         UUID o5 = order(orgA, 3_400, OrderStatus.REFUNDED, 300, GatewayFeePayer.CUSTOMER, 100, GatewayFeePayer.CUSTOMER, 100L, null, "PHP", "2001-03-09");
@@ -116,6 +124,16 @@ class FinanceSummaryIntegrationTest {
         payout(orgB, PayoutStatus.FAILED, 77);
         jdbc.update("update orders set payout_id = ? where id = ?", paid, o2);
         jdbc.update("update orders set payout_id = ? where id = ?", scheduled, o4);
+
+        // events: E1 (O1, O2 and the PAID payout) and E2 (O3) of A, E3 of B
+        event1 = event(orgA, "Finance E1");
+        event2 = event(orgA, "Finance E2");
+        eventOfB = event(orgB, "Finance E3");
+        ticket(o1, event1);
+        ticket(o1, event1);   // two tickets of one order: the order still counts once
+        ticket(o2, event1);
+        ticket(o3, event2);
+        jdbc.update("update payouts set event_id = ? where id = ?", event1, paid);
     }
 
     @AfterEach
@@ -126,6 +144,10 @@ class FinanceSummaryIntegrationTest {
             jdbc.update("delete from payout_cards where organization_id = ?", id);
         });
         orderIds.forEach(id -> jdbc.update("delete from refunds where order_id = ?", id));
+        eventIds.forEach(id -> {
+            jdbc.update("delete from tickets where event_id = ?", id);
+            jdbc.update("delete from events where id = ?", id);
+        });
         orderIds.forEach(orderRepository::deleteById);
         members.forEach(member -> organizationMemberRepository.findByUserIdAndOrganizationId(member.getUserId(), member.getOrganizationId())
                 .ifPresent(organizationMemberRepository::delete));
@@ -178,6 +200,37 @@ class FinanceSummaryIntegrationTest {
                 .net(money).periodStart(LocalDate.of(2001, 3, 1)).periodEnd(LocalDate.of(2001, 3, 31)).status(status).build());
         jdbc.update("update payouts set created_at = ?::timestamptz where id = ?", "2001-03-20T10:00:00Z", saved.getId());
         return saved.getId();
+    }
+
+    /** A DRAFT event far in the past, inserted directly (no venue or ticket types needed); its 3-letter ticket prefix must be unused. */
+    private UUID event(UUID org, String title) {
+        UUID id = UUID.randomUUID();
+        String prefix;
+        do {
+            prefix = ThreadLocalRandom.current().ints(3, 'A', 'Z' + 1).collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
+        } while (jdbc.queryForObject("select count(*) from events where ticket_prefix = ?", Long.class, prefix) > 0);
+        jdbc.update("""
+                insert into events (id, organization_id, title, description, category, start_time, end_time, status, created_by, created_at, ticket_prefix, timezone)
+                values (?, ?, ?, 'finance test', 'Music', '2001-02-01T10:00:00Z', '2001-02-01T12:00:00Z', 'DRAFT', 'finance-it', now(), ?, 'UTC')""",
+                id, org, title, prefix);
+        eventIds.add(id);
+        return id;
+    }
+
+    private void ticket(UUID orderId, UUID eventId) {
+        jdbc.update("""
+                insert into tickets (id, order_id, event_id, ticket_type_id, owner_id, ticket_number, credential, status, created_at)
+                values (?, ?, ?, ?, ?, ?, ?, 'VALID', now())""",
+                UUID.randomUUID(), orderId, eventId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID().toString().substring(0, 20),
+                "finance-it-" + UUID.randomUUID());
+    }
+
+    private ResultActions earnings(UUID org, String caller, String query) throws Exception {
+        return mockMvc.perform(get("/api/v1/organizations/{id}/finance/earnings?" + query, org).header("Authorization", caller));
+    }
+
+    private ResultActions transactions(UUID org, String caller, String query) throws Exception {
+        return mockMvc.perform(get("/api/v1/organizations/{id}/transactions?" + query, org).header("Authorization", caller));
     }
 
     private ResultActions platform(String caller, String query) throws Exception {
@@ -315,5 +368,102 @@ class FinanceSummaryIntegrationTest {
         organization(orgA, null, WINDOW).andExpect(status().isUnauthorized());
         organization(UUID.randomUUID(), admin, WINDOW).andExpect(status().isNotFound());
         organization(orgA, ownerA, "from=2001-03-31&to=2001-03-01").andExpect(status().isBadRequest());
+    }
+
+    // ---- one event's figures ----
+
+    @Test
+    void withAnEvent_everyFigureCoversOnlyThatEvent() throws Exception {
+        // E1 holds O1 (10,000 after a 1,000 platform and 500 gateway fee) and O2 (4,050 after 500 + 450, in the PAID payout)
+        organization(orgA, ownerA, WINDOW + "&eventId=" + event1).andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventId").value(event1.toString()))
+                .andExpect(jsonPath("$.orders").value(2))
+                .andExpect(jsonPath("$.sales.gross.amount").value(16_500)).andExpect(jsonPath("$.sales.refunds.amount").value(0))
+                .andExpect(jsonPath("$.sales.net.amount").value(16_500))
+                .andExpect(jsonPath("$.deductions.platformFee.amount").value(1_500)).andExpect(jsonPath("$.deductions.gatewayFee.amount").value(950))
+                .andExpect(jsonPath("$.deductions.total.amount").value(2_450))
+                .andExpect(jsonPath("$.income.amount").value(14_050))
+                .andExpect(jsonPath("$.paidOut.amount").value(4_050)).andExpect(jsonPath("$.inPayouts.amount").value(0))
+                .andExpect(jsonPath("$.owedNotYetInPayout.amount").value(10_000))
+                .andExpect(jsonPath("$.payouts.paid.count").value(1)).andExpect(jsonPath("$.payouts.scheduled.count").value(0));
+        organization(orgA, ownerA, WINDOW + "&eventId=" + event2).andExpect(status().isOk())
+                .andExpect(jsonPath("$.orders").value(1)).andExpect(jsonPath("$.income.amount").value(4_000)).andExpect(jsonPath("$.payouts.paid.count").value(0));
+        organization(orgA, ownerA, WINDOW).andExpect(jsonPath("$.eventId").value(nullValue()));
+    }
+
+    @Test
+    void anEventOfAnotherOrganizationIs400_andAnUnknownEventIs404_onEveryEndpoint() throws Exception {
+        organization(orgA, ownerA, WINDOW + "&eventId=" + eventOfB).andExpect(status().isBadRequest());
+        earnings(orgA, ownerA, WINDOW + "&eventId=" + eventOfB).andExpect(status().isBadRequest());
+        transactions(orgA, ownerA, WINDOW + "&eventId=" + eventOfB).andExpect(status().isBadRequest());
+        UUID unknown = UUID.randomUUID();
+        organization(orgA, ownerA, WINDOW + "&eventId=" + unknown).andExpect(status().isNotFound());
+        earnings(orgA, ownerA, WINDOW + "&eventId=" + unknown).andExpect(status().isNotFound());
+        transactions(orgA, ownerA, WINDOW + "&eventId=" + unknown).andExpect(status().isNotFound());
+        // the access check comes first: a stranger learns nothing about the event
+        earnings(orgA, ownerB, WINDOW + "&eventId=" + event1).andExpect(status().isForbidden());
+        transactions(orgA, organizerA, WINDOW).andExpect(status().isForbidden());
+    }
+
+    // ---- earnings over time ----
+
+    @Test
+    void earnings_perDay_fillEveryDayOfTheRange_withZeroWhenThereWereNone() throws Exception {
+        earnings(orgA, ownerA, "interval=DAY&from=2001-03-04&to=2001-03-08").andExpect(status().isOk())
+                .andExpect(jsonPath("$.interval").value("DAY")).andExpect(jsonPath("$.currency").value("PHP"))
+                .andExpect(jsonPath("$.points.length()").value(5))
+                .andExpect(jsonPath("$.points[0].period").value("2001-03-04")).andExpect(jsonPath("$.points[0].earnings.amount").value(0))
+                .andExpect(jsonPath("$.points[1].earnings.amount").value(10_000))   // O1
+                .andExpect(jsonPath("$.points[2].earnings.amount").value(4_050))   // O2
+                .andExpect(jsonPath("$.points[3].earnings.amount").value(4_000))   // O3
+                .andExpect(jsonPath("$.points[4].period").value("2001-03-08"))
+                .andExpect(jsonPath("$.points[4].earnings.amount").value(5_000));   // O4: 6,000 left after its refund - 1,000
+        earnings(orgA, ownerA, "interval=DAY&from=2001-03-05&to=2001-03-07&eventId=" + event1).andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventId").value(event1.toString()))
+                .andExpect(jsonPath("$.points[0].earnings.amount").value(10_000)).andExpect(jsonPath("$.points[1].earnings.amount").value(4_050))
+                .andExpect(jsonPath("$.points[2].earnings.amount").value(0));   // O3 is E2's
+    }
+
+    @Test
+    void earnings_perMonth_addUpToTheIncome_andFollowThePeriodRules() throws Exception {
+        earnings(orgA, ownerA, "interval=MONTH&from=2001-02-10&to=2001-04-30").andExpect(status().isOk())
+                .andExpect(jsonPath("$.points.length()").value(3))
+                .andExpect(jsonPath("$.points[0].period").value("2001-02")).andExpect(jsonPath("$.points[0].earnings.amount").value(0))
+                .andExpect(jsonPath("$.points[1].period").value("2001-03")).andExpect(jsonPath("$.points[1].earnings.amount").value(23_050))   // the March income
+                .andExpect(jsonPath("$.points[2].period").value("2001-04")).andExpect(jsonPath("$.points[2].earnings.amount").value(9_999));
+        earnings(orgA, ownerA, "interval=MONTH&from=2000-01-01&to=2001-03-31").andExpect(status().isBadRequest());   // over 366 days
+        earnings(orgA, ownerA, "interval=WEEK&" + WINDOW).andExpect(status().isBadRequest());
+        earnings(orgA, ownerA, WINDOW + "&currency=PESO").andExpect(status().isBadRequest());
+    }
+
+    // ---- transactions ----
+
+    @Test
+    void transactions_listSalesRefundsAndPayouts_newestFirst() throws Exception {
+        jdbc.update("update refunds set created_at = '2001-03-15T10:00:00Z' where order_id in (select id from orders where payee_id = ?)", orgA);
+
+        // A: 5 sales, 2 completed refunds (the failed one moved no money), 2 payouts
+        transactions(orgA, ownerA, WINDOW).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(9))
+                .andExpect(jsonPath("$.content[0].type").value("PAYOUT")).andExpect(jsonPath("$.content[1].type").value("PAYOUT"))
+                .andExpect(jsonPath("$.content[2].type").value("REFUND")).andExpect(jsonPath("$.content[3].type").value("REFUND"))
+                .andExpect(jsonPath("$.content[?(@.type == 'PAYOUT')].net.amount", containsInAnyOrder(-4_050, -5_000)))
+                .andExpect(jsonPath("$.content[?(@.type == 'REFUND')].net.amount", containsInAnyOrder(-4_000, -3_400)))
+                .andExpect(jsonPath("$.content[4].type").value("SALE")).andExpect(jsonPath("$.content[4].occurredAt").value("2001-03-09T10:00:00Z"))
+                .andExpect(jsonPath("$.content[8].gross.amount").value(11_500)).andExpect(jsonPath("$.content[8].fees.amount").value(1_500))
+                .andExpect(jsonPath("$.content[8].net.amount").value(10_000)).andExpect(jsonPath("$.content[8].status").value("PAID"));
+        transactions(orgA, ownerA, WINDOW + "&page=1&size=2").andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2)).andExpect(jsonPath("$.page").value(1)).andExpect(jsonPath("$.totalPage").value(5));
+
+        // E1: its PAID payout, then O2 and O1
+        transactions(orgA, ownerA, WINDOW + "&eventId=" + event1).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content[0].type").value("PAYOUT")).andExpect(jsonPath("$.content[0].net.amount").value(-4_050))
+                .andExpect(jsonPath("$.content[0].eventTitle").value("Finance E1")).andExpect(jsonPath("$.content[0].orderId").value(nullValue()))
+                .andExpect(jsonPath("$.content[1].type").value("SALE")).andExpect(jsonPath("$.content[1].eventTitle").value("Finance E1"))
+                .andExpect(jsonPath("$.content[1].gross.amount").value(5_000)).andExpect(jsonPath("$.content[1].fees.amount").value(950))
+                .andExpect(jsonPath("$.content[1].net.amount").value(4_050)).andExpect(jsonPath("$.content[1].net.currency").value("PHP"))
+                .andExpect(jsonPath("$.content[2].type").value("SALE"));
+        transactions(orgB, ownerB, WINDOW).andExpect(jsonPath("$.totalElements").value(4));   // O6, O7 (USD lines are listed too) and two payouts
     }
 }

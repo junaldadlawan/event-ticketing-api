@@ -6,6 +6,7 @@ import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
+import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.event.service.EventQueryService;
 import com.junaldadlawan.event_ticketing_api.event.service.EventService;
 import jakarta.validation.Valid;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -26,6 +28,7 @@ public class EventController {
 
     private final EventService eventService;
     private final EventQueryService eventQueryService;
+    private final EventCompletionService eventCompletionService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -43,7 +46,16 @@ public class EventController {
             @PageableDefault(size = 20) Pageable pageable
     ) {
         // Cached (see EventQueryService): the public list is the same for every caller.
-        return eventQueryService.searchPublic(category, keyword, startsAfter, startsBefore, pageable);
+        PageResponse<EventResponse> page = eventQueryService.searchPublic(category, keyword, startsAfter, startsBefore, pageable);
+        // An event that ended since the last completion sweep would still be listed as PUBLISHED: complete those
+        // now (which clears the cache) and list again, so a finished event never shows as live.
+        List<UUID> ended = page.content().stream()
+                .filter(EventCompletionService::showsLiveAfterEnd).map(EventResponse::id).toList();
+        if (!ended.isEmpty()) {
+            eventCompletionService.completeEnded(ended);
+            page = eventQueryService.searchPublic(category, keyword, startsAfter, startsBefore, pageable);
+        }
+        return page;
     }
 
     /**
@@ -73,8 +85,9 @@ public class EventController {
         // Cached for non-draft events (public anyway). A DRAFT returns null here and
         // falls through to the normal authorized path, so a draft is never cached or
         // served from the cache.
+        // One still shown as live after its end time goes through getEvent too, which completes it.
         EventResponse publicEvent = eventQueryService.findPublic(eventId);
-        if (publicEvent != null) {
+        if (publicEvent != null && !EventCompletionService.showsLiveAfterEnd(publicEvent)) {
             return publicEvent;
         }
         return toResponse(eventService.getEvent(eventId));

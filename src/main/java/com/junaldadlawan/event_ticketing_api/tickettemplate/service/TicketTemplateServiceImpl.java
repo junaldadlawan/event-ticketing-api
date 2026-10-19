@@ -6,6 +6,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.tickettemplate.dto.TicketTemplateCreateRequest;
@@ -42,6 +43,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
     public TicketTemplate create(UUID eventId, TicketTemplateCreateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         TicketTemplate ticketTemplate = TicketTemplate.builder()
                 .eventId(event.getId())
@@ -89,6 +91,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         // established in Phases 2-3 onward).
         Event event = getEventOrThrow(ticketTemplate.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         // A PATCH can't send null to mean "clear", so switching to NONE / to a non-CUSTOM fit clears the
         // values that no longer apply - but a request that names such a value alongside is contradictory.
@@ -184,6 +187,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         // Same rule as update: the owning organization comes from the template's own event, never from client input.
         Event event = getEventOrThrow(ticketTemplate.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         ticketTemplate.markDeleted();
         ticketTemplateRepository.save(ticketTemplate);

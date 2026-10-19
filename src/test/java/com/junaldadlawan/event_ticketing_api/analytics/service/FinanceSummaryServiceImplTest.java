@@ -1,6 +1,12 @@
 package com.junaldadlawan.event_ticketing_api.analytics.service;
 
+import com.junaldadlawan.event_ticketing_api.analytics.dto.OrganizationEarningsResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.dto.OrganizationEarningsResponse.Interval;
 import com.junaldadlawan.event_ticketing_api.analytics.repository.FinanceSummaryRepository;
+import com.junaldadlawan.event_ticketing_api.event.entity.Event;
+import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import org.springframework.data.domain.PageRequest;
+import java.util.Optional;
 import com.junaldadlawan.event_ticketing_api.analytics.repository.FinanceSummaryRepository.Figures;
 import com.junaldadlawan.event_ticketing_api.analytics.repository.FinanceSummaryRepository.PayoutTotal;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -44,13 +50,15 @@ class FinanceSummaryServiceImplTest {
     private OrganizationAccessGuard accessGuard;
     @Mock
     private com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeActualSyncService gatewayFeeActualSync;
+    @Mock
+    private EventRepository eventRepository;
 
     private FinanceSummaryServiceImpl service;
     private UUID orgId;
 
     @BeforeEach
     void setUp() {
-        service = new FinanceSummaryServiceImpl(repository, organizationRepository, accessGuard, gatewayFeeActualSync);
+        service = new FinanceSummaryServiceImpl(repository, organizationRepository, accessGuard, gatewayFeeActualSync, eventRepository);
         orgId = UUID.randomUUID();
     }
 
@@ -79,9 +87,9 @@ class FinanceSummaryServiceImplTest {
 
     @Test
     void platformSummary_mapsEveryFigure_andNetIncomeIsFeesMinusTheGatewayCostTheyBear() {
-        when(repository.figures(any(), any(), eq("PHP"), isNull())).thenReturn(figures());
-        when(repository.payoutsByStatus(any(), any(), eq("PHP"), isNull())).thenReturn(Map.of("PAID", new PayoutTotal(2, 5_000)));
-        when(repository.otherCurrencies(any(), any(), eq("PHP"), isNull())).thenReturn(List.of("USD"));
+        when(repository.figures(any(), any(), eq("PHP"), isNull(), isNull())).thenReturn(figures());
+        when(repository.payoutsByStatus(any(), any(), eq("PHP"), isNull(), isNull())).thenReturn(Map.of("PAID", new PayoutTotal(2, 5_000)));
+        when(repository.otherCurrencies(any(), any(), eq("PHP"), isNull(), isNull())).thenReturn(List.of("USD"));
 
         var summary = service.platformSummary(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null);
 
@@ -105,9 +113,9 @@ class FinanceSummaryServiceImplTest {
 
     @Test
     void platformSummary_takesTheCurrencyInAnyCase_butOnlyAThreeLetterCode() {
-        when(repository.figures(any(), any(), eq("USD"), isNull())).thenReturn(figures());
-        when(repository.payoutsByStatus(any(), any(), eq("USD"), isNull())).thenReturn(Map.of());
-        when(repository.otherCurrencies(any(), any(), eq("USD"), isNull())).thenReturn(List.of());
+        when(repository.figures(any(), any(), eq("USD"), isNull(), isNull())).thenReturn(figures());
+        when(repository.payoutsByStatus(any(), any(), eq("USD"), isNull(), isNull())).thenReturn(Map.of());
+        when(repository.otherCurrencies(any(), any(), eq("USD"), isNull(), isNull())).thenReturn(List.of());
 
         assertThat(service.platformSummary(null, null, " usd ").currency()).isEqualTo("USD");
         assertThatThrownBy(() -> service.platformSummary(null, null, "PESO")).isInstanceOf(BadRequestException.class);
@@ -131,11 +139,11 @@ class FinanceSummaryServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(ownerId);
         when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
-        when(repository.figures(any(), any(), eq("PHP"), eq(orgId))).thenReturn(figures());
-        when(repository.payoutsByStatus(any(), any(), eq("PHP"), eq(orgId))).thenReturn(Map.of());
-        when(repository.otherCurrencies(any(), any(), eq("PHP"), eq(orgId))).thenReturn(List.of());
+        when(repository.figures(any(), any(), eq("PHP"), eq(orgId), isNull())).thenReturn(figures());
+        when(repository.payoutsByStatus(any(), any(), eq("PHP"), eq(orgId), isNull())).thenReturn(Map.of());
+        when(repository.otherCurrencies(any(), any(), eq("PHP"), eq(orgId), isNull())).thenReturn(List.of());
 
-        var summary = service.organizationSummary(orgId, null, null, "PHP");
+        var summary = service.organizationSummary(orgId, null, null, "PHP", null);
 
         assertThat(summary.organizationId()).isEqualTo(orgId);
         assertThat(summary.sales().gross().amount()).isEqualTo(10_000L);
@@ -152,11 +160,11 @@ class FinanceSummaryServiceImplTest {
     void organizationSummary_anAdminMayLookAtAnyOrganization() {
         when(organizationRepository.existsById(orgId)).thenReturn(true);
         when(accessGuard.isAdmin()).thenReturn(true);
-        when(repository.figures(any(), any(), any(), eq(orgId))).thenReturn(figures());
-        when(repository.payoutsByStatus(any(), any(), any(), eq(orgId))).thenReturn(Map.of());
-        when(repository.otherCurrencies(any(), any(), any(), eq(orgId))).thenReturn(List.of());
+        when(repository.figures(any(), any(), any(), eq(orgId), isNull())).thenReturn(figures());
+        when(repository.payoutsByStatus(any(), any(), any(), eq(orgId), isNull())).thenReturn(Map.of());
+        when(repository.otherCurrencies(any(), any(), any(), eq(orgId), isNull())).thenReturn(List.of());
 
-        assertThat(service.organizationSummary(orgId, null, null, null).income().amount()).isEqualTo(8_100L);
+        assertThat(service.organizationSummary(orgId, null, null, null, null).income().amount()).isEqualTo(8_100L);
     }
 
     @Test
@@ -167,11 +175,66 @@ class FinanceSummaryServiceImplTest {
         when(accessGuard.currentUserId()).thenReturn(callerId);
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);   // an organizer, a member, or another organization's owner
 
-        assertThatThrownBy(() -> service.organizationSummary(orgId, null, null, null)).isInstanceOf(ForbiddenException.class);
-        verify(repository, never()).figures(any(), any(), any(), any());
+        assertThatThrownBy(() -> service.organizationSummary(orgId, null, null, null, null)).isInstanceOf(ForbiddenException.class);
+        verify(repository, never()).figures(any(), any(), any(), any(), any());
 
         UUID unknown = UUID.randomUUID();
         when(organizationRepository.existsById(unknown)).thenReturn(false);
-        assertThatThrownBy(() -> service.organizationSummary(unknown, null, null, null)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.organizationSummary(unknown, null, null, null, null)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---- one event ----
+
+    @Test
+    void anEvent_ofAnotherOrganizationIs400_andAnUnknownOneIs404_beforeAnythingIsRead() {
+        UUID otherOrgsEvent = UUID.randomUUID();
+        UUID unknownEvent = UUID.randomUUID();
+        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(accessGuard.isAdmin()).thenReturn(true);
+        when(eventRepository.findById(otherOrgsEvent)).thenReturn(Optional.of(Event.builder().id(otherOrgsEvent).organizationId(UUID.randomUUID()).build()));
+        when(eventRepository.findById(unknownEvent)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.organizationSummary(orgId, null, null, null, otherOrgsEvent)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.organizationEarnings(orgId, Interval.DAY, null, null, null, otherOrgsEvent)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.organizationTransactions(orgId, null, null, otherOrgsEvent, PageRequest.of(0, 20)))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.organizationSummary(orgId, null, null, null, unknownEvent)).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void organizationSummary_withItsOwnEvent_readsOnlyThatEvent_andEchoesIt() {
+        UUID eventId = UUID.randomUUID();
+        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(accessGuard.isAdmin()).thenReturn(true);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(Event.builder().id(eventId).organizationId(orgId).build()));
+        when(repository.figures(any(), any(), eq("PHP"), eq(orgId), eq(eventId))).thenReturn(figures());
+        when(repository.payoutsByStatus(any(), any(), eq("PHP"), eq(orgId), eq(eventId))).thenReturn(Map.of());
+        when(repository.otherCurrencies(any(), any(), eq("PHP"), eq(orgId), eq(eventId))).thenReturn(List.of());
+
+        var summary = service.organizationSummary(orgId, null, null, null, eventId);
+
+        assertThat(summary.eventId()).isEqualTo(eventId);
+        assertThat(summary.income().amount()).isEqualTo(8_100L);
+    }
+
+    // ---- earnings ----
+
+    @Test
+    void earnings_fillEveryPeriodOfTheRange_withZeroWhereThereWasNone() {
+        when(organizationRepository.existsById(orgId)).thenReturn(true);
+        when(accessGuard.isAdmin()).thenReturn(true);
+        when(repository.incomeByPeriod(any(), any(), eq("PHP"), eq(orgId), isNull(), eq("YYYY-MM-DD"))).thenReturn(Map.of("2026-10-02", 500L));
+        when(repository.incomeByPeriod(any(), any(), eq("PHP"), eq(orgId), isNull(), eq("YYYY-MM"))).thenReturn(Map.of("2026-12", 700L));
+
+        var days = service.organizationEarnings(orgId, Interval.DAY, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3), null, null);
+        assertThat(days.points()).extracting(OrganizationEarningsResponse.Point::period).containsExactly("2026-10-01", "2026-10-02", "2026-10-03");
+        assertThat(days.points()).extracting(p -> p.earnings().amount()).containsExactly(0L, 500L, 0L);
+
+        var months = service.organizationEarnings(orgId, Interval.MONTH, LocalDate.of(2026, 11, 20), LocalDate.of(2027, 1, 5), "php", null);
+        assertThat(months.interval()).isEqualTo(Interval.MONTH);
+        assertThat(months.points()).extracting(OrganizationEarningsResponse.Point::period).containsExactly("2026-11", "2026-12", "2027-01");
+        assertThat(months.points()).extracting(p -> p.earnings().amount()).containsExactly(0L, 700L, 0L);
+        assertThat(months.points().get(1).earnings().currency()).isEqualTo("PHP");
     }
 }

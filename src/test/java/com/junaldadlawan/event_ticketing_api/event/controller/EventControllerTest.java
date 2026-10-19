@@ -56,6 +56,9 @@ class EventControllerTest {
     private com.junaldadlawan.event_ticketing_api.event.service.EventQueryService eventQueryService;
 
     @MockitoBean
+    private com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService eventCompletionService;
+
+    @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @MockitoBean

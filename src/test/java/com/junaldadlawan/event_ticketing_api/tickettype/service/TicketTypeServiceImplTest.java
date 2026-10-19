@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,7 +70,10 @@ class TicketTypeServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard, ticketRepository, cartItemRepository);
+        service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard, ticketRepository, cartItemRepository,
+                new com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService(eventRepository,
+                        org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class)),
+                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
         orgId = UUID.randomUUID();
     }
 
@@ -636,8 +641,11 @@ class TicketTypeServiceImplTest {
     }
 
     @Test
-    void setSalesStatus_workInAnyEventStatus() {
+    void setSalesStatus_workInAnyEventStatus_untilTheEventHasEnded() {
         for (EventStatus status : EventStatus.values()) {
+            if (status == EventStatus.COMPLETED) {
+                continue;   // BR-EVENT-005: covered by setSalesStatus_completedEvent_throwsConflict below
+            }
             UUID eventId = UUID.randomUUID();
             UUID ticketTypeId = UUID.randomUUID();
             UUID ownerId = UUID.randomUUID();
@@ -650,6 +658,23 @@ class TicketTypeServiceImplTest {
 
             assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED).isSalesPaused()).as("pause in %s", status).isTrue();
         }
+    }
+
+    @Test
+    void setSalesStatus_completedEvent_throwsConflict_andSavesNothing() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId, 100, 100)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.COMPLETED)));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED))
+                .isInstanceOf(com.junaldadlawan.event_ticketing_api.common.exception.ConflictException.class)
+                .hasMessage("Event has ended");
+        verify(ticketTypeRepository, never()).save(any());
     }
 
     @Test
@@ -959,22 +984,32 @@ class TicketTypeServiceImplTest {
     }
 
     /**
-     * The dedicated edge case code-reviewer specifically checked:
-     * {@code quantityAvailable} resyncs to the new {@code quantityTotal}
-     * ONLY when {@code quantityTotal} is present in the request.
+     * A new {@code quantityTotal} keeps what is already sold or held (total - available) taken: resetting available to the new total
+     * would sell those tickets twice (the Bantayog 2026 mismatch).
      */
     @Test
-    void update_quantityTotalPresent_resyncsQuantityAvailable() {
+    void update_quantityTotalPresent_keepsTheTicketsAlreadySoldOrHeld() {
         UUID eventId = UUID.randomUUID();
         UUID ticketTypeId = UUID.randomUUID();
-        // Simulate a ticket type whose quantityAvailable has already drifted
-        // from quantityTotal (e.g. via a future Phase-5 decrement).
-        mockOwnerAccess(ticketTypeId, eventId, 100, 40);
+        mockOwnerAccess(ticketTypeId, eventId, 100, 40);   // 60 sold or held
 
         TicketType result = service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, 150, null, null, null));
 
         assertThat(result.getQuantityTotal()).isEqualTo(150);
-        assertThat(result.getQuantityAvailable()).isEqualTo(150);
+        assertThat(result.getQuantityAvailable()).isEqualTo(90);
+        verify(ticketTypeRepository).findByIdForUpdate(ticketTypeId);   // read under the lock holds take
+    }
+
+    @Test
+    void update_quantityTotalBelowWhatIsSoldOrHeld_isRefused() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 40);   // 60 sold or held
+
+        assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, 59, null, null, null)))
+                .isInstanceOf(ConflictException.class);
+        TicketType result = service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, 60, null, null, null));
+        assertThat(result.getQuantityAvailable()).isZero();   // exactly sold out is fine
     }
 
     @Test

@@ -18,6 +18,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.common.exception.UnprocessableEntityException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
 import com.junaldadlawan.event_ticketing_api.paymentmethod.service.PayMongoCustomerService;
 import com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService;
@@ -121,6 +122,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final PayMongoCustomerService payMongoCustomerService;
     private final PaymentMethodService paymentMethodService;
     private final CardVaultingStatus cardVaultingStatus;
+    private final com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder cartActivityRecorder;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -285,6 +287,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         // Also resolved here (rather than after payment) so the same lookup
         // can be reused below for ticket issuance without an extra query.
         Event event = resolveEvent(items);
+        // BR-EVENT-005: refused before charging; in the payment webhook this throws, and the payment is refunded
+        EventCompletionService.requireNotEnded(event);
         UUID payeeId = event.getOrganizationId();
 
         // The platform fee is added on top of the ticket price: the buyer is charged ticket total + fee, the organizer
@@ -376,6 +380,9 @@ public class CheckoutServiceImpl implements CheckoutService {
                     issuedTickets.add(issueTicket(savedOrder, event, item.getTicketTypeId(), null, buyerId));
                 }
             }
+            // the order is PAID (synchronous checkout or the payment webhook): the line ends as a sale in the funnel log
+            cartActivityRecorder.record(item, item.getQuantity(),
+                    com.junaldadlawan.event_ticketing_api.analytics.repository.FunnelRepository.CartAction.CHECKOUT);
             cartItemRepository.delete(item);
         }
         // Force a flush so @CreationTimestamp/@UpdateTimestamp are actually

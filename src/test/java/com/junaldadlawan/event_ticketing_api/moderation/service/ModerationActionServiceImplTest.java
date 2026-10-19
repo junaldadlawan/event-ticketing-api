@@ -251,14 +251,15 @@ class ModerationActionServiceImplTest {
     }
 
     @Test
-    void create_eventRemove_delegatesToEventServiceDelete() {
+    void create_eventRemove_delegatesToEventServiceRemoveByModeration() {
         UUID eventId = UUID.randomUUID();
         when(accessGuard.currentUserId()).thenReturn(UUID.randomUUID());
         when(eventRepository.findById(eventId)).thenReturn(Optional.of(event(eventId, EventStatus.PUBLISHED)));
 
         service.create(new ModerationActionCreateRequest(ModerationTargetType.EVENT, eventId, ModerationActionType.REMOVE, "reason"));
 
-        verify(eventService).delete(eventId);
+        // the moderation path, which stays allowed after the event has ended (BR-EVENT-005)
+        verify(eventService).removeByModeration(eventId);
     }
 
     @Test

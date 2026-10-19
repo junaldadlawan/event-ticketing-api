@@ -105,6 +105,8 @@ class CartServiceImplTest {
 
     @Mock
     private com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeService gatewayFeeService;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder cartActivityRecorder;
 
     private CartServiceImpl service;
 
@@ -114,7 +116,7 @@ class CartServiceImplTest {
     void setUp() {
         service = new CartServiceImpl(
                 cartRepository, cartItemRepository, ticketTypeRepository, seatRepository,
-                seatMapRepository, eventRepository, promoCodeRepository, promoCodeUsageLimitGuard, accessGuard, entityManager, platformFeeService, gatewayFeeService);
+                seatMapRepository, eventRepository, promoCodeRepository, promoCodeUsageLimitGuard, accessGuard, entityManager, platformFeeService, gatewayFeeService, cartActivityRecorder);
         lenient().when(platformFeeService.quote(any(), any(), anyLong(), any(), anyInt())).thenReturn(PlatformFeeQuote.NONE);
         lenient().when(gatewayFeeService.quote(anyLong(), any())).thenReturn(com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote.NONE);
         buyerId = UUID.randomUUID();

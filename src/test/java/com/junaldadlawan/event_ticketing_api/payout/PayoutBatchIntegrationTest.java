@@ -11,6 +11,9 @@ import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
 import com.junaldadlawan.event_ticketing_api.order.enums.PayeeType;
 import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
+import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
+import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutCard;
@@ -80,6 +83,8 @@ class PayoutBatchIntegrationTest {
     private RefundRepository refundRepository;
     @Autowired
     private PayoutCardRepository payoutCardRepository;
+    @Autowired
+    private OrganizationMemberRepository organizationMemberRepository;
 
     private final List<UUID> orgIds = new ArrayList<>();
     private final List<UUID> eventIds = new ArrayList<>();
@@ -312,5 +317,84 @@ class PayoutBatchIntegrationTest {
         batch(customer, body(lines(orgA, ea1))).andExpect(status().isForbidden());
         batch(null, body(lines(orgA, ea1))).andExpect(status().isUnauthorized());
         assertThat(jdbc.queryForObject("select count(*) from payouts where organization_id = ? and event_id is not null", Integer.class, orgA)).isZero();
+    }
+
+    // ---- POST /payouts/{id}/cancel ----
+
+    private ResultActions cancel(String caller, UUID payoutId) throws Exception {
+        var request = post("/api/v1/payouts/{id}/cancel", payoutId);
+        return mockMvc.perform(caller == null ? request : request.header("Authorization", caller));
+    }
+
+    private UUID payoutOf(UUID event) {
+        return jdbc.queryForObject("select id from payouts where organization_id = ? and event_id = ?", UUID.class, orgA, event);
+    }
+
+    private ResultActions finance(String path) throws Exception {
+        return mockMvc.perform(get(path + "?from=2001-03-01&to=2001-03-31").header("Authorization", admin));
+    }
+
+    @Test
+    void cancellingAScheduledPayout_releasesItsOrders_whichAreOwedAndEligibleAgain() throws Exception {
+        batch(admin, body(lines(orgA, ea1))).andExpect(status().isCreated());
+        UUID payout = payoutOf(ea1);
+        // A's March income is 32,938: 8,888 already PAID, 14,050 in this payout, 10,000 in none
+        finance("/api/v1/organizations/" + orgA + "/finance").andExpect(jsonPath("$.inPayouts.amount").value(14_050))
+                .andExpect(jsonPath("$.owedNotYetInPayout.amount").value(10_000));
+
+        cancel(admin, payout).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(payout.toString())).andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.net.amount").value(14_050));
+
+        assertThat(jdbc.queryForObject("select count(*) from orders where payout_id = ?", Integer.class, payout)).isZero();
+        assertThat(jdbc.queryForObject("select status from payouts where id = ?", String.class, payout)).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select count(*) from audit_log_entries where action = 'payout.cancelled' and target_id = ?", Integer.class, payout)).isEqualTo(1);
+        eligible(admin, WINDOW + "&organizationId=" + orgA).andExpect(jsonPath("$.items[?(@.eventId=='" + ea1 + "')].eligible.amount").value(14_050));
+
+        // the cancelled payout counts nowhere; its orders are owed again
+        finance("/api/v1/organizations/" + orgA + "/finance").andExpect(jsonPath("$.income.amount").value(32_938))
+                .andExpect(jsonPath("$.paidOut.amount").value(8_888)).andExpect(jsonPath("$.inPayouts.amount").value(0))
+                .andExpect(jsonPath("$.owedNotYetInPayout.amount").value(24_050)).andExpect(jsonPath("$.payouts.scheduled.count").value(0));
+        finance("/api/v1/analytics/platform/finance").andExpect(jsonPath("$.organizers.inPayouts.amount").value(0));
+        jdbc.update("update payouts set created_at = '2001-03-25T10:00:00Z' where id = ?", payout);
+        mockMvc.perform(get("/api/v1/organizations/{id}/transactions?from=2001-03-01&to=2001-03-31", orgA).header("Authorization", admin))
+                .andExpect(jsonPath("$.content[?(@.id=='" + payout + "')]").isEmpty());
+
+        // a new payout can settle them again; the cancelled one can be neither cancelled again, sent nor refreshed
+        cancel(admin, payout).andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/payouts/{id}/send", payout).header("Authorization", admin)).andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/payouts/{id}/refresh", payout).header("Authorization", admin)).andExpect(status().isConflict());
+        batch(admin, body(lines(orgA, ea1))).andExpect(status().isCreated()).andExpect(jsonPath("$[0].net.amount").value(14_050));
+    }
+
+    @Test
+    void onlyAScheduledPayoutCanBeCancelled_andOnlyByAnAdmin() throws Exception {
+        for (String status : List.of("PROCESSING", "PAID", "FAILED", "CANCELLED")) {
+            UUID id = UUID.randomUUID();
+            jdbc.update("insert into payouts (id, organization_id, gross_amount, gross_currency, fees_amount, fees_currency, net_amount, net_currency, period_start, period_end, status, created_at, transfer_attempts) "
+                    + "values (?, ?, 100, 'PHP', 0, 'PHP', 100, 'PHP', '2001-03-01', '2001-03-31', ?, now(), 0)", id, orgA, status);
+            cancel(admin, id).andExpect(status().isConflict());
+            assertThat(jdbc.queryForObject("select status from payouts where id = ?", String.class, id)).isEqualTo(status);
+        }
+        cancel(admin, UUID.randomUUID()).andExpect(status().isNotFound());
+
+        batch(admin, body(lines(orgA, ea1))).andExpect(status().isCreated());
+        UUID payout = payoutOf(ea1);
+        UUID ownerId = UUID.randomUUID();
+        OrganizationMember owner = OrganizationMember.builder().userId(ownerId).organizationId(orgA).build();
+        owner.getRoles().add(OrganizationRole.OWNER);
+        owner.getRoles().add(OrganizationRole.ORGANIZER);
+        organizationMemberRepository.save(owner);
+        actorIds.add(ownerId);
+        String ownerToken = "Bearer " + jwtService.generateAccessToken(User.builder().id(ownerId).email("batch-it-" + UUID.randomUUID() + "@test.local").role(Role.CUSTOMER).build());
+        try {
+            cancel(ownerToken, payout).andExpect(status().isForbidden());   // the organization's own owner and organizer
+            cancel(customer, payout).andExpect(status().isForbidden());
+            cancel(null, payout).andExpect(status().isUnauthorized());
+            assertThat(jdbc.queryForObject("select status from payouts where id = ?", String.class, payout)).isEqualTo("SCHEDULED");
+            assertThat(jdbc.queryForObject("select count(*) from orders where payout_id = ?", Integer.class, payout)).isEqualTo(2);
+        } finally {
+            organizationMemberRepository.delete(owner);
+        }
     }
 }

@@ -11,6 +11,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeCreateRequest;
@@ -18,8 +19,10 @@ import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeUpdateRequ
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.SalesStatus;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,11 +43,14 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     private final OrganizationAccessGuard accessGuard;
     private final TicketRepository ticketRepository;
     private final CartItemRepository cartItemRepository;
+    private final EventCompletionService eventCompletionService;
+    private final EntityManager entityManager;
 
     @Override
     public TicketType create(UUID eventId, TicketTypeCreateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         if (!request.saleEndAt().isAfter(request.saleStartAt())) {
             throw new BadRequestException("saleEndAt must be after saleStartAt");
@@ -75,6 +81,8 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         if (event.getStatus() == EventStatus.DRAFT) {
             requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         }
+        // the page that lists ticket types shows the event as over the moment it ends, not at the next sweep
+        eventCompletionService.completeIfEnded(event);
         return ticketTypeRepository.findByEventIdAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(eventId);
     }
 
@@ -89,6 +97,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     }
 
     @Override
+    @Transactional
     public TicketType update(UUID ticketTypeId, TicketTypeUpdateRequest request) {
         TicketType ticketType = getOrThrow(ticketTypeId);
         // Owning organizationId is always resolved from the persisted
@@ -96,6 +105,12 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         // pattern established in Phases 2-3).
         Event event = getEventOrThrow(ticketType.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
+        if (request.quantityTotal() != null) {
+            // under the row lock holds take, re-read before anything is changed, so a sale made since the row was loaded is not overwritten
+            ticketTypeRepository.findByIdForUpdate(ticketTypeId);
+            entityManager.refresh(ticketType);
+        }
 
         if (request.name() != null) {
             if (request.name().isBlank()) {
@@ -110,12 +125,14 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                     .build());
         }
         if (request.quantityTotal() != null) {
+            // Holds and sales keep only quantityAvailable: what is sold or held is total - available. Resetting available to the new
+            // total would hand those tickets out again, so the new total keeps them taken.
+            int taken = ticketType.getQuantityTotal() - ticketType.getQuantityAvailable();
+            if (request.quantityTotal() < taken) {
+                throw new ConflictException("quantityTotal cannot be lower than the " + taken + " tickets already sold or held");
+            }
             ticketType.setQuantityTotal(request.quantityTotal());
-            // No checkout/hold logic exists yet to have decremented
-            // quantityAvailable away from quantityTotal (Phase 5), so
-            // re-syncing it here keeps the two fields consistent for now.
-            // Flagged for revisit once inventory decrement lands.
-            ticketType.setQuantityAvailable(request.quantityTotal());
+            ticketType.setQuantityAvailable(request.quantityTotal() - taken);
         }
         if (request.saleStartAt() != null) {
             ticketType.setSaleStartAt(request.saleStartAt());
@@ -141,6 +158,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     public List<TicketType> reorder(UUID eventId, List<UUID> orderedTicketTypeIds) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         if (new HashSet<>(orderedTicketTypeIds).size() != orderedTicketTypeIds.size()) {
             throw new BadRequestException("ticketTypeIds must not list the same ticket type twice");
@@ -173,6 +191,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         // Same rule as update: the owning organization comes from the ticket type's own event.
         Event event = getEventOrThrow(ticketType.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         // Anything sold or held stays referenced by carts, orders and tickets, so it can only be paused.
         boolean hasSalesOrHolds = ticketType.getQuantityAvailable() != ticketType.getQuantityTotal()
@@ -194,14 +213,16 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
     /**
      * The one switch behind both actions (and the {@code salesPaused} flag of the PATCH). Allowed whatever the
-     * event's status - it is only a flag; whether anything can be bought is decided at cart and checkout time.
-     * Asking for the state it is already in is not an error and writes nothing.
+     * event's status, except once the event has ended (BR-EVENT-005) - it is only a flag; whether anything can
+     * be bought is decided at cart and checkout time. Asking for the state it is already in is not an error and
+     * writes nothing.
      */
     private TicketType setSalesPaused(UUID ticketTypeId, boolean paused) {
         TicketType ticketType = getOrThrow(ticketTypeId);
         // Same rule as update/delete: the owning organization comes from the ticket type's own event.
         Event event = getEventOrThrow(ticketType.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         if (ticketType.isSalesPaused() == paused) {
             return ticketType;

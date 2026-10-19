@@ -30,7 +30,14 @@ public interface EventService {
     Event updateEvent(UUID eventId, EventUpdateRequest request);
     Event publishEvent(UUID eventId);
     Event cancelEvent(UUID eventId);
+    /** Soft-deletes the event. 409 once it has ended (BR-EVENT-005). */
     void delete(UUID id);
+
+    /**
+     * Admin moderation REMOVE: the same soft delete, but still allowed after the event has ended - taking an
+     * event down is moderation, not an organizer edit.
+     */
+    void removeByModeration(UUID id);
 
     /**
      * Resolves the {@link Venue} snapshot for an event's {@code venueId}

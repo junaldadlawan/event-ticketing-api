@@ -14,9 +14,11 @@ import java.util.UUID;
  * (which are not the organization's money); {@code income} = gross - refunds - deductions, exactly the net its payouts pay. {@code paidOut}
  * is the part of {@code income} in PAID payouts, {@code inPayouts} the part in scheduled, processing or failed ones, and
  * {@code owedNotYetInPayout} the part not in any payout yet. {@code payouts} counts the payouts created in the period by status.
+ * {@code eventId}, when set, narrows every figure to that one event (null for the whole organization).
  */
 public record OrganizationFinanceResponse(
         UUID organizationId,
+        UUID eventId,
         LocalDate from,
         LocalDate to,
         String currency,

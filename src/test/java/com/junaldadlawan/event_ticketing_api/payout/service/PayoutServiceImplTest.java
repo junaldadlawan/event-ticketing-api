@@ -91,6 +91,8 @@ class PayoutServiceImplTest {
 
     @Mock
     private com.junaldadlawan.event_ticketing_api.payout.repository.PayoutEligibilityRepository eligibilityRepository;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService auditLogService;
 
     private PayoutServiceImpl service;
 
@@ -100,7 +102,7 @@ class PayoutServiceImplTest {
     void setUp() {
         service = new PayoutServiceImpl(payoutRepository, organizationRepository, accessGuard, orderRepository, refundRepository, payoutCardRepository,
                 payoutAccountRepository, transferClient, cipher, transactionManager,
-                eventRepository, eligibilityRepository);
+                eventRepository, eligibilityRepository, auditLogService);
         orgId = UUID.randomUUID();
     }
 

@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.payout.service;
 
 import com.junaldadlawan.event_ticketing_api.analytics.service.FinancePeriod;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.ApiException;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -70,6 +71,7 @@ public class PayoutServiceImpl implements PayoutService {
     private final PlatformTransactionManager transactionManager;
     private final EventRepository eventRepository;
     private final PayoutEligibilityRepository eligibilityRepository;
+    private final AuditLogService auditLogService;
 
     @Override
     public Page<PayoutResponse> list(UUID organizationId, Pageable pageable) {
@@ -304,6 +306,23 @@ public class PayoutServiceImpl implements PayoutService {
             throw e;
         }
         return settle(payoutId, result);
+    }
+
+    @Override
+    @Transactional
+    public PayoutResponse cancel(UUID payoutId) {
+        accessGuard.requireAdmin();
+        if (payoutRepository.cancelIfScheduled(payoutId, Instant.now()) == 0) {
+            Payout payout = payoutRepository.findById(payoutId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Payout " + payoutId + " not found"));
+            throw new ConflictException("Only a scheduled payout can be cancelled; this one is " + payout.getStatus());
+        }
+        int released = orderRepository.releaseFromPayout(payoutId);
+        Payout payout = payoutRepository.findById(payoutId).orElseThrow();
+        auditLogService.record(accessGuard.currentUserId(), "payout.cancelled", "Payout", payoutId);
+        BusinessAuditLogger.record("payout.cancelled", "Payout", payoutId, BusinessAuditLogger.Outcome.SUCCESS,
+                "organization=" + payout.getOrganizationId() + " orders=" + released + " net=" + payout.getNet().getAmount() + " " + payout.getNet().getCurrency());
+        return PayoutResponse.from(payout);
     }
 
     @Override

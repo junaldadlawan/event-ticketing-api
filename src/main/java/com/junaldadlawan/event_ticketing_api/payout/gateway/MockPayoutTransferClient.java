@@ -6,9 +6,9 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/** Used whenever {@code payments.gateway} is not paymongo: the transfer "succeeds" at once and no money moves anywhere. */
+/** Used whenever {@code payments.payout-gateway} is not paymongo: the transfer "succeeds" at once and no money moves anywhere. */
 @Component
-@ConditionalOnExpression("'${payments.gateway:mock}' != 'paymongo'")
+@ConditionalOnExpression("'${payments.payout-gateway:mock}' != 'paymongo'")
 public class MockPayoutTransferClient implements PayoutTransferClient {
 
     @Override

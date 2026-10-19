@@ -7,6 +7,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundEx
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
@@ -46,6 +47,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     public PromoCode create(UUID eventId, PromoCodeCreateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         if (!request.validUntil().isAfter(request.validFrom())) {
             throw new BadRequestException("validUntil must be after validFrom");
@@ -94,6 +96,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         // The owning organization always comes from the promo code's own event, never from client input.
         Event event = getEventOrThrow(promoCode.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         int used = usedCount(promoCode);
 
@@ -162,6 +165,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         PromoCode promoCode = getOrThrow(promoCodeId);
         Event event = getEventOrThrow(promoCode.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         boolean paused = status == PromoCodeStatus.PAUSED;
         if (promoCode.isPaused() == paused) {
@@ -179,6 +183,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         PromoCode promoCode = getOrThrow(promoCodeId);
         Event event = getEventOrThrow(promoCode.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        EventCompletionService.requireNotEnded(event);
 
         // Orders keep only the code string, but a used code is part of the sales record: pause it instead.
         if (usedCount(promoCode) > 0) {
