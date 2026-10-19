@@ -22,14 +22,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Pays organizers from the platform's PayMongo wallet ({@code payments.gateway=paymongo}): a transfer to a bank account or e-wallet over
+ * Pays organizers from the platform's PayMongo wallet ({@code payments.payout-gateway=paymongo}): a transfer to a bank account or e-wallet over
  * InstaPay (real time, up to PHP 50,000) or PESONet (next banking day, larger amounts). PayMongo charges the wallet a fee per transfer,
  * which the platform bears. The transfer settles later: the {@code transfer.outward.successful} / {@code transfer.outward.failed}
  * webhook (or {@link #retrieve}) says how it ended. PHP only; amounts are centavos. The account number is sent and never logged.
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "payments.gateway", havingValue = "paymongo")
+@ConditionalOnProperty(name = "payments.payout-gateway", havingValue = "paymongo")
 public class PayMongoPayoutTransferClient implements PayoutTransferClient {
 
     /** InstaPay's per-transfer limit in centavos; anything above goes by PESONet. */

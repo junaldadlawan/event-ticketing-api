@@ -5,5 +5,7 @@ public enum PayoutStatus {
     /** The transfer is with the payment provider and has not settled yet. */
     PROCESSING,
     PAID,
-    FAILED
+    FAILED,
+    /** Cancelled by an admin while still SCHEDULED; its orders were released and are owed again. Final. */
+    CANCELLED
 }

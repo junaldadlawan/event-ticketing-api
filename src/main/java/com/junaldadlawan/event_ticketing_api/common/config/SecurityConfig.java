@@ -45,6 +45,9 @@ public class SecurityConfig {
                         // a signed, stored, unrevoked refresh token in the request body.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
                                 "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
+                        // BR-ANALYTICS-003: a visitor opening a public event page is recorded with or without an account. It only ever
+                        // answers 204 and is rate-limited per client (EventViewServiceImpl); a bearer token, when sent, is still read.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/events/*/views").permitAll()
                         // Must precede the broader GET /api/v1/events/** permitAll
                         // matcher below (Spring Security matches in declaration
                         // order, first match wins) - promo-code listing is
@@ -84,7 +87,7 @@ public class SecurityConfig {
                         // is owning-organizer/admin-only per BR-ANALYTICS-001, not public -
                         // must precede the broader GET /api/v1/events/** permitAll matcher
                         // below.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/analytics").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/analytics", "/api/v1/events/*/analytics/**").authenticated()
                         // Same reasoning again: GET /events/managed is the management
                         // listing (admin / org owner / organizer, any status) - NOT
                         // public, unlike GET /events - must precede the broader

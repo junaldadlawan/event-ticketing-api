@@ -109,7 +109,7 @@ class RefundServiceImplTest {
     void setUp() {
         service = new RefundServiceImpl(refundRepository, refundPolicyRepository, orderRepository,
                 paymentRepository, ticketRepository, eventRepository, paymentGatewayClient, accessGuard,
-                ticketTypeRepository, waitlistService, notificationService, auditLogService);
+                ticketTypeRepository, waitlistService, notificationService, auditLogService, org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
         orgId = UUID.randomUUID();
         eventId = UUID.randomUUID();
         orderId = UUID.randomUUID();

@@ -25,6 +25,12 @@ public class PayoutTransferController {
         return payoutService.send(payoutId);
     }
 
+    /** Cancels a SCHEDULED payout and releases its orders, which are owed (and eligible for a new payout) again. */
+    @PostMapping("/payouts/{payoutId}/cancel")
+    public PayoutResponse cancel(@PathVariable UUID payoutId) {
+        return payoutService.cancel(payoutId);
+    }
+
     /** The platform's payout wallet: whether it is activated, what it holds and its limits. */
     @GetMapping("/payout-wallet")
     public PayoutWalletResponse wallet() {

@@ -46,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Payout cards through the real security chain and database. Callers are in-memory JWT users; the organizations, their
  * members and cards are created here and removed afterwards.
  */
-@SpringBootTest
+@SpringBootTest(properties = "payments.demo-payout-card=false")
 @AutoConfigureMockMvc
 class PayoutCardIntegrationTest {
 

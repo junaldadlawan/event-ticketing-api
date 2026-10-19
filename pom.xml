@@ -141,6 +141,10 @@
 						<app.logging.file.dir>target/test-logs</app.logging.file.dir>
 						<!-- tests never call Stripe, whatever payments.gateway is set to in application.properties or the environment -->
 						<payments.gateway>mock</payments.gateway>
+						<!-- tests share the dev database: the background sweep would complete the developer's own ended events -->
+						<app.events.completion-sweep.enabled>false</app.events.completion-sweep.enabled>
+						<!-- the cart log would leave rows behind for every cart test; the funnel tests switch it back on and clean up after themselves -->
+						<app.analytics.cart-activity.enabled>false</app.analytics.cart-activity.enabled>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

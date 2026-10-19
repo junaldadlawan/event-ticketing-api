@@ -326,46 +326,6 @@ paths:
       summary: Remove a saved card (soft delete, detached from Stripe)
       responses:
         "204": { description: Removed }
-    patch:
-      operationId: updateCartItemQuantity
-      tags: [Cart]
-      summary: Change the quantity of a general-admission line (owning buyer only)
-      description: |
-        Sets the line's quantity and adjusts the held inventory by the difference in one transaction: raising it needs enough tickets
-        available (and the ticket type still on sale), lowering it gives the difference back at once. The line keeps its hold expiry (a change
-        never extends it). The ticket type's `maxPerOrder` applies. A quantity below 1 is a 400 (use DELETE to remove the line). Prices, fees
-        and checkout work from the new quantity.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [quantity]
-              properties:
-                quantity: { type: integer, minimum: 1 }
-      responses:
-        "200":
-          description: The cart
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Cart" }
-        "400":
-          description: quantity below 1
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404":
-          description: No such line in this cart
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "409":
-          description: A reserved seat (quantity is fixed), an expired hold, not enough tickets available, over maxPerOrder, or no longer on sale
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: It is the primary card and other cards exist; make another card primary first }
@@ -610,16 +570,75 @@ paths:
         gateway fee that came or will come off, including fees customers paid on top); `income` = gross - refunds - deductions, exactly the net its
         payouts pay. It is split into `paidOut` (PAID payouts), `inPayouts` (scheduled, processing or failed ones) and `owedNotYetInPayout`.
         Only the organization's owner or an admin: an organizer or member, or another organization's owner, gets 403.
+        With `eventId`, every figure covers only that event: its orders (an order belongs to the event its tickets are for) and its payouts.
       parameters:
         - { name: from, in: query, schema: { type: string, format: date }, description: "First UTC day (default: 30 days up to `to`)." }
         - { name: to, in: query, schema: { type: string, format: date }, description: "Last UTC day, included (default: today). The period is at most 366 days." }
         - { name: currency, in: query, schema: { type: string, default: PHP }, description: "Three-letter code; orders in other currencies are left out and listed in `otherCurrencies`." }
+        - $ref: "#/components/parameters/FinanceEventId"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationFinance" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /organizations/{orgId}/finance/earnings:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: getOrganizationEarnings
+      tags: [Analytics]
+      summary: An organization's income per day or month (its owner or an admin)
+      description: |
+        `earnings` is the same figure as `income` in the finance summary (net sales minus the platform and gateway fees that come off), grouped by
+        the UTC day or month the order was placed. Every period of the range is present, with 0 when there was none. The same access, period
+        (at most 366 days), currency and `eventId` rules as `GET /organizations/{orgId}/finance`.
+      parameters:
+        - { name: interval, in: query, schema: { type: string, enum: [DAY, MONTH], default: DAY }, description: "DAY labels periods `2026-10-15`, MONTH `2026-10`." }
+        - { name: from, in: query, schema: { type: string, format: date }, description: "First UTC day (default: 30 days up to `to`)." }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Last UTC day, included (default: today). The period is at most 366 days." }
+        - { name: currency, in: query, schema: { type: string, default: PHP }, description: "Three-letter code; orders in other currencies are left out." }
+        - $ref: "#/components/parameters/FinanceEventId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationEarnings" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /organizations/{orgId}/transactions:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: listOrganizationTransactions
+      tags: [Analytics]
+      summary: An organization's money lines - sales, refunds and payouts, newest first (its owner or an admin)
+      description: |
+        One line per order placed in the period (SALE: `gross` what the buyer paid, `fees` the platform and gateway fees that come off, `net` the
+        rest), per completed refund issued in the period (REFUND: `net` is minus the amount; a refund line carries no fees) and per payout created
+        in the period (PAYOUT: its gross, fees and net, `net` negative as the money leaves). Lines in every currency are listed, each with its own.
+        `orderId` is null for a payout. The same access, period and `eventId` rules as `GET /organizations/{orgId}/finance`.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: "First UTC day (default: 30 days up to `to`)." }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Last UTC day, included (default: today). The period is at most 366 days." }
+        - $ref: "#/components/parameters/FinanceEventId"
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionPage" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -853,7 +872,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: A line has nothing due, is on hold, mixes currencies, or has no payout destination; nothing was created }
+        "409": { description: "A line has nothing due, is on hold, mixes currencies, or has no payout destination; nothing was created" }
 
   /payouts/{payoutId}/send:
     parameters:
@@ -872,7 +891,7 @@ paths:
         PayMongo charges the wallet a fee per transfer, which the platform bears. A FAILED payout carries `failureReason` and can be sent again;
         when the reason says the transfer could not be confirmed, check the PayMongo dashboard first, because the money may have moved.
         Outside PayMongo mode the transfer is only simulated: the payout becomes PAID at once and no money moves.
-        409 when the payout is PROCESSING or PAID, has nothing to send, or the organization has no payout account. 502 when PayMongo cannot be reached.
+        409 when the payout is PROCESSING, PAID or CANCELLED, has nothing to send, or the organization has no payout account. 502 when PayMongo cannot be reached.
       responses:
         "200":
           description: OK
@@ -895,7 +914,7 @@ paths:
       operationId: refreshPayout
       tags: [Payouts]
       summary: Ask the provider how a PROCESSING payout's transfer stands (admin only)
-      description: Use it when the webhook did not arrive. 409 when the payout is not PROCESSING.
+      description: Use it when the webhook did not arrive. 409 when the payout is not PROCESSING (a CANCELLED one included).
       responses:
         "200":
           description: OK
@@ -906,6 +925,33 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: The payout is not being processed }
+
+  /payouts/{payoutId}/cancel:
+    parameters:
+      - name: payoutId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: cancelPayout
+      tags: [Payouts]
+      summary: Cancel a SCHEDULED payout and release its orders (admin only)
+      description: |
+        In one transaction the payout becomes CANCELLED and every order in it is released, so those orders are owed again, are listed by
+        `GET /payouts/eligible` and can be settled by a new payout. A cancelled payout is final: it cannot be sent, refreshed or cancelled again,
+        and it counts nowhere in the finance figures. Only a SCHEDULED payout can be cancelled: a PROCESSING (with PayMongo), PAID, FAILED or
+        CANCELLED one gets 409, and so does a cancel that loses the race to a concurrent send. Anyone but an admin, the organization's own owner and
+        organizers included, gets 403. Audit-logged as `payout.cancelled`.
+      responses:
+        "200":
+          description: The cancelled payout
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Only a scheduled payout can be cancelled" }
 
   /organizations/{orgId}/payout-cards:
     parameters:
@@ -934,6 +980,8 @@ paths:
         Stores what the payment gateway returned for the card: token, brand, last 4, expiry and holder name. The full
         card number and the security code are never accepted or stored. The organization's first card is always primary;
         a later card is primary only when `primary` is true, which unsets the previous primary in the same transaction.
+        With the mock payout gateway (`payments.payout-gateway=mock`, the default) the details sent are ignored and one fixed demo
+        card (Visa, last 4 `4242`, expiry 12/2099) is saved.
       requestBody:
         required: true
         content:
@@ -1464,6 +1512,9 @@ paths:
       tags: [Events]
       security: []
       summary: Search/list published events (public - PUBLISHED only for every caller; see /events/managed for other statuses)
+      description: >
+        An event whose end time has passed is never listed: it is COMPLETED (BR-EVENT-005), on this request if
+        the background sweep has not done it yet.
       parameters:
         - name: q
           in: query
@@ -1580,6 +1631,9 @@ paths:
       tags: [Events]
       security: []
       summary: Get an Event (public if published; organizer/owner/admin otherwise)
+      description: >
+        A PUBLISHED, ON_SALE or SOLD_OUT event whose end time has passed is returned as COMPLETED - it is completed on
+        this read if the background sweep has not done it yet (BR-EVENT-005).
       responses:
         "200":
           description: OK
@@ -1602,6 +1656,17 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Event" }
+        "409": { $ref: "#/components/responses/EventEnded" }
+    delete:
+      operationId: deleteEvent
+      tags: [Events]
+      summary: Delete an Event (organizer, owner, or admin)
+      description: Soft delete. Refused with 409 once the event has ended (an admin can still take it down through moderation REMOVE).
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/publish:
     parameters:
@@ -1635,6 +1700,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Event" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /ticket-types/{ticketTypeId}/sales-status:
     parameters:
@@ -1663,6 +1729,7 @@ paths:
         "400": { description: "Missing or unknown status" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/seatmap:
     parameters:
@@ -1715,6 +1782,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/ticket-types/order:
     parameters:
@@ -1744,6 +1812,7 @@ paths:
         "400": { description: "Empty list, or not exactly the event's ticket types" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /ticket-types/{ticketTypeId}:
     parameters:
@@ -1763,6 +1832,9 @@ paths:
       operationId: updateTicketType
       tags: [TicketTypes]
       summary: Update a TicketType (owning organizer)
+      description: |
+        A new `quantityTotal` keeps the tickets already sold or held taken: `quantityAvailable` becomes the new total minus
+        (old total - old available). A total lower than what is already sold or held is refused with 409.
       requestBody:
         required: true
         content:
@@ -1774,6 +1846,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+        "409": { $ref: "#/components/responses/EventEnded" }
     delete:
       operationId: deleteTicketType
       tags: [TicketTypes]
@@ -1783,7 +1856,7 @@ paths:
         "204": { description: Deleted }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: Has sales or held tickets }
+        "409": { description: "Has sales or held tickets, or the event has ended (`Event has ended`)" }
 
   /events/{eventId}/promo-codes:
     parameters:
@@ -1816,6 +1889,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PromoCode" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /promo-codes/{promoCodeId}:
     parameters:
@@ -1848,7 +1922,7 @@ paths:
         "400": { description: "Invalid value (e.g. validity window, percentage over 100, ticket type of another event, total limit below the uses)" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "The code already exists for the event, or the code / discount type of a used code was changed" }
+        "409": { description: "The code already exists for the event, the code / discount type of a used code was changed, or the event has ended (`Event has ended`)" }
     delete:
       operationId: deletePromoCode
       tags: [PromoCodes]
@@ -1858,7 +1932,7 @@ paths:
         "204": { description: Deleted }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "The code has already been used, so it can't be deleted" }
+        "409": { description: "The code has already been used, so it can't be deleted, or the event has ended (`Event has ended`)" }
 
   /promo-codes/{promoCodeId}/status:
     parameters:
@@ -1873,7 +1947,8 @@ paths:
       description: |
         PAUSED: the code can't be applied to a cart (422, like an unknown code) and a cart that already holds it can't
         check out (422, nothing charged). ACTIVE: usable again. Orders that already used it are untouched. Allowed
-        whatever the event's status; asking for the state it is already in is not an error.
+        whatever the event's status until the event has ended (then 409); asking for the state it is already in is
+        not an error.
       requestBody:
         required: true
         content:
@@ -1888,6 +1963,7 @@ paths:
         "400": { description: Missing or unknown status }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/waitlist:
     parameters:
@@ -2027,6 +2103,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketTemplate" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /ticket-templates/{templateId}:
     parameters:
@@ -2049,6 +2126,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketTemplate" }
+        "409": { $ref: "#/components/responses/EventEnded" }
     delete:
       operationId: deleteTicketTemplate
       tags: [TicketTemplates]
@@ -2058,6 +2136,7 @@ paths:
         "204": { description: Deleted }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/analytics:
     parameters:
@@ -2079,6 +2158,103 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EventAnalytics" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /events/{eventId}/analytics/audience:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventAudience
+      tags: [Analytics]
+      summary: Who bought tickets for an event, by age group (owning organizer/owner or admin)
+      description: |
+        Aggregates only: never a birth date or a user id. `buyers` counts the distinct buyers with a PAID or PARTIALLY_REFUNDED order for the
+        event; each falls in one age group by their age (from their birth date) at their first such order, or in `unknownAge` without a birth
+        date. A group's `tickets` are its buyers' live tickets (not REFUNDED or CANCELLED). A group of 1 to 4 buyers comes back with `buyers` and
+        `tickets` null ("fewer than 5"); when only one group is that small, the next smallest group is hidden too, so the small one cannot be
+        worked out from `buyers` minus the others. A group with no buyers shows 0.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventAudience" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events/{eventId}/views:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: recordEventView
+      tags: [Analytics]
+      summary: Record that a visitor opened a public event page (public)
+      description: |
+        Feeds the event funnel (BR-ANALYTICS-003). Always answers 204, whatever happened, so it never reveals whether the event exists or the
+        view was counted. A view is stored at most once per event and visitor per 30 minutes. The visitor is the signed-in user when a bearer
+        token is sent, else a SHA-256 of `visitorId` (a random id the web app keeps in localStorage); IP addresses are never stored. Not
+        counted: the event's own owner and organizers, admins, events that are not PUBLISHED, ON_SALE, SOLD_OUT or COMPLETED, unknown events,
+        an anonymous call without `visitorId`, and a client over 60 calls a minute.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                visitorId: { type: string, maxLength: 100, description: "The browser's random visitor id (a UUID); ignored when signed in." }
+      responses:
+        "204": { description: Received (counted or not). }
+        "400": { description: The body is not JSON. }
+
+  /events/{eventId}/analytics/funnel:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventFunnel
+      tags: [Analytics]
+      summary: An event's funnel - views, add-to-cart and checkout (owning organizer/owner or admin)
+      description: |
+        From the view and cart activity logs (BR-ANALYTICS-003), for the days `from`..`to` in the event's time zone. `daily` has every day of the
+        range and `ticketTypes` every ticket type of the event in its arranged order, with zeros when nothing happened. `cartConversionRate` is
+        checked-out / added quantity (null when nothing was added); `viewToCartRate` is buyers who added / unique visitors and
+        `viewToPurchaseRate` buyers who checked out / unique visitors (null without views). Nothing before `trackingSince` was recorded.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: "First day (default: the day the event was created, at most 366 days before `to`)." }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Last day, included (default: today). At most 366 days." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventFunnel" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events/{eventId}/analytics/sales-patterns:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventSalesPatterns
+      tags: [Analytics]
+      summary: When an event's tickets sell - per day, weekday and hour (owning organizer/owner or admin)
+      description: |
+        Computed in the database from the event's PAID and PARTIALLY_REFUNDED orders and their live tickets (not REFUNDED or CANCELLED), so it
+        stays right for events of any size. Days and hours are in the event's time zone. `daily` has every day from the first sale to today or
+        the event's end, whichever is first, with 0 for days without sales (empty when nothing has sold). `byWeekday` has 7 ticket counts,
+        Monday first; `byHour` has 24.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventSalesPatterns" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /analytics/platform:
     get:
@@ -2179,7 +2355,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Cart" }
         "409":
-          description: Seat or GA quantity no longer available
+          description: >
+            Seat or GA quantity no longer available, not on sale, or the event has ended (`Event has ended` - even when
+            the ticket type's sale window runs past the event's end)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2197,6 +2375,46 @@ paths:
       summary: Remove an item and release its Hold
       responses:
         "204": { description: Removed }
+    patch:
+      operationId: updateCartItemQuantity
+      tags: [Cart]
+      summary: Change the quantity of a general-admission line (owning buyer only)
+      description: |
+        Sets the line's quantity and adjusts the held inventory by the difference in one transaction: raising it needs enough tickets
+        available (and the ticket type still on sale), lowering it gives the difference back at once. The line keeps its hold expiry (a change
+        never extends it). The ticket type's `maxPerOrder` applies. A quantity below 1 is a 400 (use DELETE to remove the line). Prices, fees
+        and checkout work from the new quantity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400":
+          description: quantity below 1
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No such line in this cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: A reserved seat (quantity is fixed), an expired hold, not enough tickets available, over maxPerOrder, no longer on sale, or (when raising it) the event has ended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /carts/{cartId}/promo-code:
     parameters:
@@ -2318,7 +2536,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: Nothing to check out, a payment for this key is already in progress, or the idempotency key was used with another itemIds
+          description: >
+            Nothing to check out, a payment for this key is already in progress, the idempotency key was used with
+            another itemIds, or the event has ended (`Event has ended`; nothing is charged - and a payment that
+            completes after the end is refunded instead of issuing tickets)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2944,6 +3165,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    FinanceEventId:
+      name: eventId
+      in: query
+      description: Only this event's figures. 404 for an unknown event, 400 for an event of another organization.
+      schema: { type: string, format: uuid }
     VenueId:
       name: venueId
       in: path
@@ -2993,6 +3219,13 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    EventEnded:
+      description: >
+        Event has ended (BR-EVENT-005): the event is COMPLETED, or its end time has passed even if it has not been
+        marked COMPLETED yet. An ended event is read-only and sells nothing.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -3919,7 +4152,7 @@ components:
         checkoutId: { type: string, format: uuid }
         status: { type: string, enum: [PENDING, PAID, FAILED, REFUNDED] }
         clientKey: { type: string, description: Attach the card to the payment intent with this (PayMongo.js). }
-        amount: { type: integer, description: Total in centavos, platform fee included. }
+        amount: { type: integer, description: "Total in centavos, platform fee included." }
         currency: { type: string, example: PHP }
         orderId: { type: [string, "null"], format: uuid, description: Set once PAID. }
         failureReason: { type: [string, "null"] }
@@ -3954,12 +4187,12 @@ components:
       description: There is no field for a card number or security code.
       properties:
         paymentToken: { type: string, pattern: "^(pm|tok)_[A-Za-z0-9_]{2,100}$", description: A Stripe pm_ id (Stripe gateway) or tok_<brand> (mock gateway). }
-        primary: { type: boolean, description: Ignored for the first card, which is always primary. }
+        primary: { type: boolean, description: "Ignored for the first card, which is always primary." }
         holderName: { type: string, maxLength: 100, description: "Letters, spaces and . , ' - only; no HTML. Defaults to the account name." }
-        brand: { type: string, maxLength: 30, description: Mock gateway only. Defaults to the token's brand. }
-        last4: { type: string, pattern: "^[0-9]{4}$", description: Mock gateway only (ignored with Stripe). }
-        expMonth: { type: integer, minimum: 1, maximum: 12, description: Mock gateway only. }
-        expYear: { type: integer, description: Mock gateway only. The card must not have expired. }
+        brand: { type: string, maxLength: 30, description: "Mock gateway only. Defaults to the token's brand." }
+        last4: { type: string, pattern: "^[0-9]{4}$", description: "Mock gateway only (ignored with Stripe)." }
+        expMonth: { type: integer, minimum: 1, maximum: 12, description: "Mock gateway only." }
+        expYear: { type: integer, description: "Mock gateway only. The card must not have expired." }
 
     Notification:
       type: object
@@ -4060,7 +4293,7 @@ components:
           description: gross - fees - what the organizer is owed.
         period_start: { type: string, format: date }
         period_end: { type: string, format: date }
-        status: { type: string, enum: [scheduled, processing, paid, failed], description: "processing = the transfer is with PayMongo and has not settled yet." }
+        status: { type: string, enum: [scheduled, processing, paid, failed, cancelled], description: "processing = the transfer is with PayMongo and has not settled yet. cancelled = cancelled by an admin while scheduled; its orders were released (final)." }
         payoutCardId: { type: [string, "null"], format: uuid, description: The primary payout card this payout was made out to (null on older payouts and with PayMongo). }
         payoutAccountId: { type: [string, "null"], format: uuid, description: The bank or e-wallet account it was made out to (PayMongo). }
         eventId: { type: [string, "null"], format: uuid, description: "The event this payout settles (a batch payout line); null for a period payout." }
@@ -4230,7 +4463,7 @@ components:
         expMonth: { type: integer, minimum: 1, maximum: 12 }
         expYear: { type: integer, minimum: 2000, maximum: 2200, description: The card must not have expired (valid through the end of its expiry month). }
         paymentToken: { type: string, pattern: "^[A-Za-z0-9_.-]{8,255}$", description: The gateway token. A bare 12 to 19 digit number is refused as a card number. }
-        primary: { type: boolean, description: Ignored for the first card, which is always primary. }
+        primary: { type: boolean, description: "Ignored for the first card, which is always primary." }
 
     PayoutCard:
       type: object
@@ -4315,6 +4548,88 @@ components:
               tickets_sold: { type: integer }
               revenue: { $ref: "#/components/schemas/Money" }
 
+    EventAudience:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        buyers: { type: integer, description: "Distinct buyers with a PAID or PARTIALLY_REFUNDED order for the event." }
+        unknownAge: { type: integer, description: "Buyers without a birth date." }
+        ageGroups:
+          type: array
+          description: Always the six groups, in this order.
+          items:
+            type: object
+            properties:
+              label: { type: string, enum: ["Under 18", "18-24", "25-34", "35-44", "45-54", "55+"] }
+              buyers: { type: [integer, "null"], description: "null when the group is hidden (fewer than 5 buyers)." }
+              tickets: { type: [integer, "null"], description: "The group's live tickets; null when the group is hidden." }
+
+    EventFunnel:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        timezone: { type: string, example: Asia/Manila }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        views: { type: integer }
+        uniqueVisitors: { type: integer }
+        addToCart:
+          type: object
+          properties:
+            actions: { type: integer, description: "ADD entries: a line added or its quantity raised." }
+            quantity: { type: integer, description: Tickets added. }
+            uniqueBuyers: { type: integer }
+        checkedOut:
+          type: object
+          properties:
+            quantity: { type: integer }
+            uniqueBuyers: { type: integer }
+        viewToCartRate: { type: [number, "null"] }
+        viewToPurchaseRate: { type: [number, "null"] }
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string, format: date }
+              views: { type: integer }
+              uniqueVisitors: { type: integer }
+              addToCartQuantity: { type: integer }
+              checkedOutQuantity: { type: integer }
+        ticketTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              ticketTypeId: { type: string, format: uuid }
+              name: { type: string }
+              addToCartActions: { type: integer }
+              addedQuantity: { type: integer }
+              uniqueBuyersAdding: { type: integer }
+              checkedOutQuantity: { type: integer }
+              removedQuantity: { type: integer }
+              expiredQuantity: { type: integer }
+              cartConversionRate: { type: [number, "null"], description: "checkedOutQuantity / addedQuantity; null when nothing was added." }
+        trackingSince: { type: [string, "null"], format: date-time, description: "When the logs started on this server." }
+
+    EventSalesPatterns:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        timezone: { type: string, example: Asia/Manila }
+        tickets: { type: integer, description: Live tickets sold. }
+        orders: { type: integer }
+        promoOrders: { type: integer, description: Orders placed with a promo code. }
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string, format: date }
+              tickets: { type: integer }
+        byWeekday: { type: array, items: { type: integer }, minItems: 7, maxItems: 7, description: "Tickets per weekday, Monday first." }
+        byHour: { type: array, items: { type: integer }, minItems: 24, maxItems: 24, description: "Tickets per hour of the day, 0 to 23." }
+
     FinancePayoutTotal:
       type: object
       properties:
@@ -4376,6 +4691,7 @@ components:
       type: object
       properties:
         organizationId: { type: string, format: uuid }
+        eventId: { type: [string, "null"], format: uuid, description: "The event every figure is narrowed to; null for the whole organization." }
         from: { type: string, format: date }
         to: { type: string, format: date }
         currency: { type: string }
@@ -4398,6 +4714,49 @@ components:
         inPayouts: { $ref: "#/components/schemas/Money" }
         owedNotYetInPayout: { $ref: "#/components/schemas/Money" }
         payouts: { $ref: "#/components/schemas/FinancePayouts" }
+
+    OrganizationEarnings:
+      type: object
+      properties:
+        interval: { type: string, enum: [DAY, MONTH] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        currency: { type: string }
+        eventId: { type: [string, "null"], format: uuid }
+        points:
+          type: array
+          description: Every day or month of the range, oldest first.
+          items:
+            type: object
+            properties:
+              period: { type: string, description: "`2026-10-15` for DAY, `2026-10` for MONTH.", example: "2026-10-15" }
+              earnings: { $ref: "#/components/schemas/Money" }
+
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid, description: "The order's, refund's or payout's id." }
+        type: { type: string, enum: [SALE, REFUND, PAYOUT] }
+        occurredAt: { type: string, format: date-time }
+        description: { type: string }
+        eventTitle: { type: [string, "null"] }
+        orderId: { type: [string, "null"], format: uuid }
+        gross: { $ref: "#/components/schemas/Money" }
+        fees: { $ref: "#/components/schemas/Money" }
+        net: { allOf: [ { $ref: "#/components/schemas/Money" } ], description: "Negative for REFUND and PAYOUT." }
+        status: { type: string, description: "The order's, refund's or payout's own status." }
+
+    TransactionPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPage: { type: integer }
+        last: { type: boolean }
 
     PlatformAnalytics:
       type: object

@@ -52,7 +52,7 @@ class PayoutCardServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard);
+        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, "paymongo", true);
         orgId = UUID.randomUUID();
         callerId = UUID.randomUUID();
         organization = Organization.builder().id(orgId).name("Org").status(OrganizationStatus.APPROVED).build();
@@ -92,6 +92,30 @@ class PayoutCardServiceImplTest {
         assertThat(response.primary()).isTrue();
         assertThat(response.last4()).isEqualTo("4242");
         assertThat(response.toString()).doesNotContain("tok_test_12345678");
+    }
+
+    @Test
+    void add_withTheMockPayoutGateway_alwaysSavesTheSameDemoCard_whateverWasSent() {
+        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, "mock", true);
+        caller(false, true, false);
+        when(payoutCardRepository.countByOrganizationIdAndDeletedAtIsNull(orgId)).thenReturn(0L);
+        PayoutCardRequest other = new PayoutCardRequest("Demo Events Co.", "Mastercard", "1111", 1, 2001, "tok_other_12345678", null);
+
+        PayoutCardResponse response = service.add(orgId, other);
+
+        assertThat(response.brand()).isEqualTo("Visa");
+        assertThat(response.last4()).isEqualTo("4242");
+        assertThat(response.expYear()).isEqualTo(2099);
+        assertThat(response.primary()).isTrue();
+    }
+
+    @Test
+    void add_withPayMongoPayouts_usesTheCardThatWasSent_evenIfTheDemoFlagIsOn() {
+        caller(false, true, false);
+        when(payoutCardRepository.countByOrganizationIdAndDeletedAtIsNull(orgId)).thenReturn(0L);
+        PayoutCardRequest other = new PayoutCardRequest("Demo Events Co.", "Mastercard", "1111", 12, 2099, "tok_other_12345678", null);
+
+        assertThat(service.add(orgId, other).last4()).isEqualTo("1111");
     }
 
     @Test

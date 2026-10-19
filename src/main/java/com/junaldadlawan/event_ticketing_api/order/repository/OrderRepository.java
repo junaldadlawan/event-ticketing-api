@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -122,4 +123,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      */
     @Query("select distinct o.total.currency from Order o")
     List<String> findDistinctCurrencies();
+
+    /** Takes every order out of a cancelled payout, so they are owed (and eligible for a payout) again. Returns how many. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update Order o set o.payoutId = null where o.payoutId = :payoutId")
+    int releaseFromPayout(@Param("payoutId") UUID payoutId);
 }

@@ -182,7 +182,7 @@ public class ModerationActionServiceImpl implements ModerationActionService {
                 // duplicating the markDeleted()/save() one-liner - its own
                 // owner/organizer-or-admin check trivially passes here since
                 // this method already required admin above.
-                eventService.delete(eventId);
+                eventService.removeByModeration(eventId);
                 yield previous;
             }
         };

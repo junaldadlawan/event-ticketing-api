@@ -53,7 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * it, an admin sends it (PayMongo itself is stubbed), and the signed {@code transfer.outward.*} webhook settles it. The encryption key
  * and wallet below are test values made up for this class.
  */
-@SpringBootTest(properties = {"payments.gateway=paymongo", "payments.paymongo.secret-key=sk_test_not_a_real_key",
+@SpringBootTest(properties = {"payments.gateway=paymongo", "payments.payout-gateway=paymongo", "payments.paymongo.secret-key=sk_test_not_a_real_key",
         "payments.paymongo.webhook-secret=whsk_test_secret", "payments.paymongo.wallet-account-number=0000000001",
         "payments.paymongo.wallet-account-name=Test Platform Inc.",
         "payouts.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="})

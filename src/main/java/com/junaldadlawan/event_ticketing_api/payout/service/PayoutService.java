@@ -49,6 +49,12 @@ public interface PayoutService {
      */
     PayoutResponse send(UUID payoutId);
 
+    /**
+     * {@code POST /payouts/{id}/cancel} - admin only. Cancels a SCHEDULED payout and releases its orders (they are owed and eligible again),
+     * in one transaction. 404 for an unknown payout; 409 for any other status, including one a concurrent send already moved to PROCESSING.
+     */
+    PayoutResponse cancel(UUID payoutId);
+
     /** {@code GET /payout-wallet} - admin only. The wallet payouts are sent from: status, balance, limits, usage and account. */
     PayoutWalletResponse wallet();
 

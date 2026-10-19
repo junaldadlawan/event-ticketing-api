@@ -87,6 +87,7 @@ public class RefundServiceImpl implements RefundService {
     private final WaitlistService waitlistService;
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
+    private final jakarta.persistence.EntityManager entityManager;
 
     @Override
     @Transactional
@@ -249,6 +250,8 @@ public class RefundServiceImpl implements RefundService {
             return;
         }
         ticketTypeRepository.findByIdForUpdate(ticket.getTicketTypeId()).ifPresent(ticketType -> {
+            // the lock does not reload a row this transaction already read: re-read it so the restock never adds to a stale count
+            entityManager.refresh(ticketType);
             ticketType.setQuantityAvailable(ticketType.getQuantityAvailable() + 1);
             ticketTypeRepository.save(ticketType);
         });

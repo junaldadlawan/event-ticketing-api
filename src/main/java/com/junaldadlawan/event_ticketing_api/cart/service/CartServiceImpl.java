@@ -1,5 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.cart.service;
 
+import com.junaldadlawan.event_ticketing_api.analytics.repository.FunnelRepository.CartAction;
+import com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder;
 import com.junaldadlawan.event_ticketing_api.cart.dto.AppliedPromoCodeResponse;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemCreateRequest;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemResponse;
@@ -16,6 +18,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.UnprocessableEntit
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeService;
@@ -78,6 +81,7 @@ public class CartServiceImpl implements CartService {
     private final EntityManager entityManager;
     private final PlatformFeeService platformFeeService;
     private final GatewayFeeService gatewayFeeService;
+    private final CartActivityRecorder cartActivityRecorder;
 
     @Override
     @Transactional
@@ -205,6 +209,8 @@ public class CartServiceImpl implements CartService {
 
     /** On sale: the event is purchasable, the ticket type is not paused and inside its sale window. 409 otherwise. */
     private void requireOnSale(TicketType ticketType, Event event, Instant now) {
+        // BR-EVENT-005: an ended event sells nothing, even if a ticket type's sale window runs past its end
+        EventCompletionService.requireNotEnded(event);
         if (!PURCHASABLE_EVENT_STATUSES.contains(event.getStatus())) {
             throw new ConflictException("Ticket type is not currently on sale");
         }
@@ -275,6 +281,7 @@ public class CartServiceImpl implements CartService {
             CartItem line = lines.get(0);
             line.setQuantity(line.getQuantity() + quantity);
             cartItemRepository.save(line);
+            cartActivityRecorder.record(line, quantity, CartAction.ADD);
             return;
         }
         CartItem item = CartItem.builder()
@@ -284,13 +291,14 @@ public class CartServiceImpl implements CartService {
                 .quantity(quantity)
                 .holdExpiresAt(now.plus(HOLD_DURATION))
                 .build();
-        cartItemRepository.save(item);
+        cartActivityRecorder.record(cartItemRepository.save(item), quantity, CartAction.ADD);
     }
 
     private void releaseExpiredGaHolds(TicketType lockedTicketType, Instant now) {
         List<CartItem> expired = cartItemRepository.findByTicketTypeIdAndHoldExpiresAtBefore(lockedTicketType.getId(), now);
         for (CartItem item : expired) {
             lockedTicketType.setQuantityAvailable(lockedTicketType.getQuantityAvailable() + item.getQuantity());
+            cartActivityRecorder.record(item, item.getQuantity(), CartAction.EXPIRE);
             cartItemRepository.delete(item);
         }
     }
@@ -316,6 +324,7 @@ public class CartServiceImpl implements CartService {
                 .filter(item -> seat.getId().equals(item.getSeatId()))
                 .findFirst()
                 .ifPresent(staleItem -> {
+                    cartActivityRecorder.record(staleItem, staleItem.getQuantity(), CartAction.EXPIRE);
                     cartItemRepository.delete(staleItem);
                     seat.setStatus(SeatStatus.AVAILABLE);
                 });
@@ -333,7 +342,7 @@ public class CartServiceImpl implements CartService {
                 .quantity(1)
                 .holdExpiresAt(now.plus(HOLD_DURATION))
                 .build();
-        cartItemRepository.save(item);
+        cartActivityRecorder.record(cartItemRepository.save(item), 1, CartAction.ADD);
     }
 
     @Override
@@ -347,6 +356,7 @@ public class CartServiceImpl implements CartService {
                 .orElseThrow(() -> new ResourceNotFoundException("Cart item " + itemId + " not found"));
 
         releaseHold(item);
+        cartActivityRecorder.record(item, item.getQuantity(), CartAction.REMOVE);
         cartItemRepository.delete(item);
     }
 
@@ -399,6 +409,7 @@ public class CartServiceImpl implements CartService {
             ticketTypeRepository.save(ticketType);
             line.setQuantity(quantity);
             cartItemRepository.save(line);
+            cartActivityRecorder.record(line, Math.abs(difference), difference > 0 ? CartAction.ADD : CartAction.REMOVE);
         }
         return toResponse(cart);
     }
@@ -407,6 +418,9 @@ public class CartServiceImpl implements CartService {
     private void releaseHold(CartItem item) {
         if (item.getSeatId() == null) {
             ticketTypeRepository.findByIdForUpdate(item.getTicketTypeId()).ifPresent(ticketType -> {
+                // the lock does not reload a row this transaction already read (checkout reads its ticket types first): without the
+                // refresh the release adds to a stale count and overwrites sales made in between
+                entityManager.refresh(ticketType);
                 ticketType.setQuantityAvailable(ticketType.getQuantityAvailable() + item.getQuantity());
                 ticketTypeRepository.save(ticketType);
             });
@@ -425,6 +439,7 @@ public class CartServiceImpl implements CartService {
         for (CartItem item : cartItemRepository.findByCartId(cartId)) {
             if (item.getHoldExpiresAt().isBefore(now)) {
                 releaseHold(item);
+                cartActivityRecorder.record(item, item.getQuantity(), CartAction.EXPIRE);
                 cartItemRepository.delete(item);
             }
         }

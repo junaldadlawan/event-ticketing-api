@@ -73,6 +73,8 @@ class PayoutServiceImplSendTest {
 
     @Mock
     private com.junaldadlawan.event_ticketing_api.payout.repository.PayoutEligibilityRepository eligibilityRepository;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService auditLogService;
 
     private PayoutServiceImpl service;
     private UUID orgId;
@@ -82,7 +84,7 @@ class PayoutServiceImplSendTest {
     void setUp() {
         service = new PayoutServiceImpl(payoutRepository, organizationRepository, accessGuard, orderRepository, refundRepository,
                 payoutCardRepository, payoutAccountRepository, transferClient, cipher, transactionManager,
-                eventRepository, eligibilityRepository);
+                eventRepository, eligibilityRepository, auditLogService);
         orgId = UUID.randomUUID();
         payout = Payout.builder().id(UUID.randomUUID()).organizationId(orgId)
                 .gross(php(10_500)).fees(php(500)).net(php(10_000))

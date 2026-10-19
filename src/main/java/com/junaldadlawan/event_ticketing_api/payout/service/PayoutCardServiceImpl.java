@@ -14,7 +14,7 @@ import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutCardRequest;
 import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutCardResponse;
 import com.junaldadlawan.event_ticketing_api.payout.entity.PayoutCard;
 import com.junaldadlawan.event_ticketing_api.payout.repository.PayoutCardRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,12 +24,29 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class PayoutCardServiceImpl implements PayoutCardService {
+
+    private static final String DEMO_BRAND = "Visa";
+    private static final String DEMO_LAST4 = "4242";
+    private static final int DEMO_EXP_MONTH = 12;
+    private static final int DEMO_EXP_YEAR = 2099;
+    private static final String DEMO_TOKEN = "tok_demo_payout_card";
 
     private final PayoutCardRepository payoutCardRepository;
     private final OrganizationRepository organizationRepository;
     private final OrganizationAccessGuard accessGuard;
+    /** Mock payout gateway with the demo card on: every added card is saved as the same fixed demo card. */
+    private final boolean demoCard;
+
+    public PayoutCardServiceImpl(PayoutCardRepository payoutCardRepository, OrganizationRepository organizationRepository,
+                                 OrganizationAccessGuard accessGuard,
+                                 @Value("${payments.payout-gateway:mock}") String payoutGateway,
+                                 @Value("${payments.demo-payout-card:true}") boolean demoPayoutCard) {
+        this.payoutCardRepository = payoutCardRepository;
+        this.organizationRepository = organizationRepository;
+        this.accessGuard = accessGuard;
+        this.demoCard = demoPayoutCard && !"paymongo".equals(payoutGateway);
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -54,7 +71,7 @@ public class PayoutCardServiceImpl implements PayoutCardService {
         if (organization.getStatus() != OrganizationStatus.APPROVED) {
             throw new ForbiddenException("Organization is not approved");
         }
-        if (YearMonth.of(request.expYear(), request.expMonth()).isBefore(YearMonth.now(ZoneOffset.UTC))) {
+        if (!demoCard && YearMonth.of(request.expYear(), request.expMonth()).isBefore(YearMonth.now(ZoneOffset.UTC))) {
             throw new BadRequestException("The card has expired");
         }
 
@@ -66,11 +83,11 @@ public class PayoutCardServiceImpl implements PayoutCardService {
         PayoutCard saved = payoutCardRepository.save(PayoutCard.builder()
                 .organizationId(organizationId)
                 .holderName(request.holderName().trim())
-                .brand(request.brand().trim())
-                .last4(request.last4())
-                .expMonth(request.expMonth())
-                .expYear(request.expYear())
-                .paymentToken(request.paymentToken())
+                .brand(demoCard ? DEMO_BRAND : request.brand().trim())
+                .last4(demoCard ? DEMO_LAST4 : request.last4())
+                .expMonth(demoCard ? DEMO_EXP_MONTH : request.expMonth())
+                .expYear(demoCard ? DEMO_EXP_YEAR : request.expYear())
+                .paymentToken(demoCard ? DEMO_TOKEN : request.paymentToken())
                 .primary(primary)
                 .build());
         // Only the last 4 are logged, never the token.
