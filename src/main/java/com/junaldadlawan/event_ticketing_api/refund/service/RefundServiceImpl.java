@@ -228,7 +228,9 @@ public class RefundServiceImpl implements RefundService {
             // BR-NFR-005 (Phase 13): sensitive-action audit trail. initiatedBy
             // is the admin/organizer who issued it, or the system itself on a
             // mandatory event-cancellation refund - never throws.
-            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId());
+            // an order has no event column; its tickets carry it (BR-EVENT-006 activity history)
+            UUID eventId = ticketRepository.findFirstByOrderId(order.getId()).map(Ticket::getEventId).orElse(null);
+            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId(), eventId);
         }
 
         return saved;

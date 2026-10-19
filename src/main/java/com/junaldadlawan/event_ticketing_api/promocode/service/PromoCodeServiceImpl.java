@@ -4,7 +4,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
@@ -42,6 +42,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     private final OrganizationAccessGuard accessGuard;
     private final TicketTypeRepository ticketTypeRepository;
     private final OrderRepository orderRepository;
+    private final AuditLogService auditLogService;
 
     @Override
     public PromoCode create(UUID eventId, PromoCodeCreateRequest request) {
@@ -75,7 +76,9 @@ public class PromoCodeServiceImpl implements PromoCodeService {
                 .validFrom(request.validFrom())
                 .validUntil(request.validUntil())
                 .build();
-        return saveOrConflict(promoCode);
+        PromoCode created = saveOrConflict(promoCode);
+        auditLogService.recordByCurrentUser("promo_code.created", "PromoCode", created.getId(), eventId);
+        return created;
     }
 
     @Override
@@ -156,7 +159,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
             promoCode.getApplicableTicketTypeIds().addAll(newTicketTypeIds);
         }
         PromoCode saved = saveOrConflict(promoCode);
-        BusinessAuditLogger.record("promo_code.updated", "PromoCode", promoCodeId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("promo_code.updated", "PromoCode", promoCodeId, promoCode.getEventId());
         return saved;
     }
 
@@ -173,8 +176,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         }
         promoCode.setPaused(paused);
         PromoCode saved = promoCodeRepository.save(promoCode);
-        BusinessAuditLogger.record(paused ? "promo_code.paused" : "promo_code.resumed", "PromoCode", promoCodeId,
-                BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser(paused ? "promo_code.paused" : "promo_code.resumed", "PromoCode", promoCodeId, promoCode.getEventId());
         return saved;
     }
 
@@ -191,7 +193,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         }
         promoCode.markDeleted();
         promoCodeRepository.save(promoCode);
-        BusinessAuditLogger.record("promo_code.deleted", "PromoCode", promoCodeId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("promo_code.deleted", "PromoCode", promoCodeId, promoCode.getEventId());
     }
 
     @Override

@@ -70,7 +70,7 @@ class TicketTemplateServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new TicketTemplateServiceImpl(ticketTemplateRepository, eventRepository, accessGuard);
+        service = new TicketTemplateServiceImpl(ticketTemplateRepository, eventRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 

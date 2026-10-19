@@ -53,7 +53,7 @@ class CheckInConfigServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new CheckInConfigServiceImpl(checkInConfigRepository, scannerDeviceRepository, eventRepository, accessGuard);
+        service = new CheckInConfigServiceImpl(checkInConfigRepository, scannerDeviceRepository, eventRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private Event event(UUID id, UUID orgId) {

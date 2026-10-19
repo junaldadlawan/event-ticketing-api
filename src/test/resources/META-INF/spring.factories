@@ -1,0 +1,2 @@
+org.springframework.test.context.TestExecutionListener=\
+com.junaldadlawan.event_ticketing_api.common.OrphanEventAuditRowsCleanup

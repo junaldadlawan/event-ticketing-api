@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refundpolicy.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -25,6 +26,7 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
     private final EventRepository eventRepository;
     private final TicketRepository ticketRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     public RefundPolicyResponse get(UUID eventId) {
@@ -37,6 +39,12 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
 
     @Override
     public RefundPolicyResponse update(UUID eventId, RefundPolicyUpdateRequest request) {
+        RefundPolicyResponse response = applyUpdate(eventId, request);
+        auditLogService.recordByCurrentUser("refund_policy.updated", "RefundPolicy", eventId, eventId);
+        return response;
+    }
+
+    private RefundPolicyResponse applyUpdate(UUID eventId, RefundPolicyUpdateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 

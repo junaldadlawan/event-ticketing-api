@@ -66,7 +66,7 @@ class PromoCodeServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PromoCodeServiceImpl(promoCodeRepository, eventRepository, accessGuard, ticketTypeRepository, orderRepository);
+        service = new PromoCodeServiceImpl(promoCodeRepository, eventRepository, accessGuard, ticketTypeRepository, orderRepository, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 

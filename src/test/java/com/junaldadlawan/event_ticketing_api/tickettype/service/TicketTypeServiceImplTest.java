@@ -72,8 +72,8 @@ class TicketTypeServiceImplTest {
     void setUp() {
         service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard, ticketRepository, cartItemRepository,
                 new com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService(eventRepository,
-                        org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class)),
-                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
+                        org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class)),
+                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 

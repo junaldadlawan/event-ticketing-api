@@ -61,7 +61,7 @@ class ScannerDeviceServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new ScannerDeviceServiceImpl(scannerDeviceRepository, checkInConfigRepository, eventRepository, credentialService, accessGuard);
+        service = new ScannerDeviceServiceImpl(scannerDeviceRepository, checkInConfigRepository, eventRepository, credentialService, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private Event event(UUID id, UUID orgId) {

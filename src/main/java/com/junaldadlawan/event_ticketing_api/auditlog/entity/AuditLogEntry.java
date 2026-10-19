@@ -36,7 +36,8 @@ public class AuditLogEntry {
     @Column(name = "id")
     private UUID id;
 
-    @Column(name = "actor_id", nullable = false)
+    /** Null when the system acted on its own (e.g. an event completing when it ends). */
+    @Column(name = "actor_id")
     private UUID actorId;
 
     @Column(name = "action", nullable = false, length = 100)
@@ -47,6 +48,10 @@ public class AuditLogEntry {
 
     @Column(name = "target_id")
     private UUID targetId;
+
+    /** BR-EVENT-006: the event this entry belongs to (the event itself, or its ticket type, promo code, ...), for its activity history. */
+    @Column(name = "event_id")
+    private UUID eventId;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.resalepolicy.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -25,6 +26,7 @@ public class ResalePolicyServiceImpl implements ResalePolicyService {
     private final ResalePolicyRepository resalePolicyRepository;
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     public ResalePolicyResponse get(UUID eventId) {
@@ -36,6 +38,12 @@ public class ResalePolicyServiceImpl implements ResalePolicyService {
 
     @Override
     public ResalePolicyResponse update(UUID eventId, ResalePolicyUpdateRequest request) {
+        ResalePolicyResponse response = applyUpdate(eventId, request);
+        auditLogService.recordByCurrentUser("resale_policy.updated", "ResalePolicy", eventId, eventId);
+        return response;
+    }
+
+    private ResalePolicyResponse applyUpdate(UUID eventId, ResalePolicyUpdateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 

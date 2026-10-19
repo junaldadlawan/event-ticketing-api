@@ -11,4 +11,7 @@ public interface AuditLogEntryRepository extends JpaRepository<AuditLogEntry, UU
 
     /** {@code GET /audit-log?actor_id=} - optional filter, see {@code AuditLogServiceImpl.list}. */
     Page<AuditLogEntry> findByActorId(UUID actorId, Pageable pageable);
+
+    /** {@code GET /events/{eventId}/activity}, newest first. */
+    Page<AuditLogEntry> findByEventIdOrderByCreatedAtDesc(UUID eventId, Pageable pageable);
 }

@@ -4,7 +4,7 @@ import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -45,6 +45,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     private final CartItemRepository cartItemRepository;
     private final EventCompletionService eventCompletionService;
     private final EntityManager entityManager;
+    private final AuditLogService auditLogService;
 
     @Override
     public TicketType create(UUID eventId, TicketTypeCreateRequest request) {
@@ -72,7 +73,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                 // New ticket types go to the end of the organizer's arrangement.
                 .position(ticketTypeRepository.findMaxPositionByEventId(event.getId()) + 1)
                 .build();
-        return ticketTypeRepository.save(ticketType);
+        TicketType created = ticketTypeRepository.save(ticketType);
+        auditLogService.recordByCurrentUser("ticket_type.created", "TicketType", created.getId(), created.getEventId());
+        return created;
     }
 
     @Override
@@ -151,7 +154,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             throw new BadRequestException("saleEndAt must be after saleStartAt");
         }
 
-        return ticketTypeRepository.save(ticketType);
+        TicketType updated = ticketTypeRepository.save(ticketType);
+        auditLogService.recordByCurrentUser("ticket_type.updated", "TicketType", updated.getId(), updated.getEventId());
+        return updated;
     }
 
     @Override
@@ -181,7 +186,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             arranged.add(ticketType);
         }
         List<TicketType> saved = ticketTypeRepository.saveAll(arranged);
-        BusinessAuditLogger.record("ticket_type.reordered", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("ticket_type.reordered", "Event", eventId, eventId);
         return saved;
     }
 
@@ -203,7 +208,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
         ticketType.markDeleted();
         ticketTypeRepository.save(ticketType);
-        BusinessAuditLogger.record("ticket_type.deleted", "TicketType", ticketTypeId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("ticket_type.deleted", "TicketType", ticketTypeId, ticketType.getEventId());
     }
 
     @Override
@@ -229,8 +234,8 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         }
         ticketType.setSalesPaused(paused);
         TicketType saved = ticketTypeRepository.save(ticketType);
-        BusinessAuditLogger.record(paused ? "ticket_type.sales_paused" : "ticket_type.sales_resumed", "TicketType",
-                ticketTypeId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser(paused ? "ticket_type.sales_paused" : "ticket_type.sales_resumed",
+                "TicketType", ticketTypeId, ticketType.getEventId());
         return saved;
     }
 

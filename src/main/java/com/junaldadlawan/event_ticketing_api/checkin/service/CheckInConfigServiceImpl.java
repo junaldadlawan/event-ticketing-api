@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
@@ -27,6 +28,7 @@ public class CheckInConfigServiceImpl implements CheckInConfigService {
     private final ScannerDeviceRepository scannerDeviceRepository;
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     public CheckInConfigResponse get(UUID eventId) {
@@ -38,6 +40,12 @@ public class CheckInConfigServiceImpl implements CheckInConfigService {
 
     @Override
     public CheckInConfigResponse update(UUID eventId, CheckInConfigUpdateRequest request) {
+        CheckInConfigResponse response = applyUpdate(eventId, request);
+        auditLogService.recordByCurrentUser("check_in_config.updated", "CheckInConfig", eventId, eventId);
+        return response;
+    }
+
+    private CheckInConfigResponse applyUpdate(UUID eventId, CheckInConfigUpdateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 

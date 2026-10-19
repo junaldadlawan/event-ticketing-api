@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceAuthorizeRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
@@ -32,6 +33,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
     private final EventRepository eventRepository;
     private final ScannerDeviceCredentialService credentialService;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -59,6 +61,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                     existing.setStatus(ScannerDeviceStatus.REVOKED);
                     existing.setUpdatedBy(callerId);
                     scannerDeviceRepository.save(existing);
+                    auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", existing.getId(), eventId);
                 }
             }
         }
@@ -73,6 +76,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                 .createdBy(accessGuard.currentUserId().toString())
                 .build();
         ScannerDevice saved = scannerDeviceRepository.save(device);
+        auditLogService.recordByCurrentUser("scanner_device.authorized", "ScannerDevice", saved.getId(), eventId);
         return ScannerDeviceResponse.from(saved, credential);
     }
 
@@ -86,6 +90,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
         device.setStatus(ScannerDeviceStatus.REVOKED);
         device.setUpdatedBy(accessGuard.currentUserId().toString());
         scannerDeviceRepository.save(device);
+        auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", deviceId, device.getEventId());
     }
 
     private Event getEventOrThrow(UUID eventId) {

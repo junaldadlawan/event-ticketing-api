@@ -56,7 +56,7 @@ class ResalePolicyServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new ResalePolicyServiceImpl(resalePolicyRepository, eventRepository, accessGuard);
+        service = new ResalePolicyServiceImpl(resalePolicyRepository, eventRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 

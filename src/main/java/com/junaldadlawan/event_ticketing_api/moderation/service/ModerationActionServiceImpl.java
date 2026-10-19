@@ -76,7 +76,8 @@ public class ModerationActionServiceImpl implements ModerationActionService {
         // action (SUSPEND/REINSTATE/REMOVE are all "admin interventions" per
         // BR-NFR-005's framing, not just suspend). Never throws.
         auditLogService.record(adminId, "moderation." + saved.getAction().name().toLowerCase(),
-                saved.getTargetType().name(), saved.getTargetId());
+                saved.getTargetType().name(), saved.getTargetId(),
+                saved.getTargetType() == ModerationTargetType.EVENT ? saved.getTargetId() : null);
         return ModerationActionResponse.from(saved);
     }
 

@@ -7,7 +7,6 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -100,7 +99,7 @@ public class EventServiceImpl implements EventService {
                 .ticketPrefix(generateUniqueTicketPrefix())
                 .build();
         Event created = eventRepository.save(newEvent);
-        BusinessAuditLogger.record("event.created", "Event", created.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("event.created", "Event", created.getId(), created.getId());
         return created;
     }
 
@@ -190,7 +189,9 @@ public class EventServiceImpl implements EventService {
             event.setImages(new ArrayList<>(request.images()));
         }
 
-        return eventRepository.save(event);
+        Event saved = eventRepository.save(event);
+        auditLogService.recordByCurrentUser("event.updated", "Event", eventId, eventId);
+        return saved;
     }
 
     @Override
@@ -209,7 +210,7 @@ public class EventServiceImpl implements EventService {
 
         event.setStatus(EventStatus.PUBLISHED);
         Event published = eventRepository.save(event);
-        BusinessAuditLogger.record("event.published", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("event.published", "Event", eventId, eventId);
         return published;
     }
 
@@ -247,7 +248,7 @@ public class EventServiceImpl implements EventService {
                 .forEach(ownerId -> notificationService.notify(ownerId, NotificationType.EVENT_CANCELLATION, "Event", eventId));
 
         // BR-NFR-005 (Phase 13): sensitive-action audit trail. Never throws.
-        auditLogService.record(accessGuard.currentUserId(), "event.cancelled", "Event", eventId);
+        auditLogService.recordByCurrentUser("event.cancelled", "Event", eventId, eventId);
 
         return saved;
     }
@@ -271,7 +272,7 @@ public class EventServiceImpl implements EventService {
         UUID eventId = event.getId();
         event.markDeleted();
         eventRepository.save(event);
-        BusinessAuditLogger.record("event.deleted", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("event.deleted", "Event", eventId, eventId);
     }
 
     @Override

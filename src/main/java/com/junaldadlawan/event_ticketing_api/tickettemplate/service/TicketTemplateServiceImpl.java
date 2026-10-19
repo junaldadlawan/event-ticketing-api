@@ -3,7 +3,7 @@ package com.junaldadlawan.event_ticketing_api.tickettemplate.service;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
@@ -38,6 +38,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
     private final TicketTemplateRepository ticketTemplateRepository;
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     public TicketTemplate create(UUID eventId, TicketTemplateCreateRequest request) {
@@ -69,7 +70,9 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
                 .build();
         requireValidCodePlacement(ticketTemplate);
         requireValidBackground(ticketTemplate);
-        return ticketTemplateRepository.save(ticketTemplate);
+        TicketTemplate created = ticketTemplateRepository.save(ticketTemplate);
+        auditLogService.recordByCurrentUser("ticket_template.created", "TicketTemplate", created.getId(), eventId);
+        return created;
     }
 
     @Override
@@ -178,7 +181,9 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         requireValidCodePlacement(ticketTemplate);
         requireValidBackground(ticketTemplate);
 
-        return ticketTemplateRepository.save(ticketTemplate);
+        TicketTemplate updated = ticketTemplateRepository.save(ticketTemplate);
+        auditLogService.recordByCurrentUser("ticket_template.updated", "TicketTemplate", templateId, ticketTemplate.getEventId());
+        return updated;
     }
 
     @Override
@@ -191,7 +196,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
 
         ticketTemplate.markDeleted();
         ticketTemplateRepository.save(ticketTemplate);
-        BusinessAuditLogger.record("ticket_template.deleted", "TicketTemplate", templateId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("ticket_template.deleted", "TicketTemplate", templateId, ticketTemplate.getEventId());
     }
 
     /**

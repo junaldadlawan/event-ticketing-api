@@ -60,7 +60,7 @@ class RefundPolicyServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new RefundPolicyServiceImpl(refundPolicyRepository, eventRepository, ticketRepository, accessGuard);
+        service = new RefundPolicyServiceImpl(refundPolicyRepository, eventRepository, ticketRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 
