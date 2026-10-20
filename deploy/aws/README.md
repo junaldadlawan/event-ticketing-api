@@ -5,7 +5,9 @@ an Application Load Balancer, an ECS Fargate service running the app
 container, an RDS Postgres 16 instance, an ECR repository for the image,
 and Secrets Manager entries for the DB password and the app's three signing
 secrets (`app.jwt.secret`, `app.ticket.credential.secret`,
-`app.device.credential.secret` — see `application.properties`).
+`app.device.credential.secret` — see `application.properties`), plus
+placeholder entries for the PayMongo keys and the Cloudflare R2 credentials
+that you fill in yourself (see [Uploaded files (Cloudflare R2)](#uploaded-files-cloudflare-r2)).
 
 ```
 Internet
@@ -223,6 +225,28 @@ curl -i -X OPTIONS http://<alb_dns_name>/api/v1/events -H "Origin: https://app.e
 ```
 
 `Access-Control-Allow-Origin` must echo your origin; an unlisted origin gets `403 Invalid CORS request`.
+
+## Uploaded files (Cloudflare R2)
+
+The `prod` profile stores uploads in Cloudflare R2 and will not start without `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and
+`R2_SECRET_ACCESS_KEY`. Terraform creates these as Secrets Manager entries holding `CHANGE_ME` and never overwrites them, so set the
+real values once after the first apply:
+
+1. In the Cloudflare dashboard, copy your account id and create an R2 API token with Object Read & Write on the bucket.
+2. Put each value into its secret (the name prefix is `<project_name>-<environment>`, e.g. from `terraform.tfvars`):
+
+   ```bash
+   aws secretsmanager put-secret-value --secret-id <prefix>/r2-account-id --secret-string "<account id>"
+   aws secretsmanager put-secret-value --secret-id <prefix>/r2-access-key-id --secret-string "<access key id>"
+   aws secretsmanager put-secret-value --secret-id <prefix>/r2-secret-access-key --secret-string "<secret access key>"
+   ```
+
+3. Force a new deployment (`aws ecs update-service --cluster <ecs_cluster_name> --service <ecs_service_name> --force-new-deployment`, names from `terraform output`): a running task
+   only reads its secrets when it starts.
+
+Non-secret settings are Terraform variables: `r2_bucket` (default `event-ticketing-media`, passed as `R2_BUCKET`) and
+`upload_public_base_url` (default empty = relative upload URLs, passed as `APP_UPLOAD_PUBLIC_BASE_URL`). The bucket stays private: the API
+serves files itself at `/api/v1/uploads/files/...`.
 
 ## Adding HTTPS
 

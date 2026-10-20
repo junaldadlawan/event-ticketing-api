@@ -103,3 +103,24 @@ resource "aws_secretsmanager_secret_version" "device_credential_secret" {
   secret_id     = aws_secretsmanager_secret.device_credential_secret.id
   secret_string = random_password.device_credential_secret.result
 }
+
+# Cloudflare R2 (uploaded files) - R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, required by application-prod.properties.
+# Same as PayMongo: an R2 API token's keys come from the Cloudflare dashboard, so Terraform only creates placeholders and ignores the value
+# afterwards. Fill all three in Secrets Manager, then force a new deployment. The account id is not secret, but keeping it here means
+# terraform.tfvars and the CI apply need no extra input.
+resource "aws_secretsmanager_secret" "r2" {
+  for_each                = toset(["r2-account-id", "r2-access-key-id", "r2-secret-access-key"])
+  name                    = "${local.name}/${each.key}"
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "r2" {
+  for_each      = aws_secretsmanager_secret.r2
+  secret_id     = each.value.id
+  secret_string = "CHANGE_ME"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}

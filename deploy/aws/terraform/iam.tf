@@ -33,6 +33,9 @@ data "aws_iam_policy_document" "ecs_execution_secrets" {
       aws_secretsmanager_secret.device_credential_secret.arn,
       aws_secretsmanager_secret.paymongo_secret_key.arn,
       aws_secretsmanager_secret.paymongo_webhook_secret.arn,
+      aws_secretsmanager_secret.r2["r2-account-id"].arn,
+      aws_secretsmanager_secret.r2["r2-access-key-id"].arn,
+      aws_secretsmanager_secret.r2["r2-secret-access-key"].arn,
     ]
   }
 }

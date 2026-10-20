@@ -120,6 +120,21 @@ variable "cors_allowed_origins" {
   }
 }
 
+variable "r2_bucket" {
+  description = "Cloudflare R2 bucket for uploaded files (R2_BUCKET). Credentials are in Secrets Manager, see secrets.tf."
+  type        = string
+  default     = "event-ticketing-media"
+}
+
+variable "upload_public_base_url" {
+  description = <<-EOT
+    Optional absolute base for upload URLs the API returns (APP_UPLOAD_PUBLIC_BASE_URL), e.g. "https://api.example.com". Empty = relative
+    /api/v1/uploads/files/... paths. The bucket stays private either way: the API serves the files itself.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "log_retention_days" {
   description = "CloudWatch Logs retention for the app's container logs."
   type        = number
