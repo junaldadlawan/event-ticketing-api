@@ -64,6 +64,9 @@ resource "aws_ecs_task_definition" "app" {
         { name = "APP_SEED_DEMO_DATA", value = tostring(var.seed_demo_data) },
         # Browser origins allowed to call the API cross-origin (CORS); empty = none. See variables.tf.
         { name = "APP_CORS_ALLOWED_ORIGINS", value = join(",", var.cors_allowed_origins) },
+        # Cloudflare R2 bucket for uploaded files and the optional public base URL for upload links. See variables.tf.
+        { name = "R2_BUCKET", value = var.r2_bucket },
+        { name = "APP_UPLOAD_PUBLIC_BASE_URL", value = var.upload_public_base_url },
       ]
 
       secrets = [
@@ -74,6 +77,10 @@ resource "aws_ecs_task_definition" "app" {
         # PayMongo keys from the dashboard: placeholders until you set them in Secrets Manager (see secrets.tf). Only used when PAYMENTS_GATEWAY=paymongo.
         { name = "PAYMONGO_SECRET_KEY", valueFrom = aws_secretsmanager_secret.paymongo_secret_key.arn },
         { name = "PAYMONGO_WEBHOOK_SECRET", valueFrom = aws_secretsmanager_secret.paymongo_webhook_secret.arn },
+        # R2 API token from the Cloudflare dashboard: placeholders until you set them in Secrets Manager (see secrets.tf).
+        { name = "R2_ACCOUNT_ID", valueFrom = aws_secretsmanager_secret.r2["r2-account-id"].arn },
+        { name = "R2_ACCESS_KEY_ID", valueFrom = aws_secretsmanager_secret.r2["r2-access-key-id"].arn },
+        { name = "R2_SECRET_ACCESS_KEY", valueFrom = aws_secretsmanager_secret.r2["r2-secret-access-key"].arn },
       ]
 
       logConfiguration = {
