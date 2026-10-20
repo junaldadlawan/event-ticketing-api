@@ -57,7 +57,7 @@ class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, passwordEncoder, accessGuard, uploadedFileUrls);
+        userService = new UserServiceImpl(userRepository, passwordEncoder, accessGuard, uploadedFileUrls, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         userId = UUID.randomUUID();
         existingUser = User.builder()
                 .id(userId)

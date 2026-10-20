@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.tickettype.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -72,8 +73,8 @@ class TicketTypeServiceImplTest {
     void setUp() {
         service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard, ticketRepository, cartItemRepository,
                 new com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService(eventRepository,
-                        org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class)),
-                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
+                        org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class)),
+                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 
@@ -149,7 +150,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TicketType result = service.create(eventId, createRequest(null));
@@ -191,7 +192,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(eventId, createRequest(null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -212,7 +213,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(eventId, createRequest(null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -324,7 +325,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(eventId)).isInstanceOf(ForbiddenException.class);
     }
@@ -364,7 +365,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(eventId)).isInstanceOf(ForbiddenException.class);
     }
@@ -403,7 +404,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.get(ticketTypeId)).isInstanceOf(ForbiddenException.class);
     }
@@ -447,7 +448,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.get(ticketTypeId)).isInstanceOf(ForbiddenException.class);
     }
@@ -522,7 +523,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.delete(ticketTypeId)).isInstanceOf(ForbiddenException.class);
         verify(ticketTypeRepository, never()).save(any());
@@ -630,7 +631,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         lenient().when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
         assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED).isSalesPaused()).isTrue();
 
@@ -688,7 +689,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED)).isInstanceOf(ForbiddenException.class);
         assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.ACTIVE)).isInstanceOf(ForbiddenException.class);
@@ -818,7 +819,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.reorder(eventId, List.of(UUID.randomUUID()))).isInstanceOf(ForbiddenException.class);
         verify(ticketTypeRepository, never()).saveAll(any());
@@ -875,7 +876,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest("Hijacked", null, null, null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -894,7 +895,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest("Hijacked", null, null, null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -1061,12 +1062,133 @@ class TicketTypeServiceImplTest {
         UUID eventId = UUID.randomUUID();
         UUID ticketTypeId = UUID.randomUUID();
         mockOwnerAccess(ticketTypeId, eventId, 100, 100);
-        Instant newSaleStartAt = Instant.now().plus(10, ChronoUnit.DAYS);
-        Instant newSaleEndAt = Instant.now().plus(20, ChronoUnit.DAYS);
+        // the event starts in 10 days, so the new window must close an hour before that
+        Instant newSaleStartAt = Instant.now().plus(2, ChronoUnit.DAYS);
+        Instant newSaleEndAt = Instant.now().plus(8, ChronoUnit.DAYS);
 
         TicketType result = service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, null, newSaleStartAt, newSaleEndAt, null));
 
         assertThat(result.getSaleStartAt()).isEqualTo(newSaleStartAt);
         assertThat(result.getSaleEndAt()).isEqualTo(newSaleEndAt);
+    }
+
+    // ---- BR-EVENT-003: sales close at least 1 hour before the event starts ----
+
+    private Event mockOwnerCreateAccess(UUID eventId) {
+        UUID ownerId = UUID.randomUUID();
+        Event event = event(eventId, orgId, EventStatus.DRAFT);
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
+        when(accessGuard.isAdmin()).thenReturn(false);
+        when(accessGuard.currentUserId()).thenReturn(ownerId);
+        when(accessGuard.hasRole(ownerId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        lenient().when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        return event;
+    }
+
+    @Test
+    void create_saleEndAtExactlyOneHourBeforeEventStart_isAccepted() {
+        UUID eventId = UUID.randomUUID();
+        Event event = mockOwnerCreateAccess(eventId);
+        Instant saleEndAt = event.getStartAt().minus(1, ChronoUnit.HOURS);
+
+        TicketType result = service.create(eventId, new TicketTypeCreateRequest(
+                "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, Instant.now(), saleEndAt, null));
+
+        assertThat(result.getSaleEndAt()).isEqualTo(saleEndAt);
+    }
+
+    @Test
+    void create_saleEndAtOneMinutePastTheCap_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        Event event = mockOwnerCreateAccess(eventId);
+        Instant cap = event.getStartAt().minus(1, ChronoUnit.HOURS);
+        TicketTypeCreateRequest request = new TicketTypeCreateRequest(
+                "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, Instant.now(), cap.plus(1, ChronoUnit.MINUTES), null);
+
+        assertThatThrownBy(() -> service.create(eventId, request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Ticket sales must end at least 1 hour before the event starts (by " + cap + ")");
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void create_withoutSaleStartAt_startsNow() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerCreateAccess(eventId);
+        Instant before = Instant.now();
+
+        TicketType result = service.create(eventId, new TicketTypeCreateRequest(
+                "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, null, Instant.now().plus(5, ChronoUnit.DAYS), null));
+
+        assertThat(result.getSaleStartAt()).isBetween(before, Instant.now());
+    }
+
+    // ---- BR-EVENT-003: a sale window runs for at least 1 hour ----
+
+    @Test
+    void create_saleWindowExactlyOneHour_isAccepted() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerCreateAccess(eventId);
+        Instant saleStartAt = Instant.now().plus(1, ChronoUnit.DAYS);
+
+        TicketType result = service.create(eventId, new TicketTypeCreateRequest(
+                "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, saleStartAt, saleStartAt.plus(1, ChronoUnit.HOURS), null));
+
+        assertThat(result.getSaleEndAt()).isEqualTo(saleStartAt.plus(1, ChronoUnit.HOURS));
+    }
+
+    @Test
+    void create_saleWindow59Minutes_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerCreateAccess(eventId);
+        Instant saleStartAt = Instant.now().plus(1, ChronoUnit.DAYS);
+        TicketTypeCreateRequest request = new TicketTypeCreateRequest(
+                "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, saleStartAt, saleStartAt.plus(59, ChronoUnit.MINUTES), null);
+
+        assertThatThrownBy(() -> service.create(eventId, request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Ticket sales must run for at least 1 hour");
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void create_startNowWithEnd30MinutesAway_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerCreateAccess(eventId);
+        TicketTypeCreateRequest request = new TicketTypeCreateRequest(
+                "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, null, Instant.now().plus(30, ChronoUnit.MINUTES), null);
+
+        assertThatThrownBy(() -> service.create(eventId, request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Ticket sales must run for at least 1 hour");
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void update_saleEndAtShortensWindowBelowOneHour_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+        // existing saleStartAt is now()+1d (taken just before), so this end is ~30 minutes after it
+        Instant newSaleEndAt = Instant.now().plus(1, ChronoUnit.DAYS).plus(30, ChronoUnit.MINUTES);
+
+        assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, null, null, newSaleEndAt, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Ticket sales must run for at least 1 hour");
+        verify(ticketTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void update_saleEndAtMovedPastTheCap_throwsBadRequest() {
+        UUID eventId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        mockOwnerAccess(ticketTypeId, eventId, 100, 100);
+        // the event starts in 10 days; an end 30 minutes before it is past the 1-hour cap
+        Instant newSaleEndAt = Instant.now().plus(10, ChronoUnit.DAYS).minus(30, ChronoUnit.MINUTES);
+
+        assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, null, null, newSaleEndAt, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageStartingWith("Ticket sales must end at least 1 hour before the event starts");
+        verify(ticketTypeRepository, never()).save(any());
     }
 }

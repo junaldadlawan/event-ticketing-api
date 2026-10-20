@@ -39,7 +39,7 @@ class GatewayFeeServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new GatewayFeeServiceImpl(settingRepository, accessGuard);
+        service = new GatewayFeeServiceImpl(settingRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private void setting(String percentage, long flat, String currency, GatewayFeePayer payer) {

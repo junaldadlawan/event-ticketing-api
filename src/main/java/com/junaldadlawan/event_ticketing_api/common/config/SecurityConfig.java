@@ -88,6 +88,8 @@ public class SecurityConfig {
                         // must precede the broader GET /api/v1/events/** permitAll matcher
                         // below.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/analytics", "/api/v1/events/*/analytics/**").authenticated()
+                        // BR-EVENT-006 activity history: owner/organizer/admin only (checked in AuditLogServiceImpl)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/activity").authenticated()
                         // Same reasoning again: GET /events/managed is the management
                         // listing (admin / org owner / organizer, any status) - NOT
                         // public, unlike GET /events - must precede the broader

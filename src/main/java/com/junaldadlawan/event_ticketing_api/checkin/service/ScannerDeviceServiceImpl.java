@@ -1,5 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceAuthorizeRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
@@ -32,6 +35,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
     private final EventRepository eventRepository;
     private final ScannerDeviceCredentialService credentialService;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -59,6 +63,8 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                     existing.setStatus(ScannerDeviceStatus.REVOKED);
                     existing.setUpdatedBy(callerId);
                     scannerDeviceRepository.save(existing);
+                    auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", existing.getId(), eventId,
+                            AuditDetails.named(existing.getDeviceLabel()));
                 }
             }
         }
@@ -73,6 +79,8 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                 .createdBy(accessGuard.currentUserId().toString())
                 .build();
         ScannerDevice saved = scannerDeviceRepository.save(device);
+        auditLogService.recordByCurrentUser("scanner_device.authorized", "ScannerDevice", saved.getId(), eventId,
+                AuditDetails.named(device.getDeviceLabel()));
         return ScannerDeviceResponse.from(saved, credential);
     }
 
@@ -86,6 +94,8 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
         device.setStatus(ScannerDeviceStatus.REVOKED);
         device.setUpdatedBy(accessGuard.currentUserId().toString());
         scannerDeviceRepository.save(device);
+        auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", deviceId, device.getEventId(),
+                AuditDetails.named(device.getDeviceLabel()));
     }
 
     private Event getEventOrThrow(UUID eventId) {
@@ -99,7 +109,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.CHECK_IN);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event's scanner devices");
         }

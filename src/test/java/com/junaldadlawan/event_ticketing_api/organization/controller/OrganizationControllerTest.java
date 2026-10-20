@@ -230,7 +230,8 @@ class OrganizationControllerTest {
                 .organizationId(orgId)
                 .build();
         member.getRoles().add(OrganizationRole.OWNER);
-        when(organizationService.listMembers(orgId)).thenReturn(List.of(member));
+        when(organizationService.listMembersWithDetails(orgId))
+                .thenReturn(List.of(com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberResponse.from(member)));
 
         mockMvc.perform(get("/api/v1/organizations/{orgId}/members", orgId))
                 .andExpect(status().isOk())

@@ -91,6 +91,23 @@ class UploadIntegrationTest {
     }
 
     @Test
+    void upload_withAFolder_isStoredAndServedUnderThatFolder_unknownFolderIs400() throws Exception {
+        MvcResult result = mockMvc.perform(multipart("/api/v1/uploads").file(part("me.png", "image/png", png()))
+                        .param("folder", "users")
+                        .header("Authorization", "Bearer " + token()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String url = objectMapper.readTree(result.getResponse().getContentAsString()).get("url").asText();
+        assertThat(url).matches("http://localhost/api/v1/uploads/files/users/[0-9a-f-]{36}\\.png");
+        mockMvc.perform(get(URI.create(url).getPath())).andExpect(status().isOk());
+
+        mockMvc.perform(multipart("/api/v1/uploads").file(part("me.png", "image/png", png()))
+                        .param("folder", "../secrets")
+                        .header("Authorization", "Bearer " + token()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void upload_withoutSigningIn_isRejected_andNothingIsStored() throws Exception {
         mockMvc.perform(multipart("/api/v1/uploads").file(part("bg.png", "image/png", png())))
                 .andExpect(status().isUnauthorized());
@@ -131,6 +148,8 @@ class UploadIntegrationTest {
         mockMvc.perform(get("/api/v1/uploads/files/{name}", "application.properties"))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/uploads/files/{name}", UUID.randomUUID() + ".svg"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/uploads/files/{folder}/{name}", "secrets", UUID.randomUUID() + ".png"))
                 .andExpect(status().isNotFound());
     }
 }

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.ticket.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -111,7 +112,7 @@ class TicketAccessGuardTest {
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(true);
 
         assertThatCode(() -> guard.requireOwnerBuyerOrOrganizerOrAdmin(ticket)).doesNotThrowAnyException();
     }
@@ -136,7 +137,7 @@ class TicketAccessGuardTest {
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> guard.requireOwnerBuyerOrOrganizerOrAdmin(ticket)).isInstanceOf(ForbiddenException.class);
     }
@@ -155,7 +156,7 @@ class TicketAccessGuardTest {
         when(accessGuard.currentUserId()).thenReturn(otherOrgOrganizerId);
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(otherOrgOrganizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOrganizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOrganizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> guard.requireOwnerBuyerOrOrganizerOrAdmin(ticket)).isInstanceOf(ForbiddenException.class);
         verify(accessGuard, never()).hasRole(otherOrgOrganizerId, otherOrgId, OrganizationRole.OWNER);

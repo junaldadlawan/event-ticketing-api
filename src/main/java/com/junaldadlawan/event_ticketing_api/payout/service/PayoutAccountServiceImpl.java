@@ -1,8 +1,10 @@
 package com.junaldadlawan.event_ticketing_api.payout.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
@@ -17,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -27,6 +30,7 @@ public class PayoutAccountServiceImpl implements PayoutAccountService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationAccessGuard accessGuard;
     private final AccountNumberCipher cipher;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -35,7 +39,7 @@ public class PayoutAccountServiceImpl implements PayoutAccountService {
         if (!accessGuard.isAdmin()) {
             UUID callerId = accessGuard.currentUserId();
             if (!accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                    && !accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER)) {
+                    && !accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.FINANCE)) {
                 throw new ForbiddenException("Only the organization's owner, organizer, or an admin may view its payout account");
             }
         }
@@ -60,8 +64,7 @@ public class PayoutAccountServiceImpl implements PayoutAccountService {
         account.setAccountNumberLast4(number.substring(number.length() - 4));
         PayoutAccount saved = payoutAccountRepository.save(account);
         // Only the bank and the last 4 are logged, never the number.
-        BusinessAuditLogger.record("payout_account.set", "PayoutAccount", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + organizationId + " bank=" + saved.getBankName() + " last4=" + saved.getAccountNumberLast4());
+        auditLogService.recordByCurrentUser("payout_account.set", "PayoutAccount", saved.getId(), null, organizationId, account(saved));
         return PayoutAccountResponse.from(saved);
     }
 
@@ -73,8 +76,15 @@ public class PayoutAccountServiceImpl implements PayoutAccountService {
         PayoutAccount account = findLive(organizationId);
         account.markDeleted();
         payoutAccountRepository.save(account);
-        BusinessAuditLogger.record("payout_account.removed", "PayoutAccount", account.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + organizationId + " last4=" + account.getAccountNumberLast4());
+        auditLogService.recordByCurrentUser("payout_account.removed", "PayoutAccount", account.getId(), null, organizationId, account(account));
+    }
+
+    /** Bank and the last 4 digits only - never the account number. */
+    private static Map<String, Object> account(PayoutAccount account) {
+        Map<String, Object> details = AuditDetails.named(account.getBankName() + " ending " + account.getAccountNumberLast4());
+        details.put("bank", account.getBankName());
+        details.put("last4", account.getAccountNumberLast4());
+        return details;
     }
 
     private PayoutAccount findLive(UUID organizationId) {

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
@@ -53,7 +54,7 @@ class CheckInConfigServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new CheckInConfigServiceImpl(checkInConfigRepository, scannerDeviceRepository, eventRepository, accessGuard);
+        service = new CheckInConfigServiceImpl(checkInConfigRepository, scannerDeviceRepository, eventRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private Event event(UUID id, UUID orgId) {
@@ -121,7 +122,7 @@ class CheckInConfigServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(callerId);
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.CHECK_IN)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(eventId, new CheckInConfigUpdateRequest(CheckInMode.PURE_OFFLINE, null)))
                 .isInstanceOf(ForbiddenException.class);

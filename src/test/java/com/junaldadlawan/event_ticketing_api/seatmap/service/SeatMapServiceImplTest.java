@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.seatmap.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -138,7 +139,7 @@ class SeatMapServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.getSeatMap(eventId)).isInstanceOf(ForbiddenException.class);
         verifyNoInteractions(seatMapRepository);
@@ -183,7 +184,7 @@ class SeatMapServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.getSeatMap(eventId)).isInstanceOf(ForbiddenException.class);
         verify(accessGuard).hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER);

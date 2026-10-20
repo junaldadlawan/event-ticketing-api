@@ -1,5 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.refundpolicy.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -15,6 +18,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -25,6 +30,7 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
     private final EventRepository eventRepository;
     private final TicketRepository ticketRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     public RefundPolicyResponse get(UUID eventId) {
@@ -41,6 +47,18 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 
         var existing = refundPolicyRepository.findByEventId(eventId);
+        Map<String, Object> before = AuditDetails.snapshot(
+                existing.map(RefundPolicyResponse::from).orElseGet(() -> RefundPolicyResponse.defaultFor(eventId)), RefundPolicyUpdateRequest.class);
+        RefundPolicyResponse response = applyUpdate(eventId, request, existing);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(response, RefundPolicyUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("refund_policy.updated", "RefundPolicy", eventId, eventId, changes);
+        }
+        return response;
+    }
+
+    private RefundPolicyResponse applyUpdate(UUID eventId, RefundPolicyUpdateRequest request, Optional<RefundPolicy> existing) {
         RefundPolicy policy = existing.orElseGet(() -> RefundPolicy.builder().eventId(eventId).build());
         applyRequest(policy, request);
 
@@ -81,7 +99,7 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event's refund policy");
         }
@@ -99,7 +117,7 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, event.getOrganizationId(), OrganizationPermission.ORDERS_REFUNDS);
         if (isOwnerOrOrganizer) {
             return;
         }

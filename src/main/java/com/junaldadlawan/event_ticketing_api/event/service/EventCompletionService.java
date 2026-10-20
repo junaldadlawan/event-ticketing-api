@@ -1,7 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventResponse;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -37,6 +37,7 @@ public class EventCompletionService {
 
     private final EventRepository eventRepository;
     private final PublicEventCacheEvictionListener cacheEviction;
+    private final AuditLogService auditLogService;
 
     /** COMPLETED, or past its end time whatever its status says (the sweep may not have run yet). */
     public static boolean hasEnded(Event event) {
@@ -99,8 +100,8 @@ public class EventCompletionService {
             return false;   // someone else completed it first, or it changed status meanwhile
         }
         cacheEviction.onChange(eventId);
-        // the system completes it, not whoever happened to read the event at that moment
-        BusinessAuditLogger.recordAs("system", "event.completed", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS, null);
+        // actor null = the system completed it, not whoever happened to read the event at that moment
+        auditLogService.record(null, "event.completed", "Event", eventId, eventId);
         return true;
     }
 }

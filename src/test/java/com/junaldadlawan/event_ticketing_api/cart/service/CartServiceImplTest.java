@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.cart.service;
 
+import com.junaldadlawan.event_ticketing_api.cart.dto.AppliedPromoCodeResponse;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemCreateRequest;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartResponse;
 import com.junaldadlawan.event_ticketing_api.platformfee.service.PlatformFeeQuote;
@@ -986,14 +987,16 @@ class CartServiceImplTest {
     }
 
     @Test
-    void get_anAppliedCodePausedSinceItWasApplied_returnsTheCartWithoutADiscount_insteadOfThrowing() {
+    void get_anAppliedCodePausedSinceItWasApplied_stillShowsIt_withStatusPausedAndNoDiscount() {
         PromoCode paused = promoCode(UUID.randomUUID(), UUID.randomUUID(), DiscountType.FIXED, BigDecimal.valueOf(300),
                 Set.of(), Instant.now().minus(1, ChronoUnit.DAYS), Instant.now().plus(1, ChronoUnit.DAYS));
         paused.setPaused(true);
 
         CartResponse view = viewOfACartWithAppliedCode(paused);
 
-        assertThat(view.appliedPromoCode()).isNull();
+        // still shown, so the buyer can see and remove it (checkout refuses it)
+        assertThat(view.appliedPromoCode().status()).isEqualTo(AppliedPromoCodeResponse.Status.PAUSED);
+        assertThat(view.appliedPromoCode().discountAmount().amount()).isZero();
         assertThat(view.total().amount()).isEqualTo(1000L);
     }
 

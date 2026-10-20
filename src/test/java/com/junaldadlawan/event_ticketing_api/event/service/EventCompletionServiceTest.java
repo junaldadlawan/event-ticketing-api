@@ -37,11 +37,14 @@ class EventCompletionServiceTest {
     @Mock
     private PublicEventCacheEvictionListener cacheEviction;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService auditLogService;
+
     private EventCompletionService service;
 
     @BeforeEach
     void setUp() {
-        service = new EventCompletionService(eventRepository, cacheEviction);
+        service = new EventCompletionService(eventRepository, cacheEviction, auditLogService);
     }
 
     private static Event event(EventStatus status, Instant endAt) {
@@ -80,6 +83,8 @@ class EventCompletionServiceTest {
 
         assertThat(service.completeIfEnded(event).getStatus()).isEqualTo(EventStatus.COMPLETED);
         verify(cacheEviction).onChange(event.getId());
+        // in the event's activity history, with no actor: the system did it (BR-EVENT-006)
+        verify(auditLogService).record(null, "event.completed", "Event", event.getId(), event.getId());
     }
 
     @Test
@@ -100,6 +105,7 @@ class EventCompletionServiceTest {
 
         assertThat(service.completeIfEnded(event).getStatus()).isEqualTo(EventStatus.PUBLISHED);
         verify(cacheEviction, never()).onChange(any());
+        verifyNoInteractions(auditLogService);
     }
 
     @Test

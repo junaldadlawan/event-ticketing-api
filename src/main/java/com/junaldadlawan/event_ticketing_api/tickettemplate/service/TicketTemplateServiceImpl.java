@@ -1,9 +1,13 @@
 package com.junaldadlawan.event_ticketing_api.tickettemplate.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
+import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
+import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
@@ -24,6 +28,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +43,8 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
     private final TicketTemplateRepository ticketTemplateRepository;
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
+    private final TicketTypeRepository ticketTypeRepository;
 
     @Override
     public TicketTemplate create(UUID eventId, TicketTemplateCreateRequest request) {
@@ -69,7 +76,9 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
                 .build();
         requireValidCodePlacement(ticketTemplate);
         requireValidBackground(ticketTemplate);
-        return ticketTemplateRepository.save(ticketTemplate);
+        TicketTemplate created = ticketTemplateRepository.save(ticketTemplate);
+        auditLogService.recordByCurrentUser("ticket_template.created", "TicketTemplate", created.getId(), eventId, AuditDetails.named(templateName(ticketTemplate)));
+        return created;
     }
 
     @Override
@@ -92,6 +101,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         Event event = getEventOrThrow(ticketTemplate.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         EventCompletionService.requireNotEnded(event);
+        Map<String, Object> before = AuditDetails.snapshot(ticketTemplate, TicketTemplateUpdateRequest.class);
 
         // A PATCH can't send null to mean "clear", so switching to NONE / to a non-CUSTOM fit clears the
         // values that no longer apply - but a request that names such a value alongside is contradictory.
@@ -178,7 +188,13 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         requireValidCodePlacement(ticketTemplate);
         requireValidBackground(ticketTemplate);
 
-        return ticketTemplateRepository.save(ticketTemplate);
+        TicketTemplate updated = ticketTemplateRepository.save(ticketTemplate);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(ticketTemplate, TicketTemplateUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("ticket_template.updated", "TicketTemplate", templateId, ticketTemplate.getEventId(), changes);
+        }
+        return updated;
     }
 
     @Override
@@ -191,7 +207,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
 
         ticketTemplate.markDeleted();
         ticketTemplateRepository.save(ticketTemplate);
-        BusinessAuditLogger.record("ticket_template.deleted", "TicketTemplate", templateId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("ticket_template.deleted", "TicketTemplate", templateId, ticketTemplate.getEventId(), AuditDetails.named(templateName(ticketTemplate)));
     }
 
     /**
@@ -344,6 +360,13 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /** "VIP · DIGITAL", or "Whole event · PHYSICAL" for an event-level template - so a deleted template can still be named. */
+    private String templateName(TicketTemplate template) {
+        String ticketType = template.getTicketTypeId() == null ? "Whole event"
+                : ticketTypeRepository.findById(template.getTicketTypeId()).map(TicketType::getName).orElse("Ticket type " + template.getTicketTypeId());
+        return ticketType + " · " + template.getFormat();
+    }
+
     private TicketTemplate getOrThrow(UUID templateId) {
         return ticketTemplateRepository.findByIdAndDeletedAtIsNull(templateId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket template " + templateId + " not found"));
@@ -364,7 +387,7 @@ public class TicketTemplateServiceImpl implements TicketTemplateService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.EVENTS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event's ticket templates");
         }

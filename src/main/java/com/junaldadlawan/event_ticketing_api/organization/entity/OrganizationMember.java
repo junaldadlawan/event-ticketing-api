@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.organization.entity;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import jakarta.persistence.*;
 import lombok.*;
@@ -59,6 +60,21 @@ public class OrganizationMember implements Persistable<OrganizationMemberId> {
     @Builder.Default
     private Set<OrganizationRole> roles = new HashSet<>();
 
+    /** BR-ORG-008: what this member may do as an ORGANIZER (ignored without that role; the owner holds all). */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "organization_member_permissions",
+            joinColumns = {
+                    @JoinColumn(name = "user_id", referencedColumnName = "user_id"),
+                    @JoinColumn(name = "organization_id", referencedColumnName = "organization_id")
+            },
+            // no FK constraint, same as organization_member_roles above
+            foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "permission")
+    @Builder.Default
+    private Set<OrganizationPermission> permissions = new HashSet<>();
+
     @CreationTimestamp
     @Column(name = "assigned_at", updatable = false, nullable = false)
     private Instant assignedAt;
@@ -75,6 +91,26 @@ public class OrganizationMember implements Persistable<OrganizationMemberId> {
     @Override
     public boolean isNew() {
         return isNew;
+    }
+
+    /** Set when the permissions were chosen explicitly (even as none), so the default below doesn't override them. */
+    @Transient
+    @Builder.Default
+    private boolean permissionsChosen = false;
+
+    /** BR-ORG-008: replaces the permissions with an explicit choice. */
+    public void choosePermissions(Set<OrganizationPermission> chosen) {
+        permissions.clear();
+        permissions.addAll(chosen);
+        permissionsChosen = true;
+    }
+
+    /** A new organizer whose permissions nobody chose gets what an organizer could always do (everything but TEAM). */
+    @PrePersist
+    void defaultOrganizerPermissions() {
+        if (roles.contains(OrganizationRole.ORGANIZER) && permissions.isEmpty() && !permissionsChosen) {
+            permissions.addAll(OrganizationPermission.organizerDefaults());
+        }
     }
 
     @PostLoad

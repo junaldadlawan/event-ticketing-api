@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInRecordResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.FallbackScanBatchRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.FallbackScanItemDto;
@@ -248,7 +249,7 @@ public class CheckInServiceImpl implements CheckInService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.CHECK_IN);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the event's organizer/owner or an admin may view this ticket's check-in records");
         }

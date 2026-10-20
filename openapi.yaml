@@ -496,6 +496,10 @@ paths:
       operationId: listOrganizationMembers
       tags: [Organizations]
       summary: List an organization's members and their roles (members or admin)
+      description: >
+        BR-ORG-007: each member's name, email and phone come from their own account (read-only here - a member's
+        account stays theirs to change). The owner, organizers and admins see all three; a caller who is only check-in
+        staff sees names, with email and phone null.
       responses:
         "200":
           description: OK
@@ -530,6 +534,59 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /organizations/{orgId}/members/{userId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: setOrganizationMemberRoles
+      tags: [Organizations]
+      summary: Set a member's roles to exactly this set - change, add or take away in one call (owner only)
+      description: >
+        BR-ORG-007. Logged as organization_member.roles_changed with the member's name and the roles before and after
+        (nothing is logged when the set is unchanged).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items: { type: string, enum: [ORGANIZER, CHECK_IN_STAFF] }
+                  example: [ORGANIZER, CHECK_IN_STAFF]
+      responses:
+        "200":
+          description: The updated member, with name, email and phone
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { description: "Empty set (remove the member instead), the OWNER role, or an unknown role" }
+        "403": { description: "Not the organization's owner (organizers and admins included)" }
+        "404": { description: "The organization, or this user is not one of its members" }
+        "409": { description: "The owner's own membership can't be changed here" }
+
+  /organizations/{orgId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: removeOrganizationMember
+      tags: [Organizations]
+      summary: Remove a member and all their roles (owner only)
+      description: >
+        BR-ORG-007. Their past actions stay in the logs. Logged as organization_member.removed with the member's name
+        and the roles they had.
+      responses:
+        "204": { description: Removed }
+        "403": { description: "Not the organization's owner (organizers and admins included)" }
+        "404": { description: "The organization, or this user is not one of its members" }
+        "409": { description: "The owner can't be removed" }
 
   /analytics/platform/finance:
     get:
@@ -1083,21 +1140,49 @@ paths:
               required: [file]
               properties:
                 file: { type: string, format: binary }
+                folder:
+                  type: string
+                  enum: [events, organizations, platform, temporary, tickets, users]
+                  default: temporary
+                  description: "What the image is for, which decides where it is stored: events (event images), organizations (organization documents), platform (posts), tickets (ticket template backgrounds and logos), users (profile pictures). Omitted = temporary."
       responses:
         "201":
-          description: Stored
+          description: Stored. The returned URL is `/uploads/files/{folder}/{name}` on this server.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadedImage" }
-        "400": { description: "Not a PNG/JPEG/WebP/GIF image, or no file part" }
+        "400": { description: "Not a PNG/JPEG/WebP/GIF image, no file part, or an unknown folder" }
         "413": { description: Larger than 5 MB }
+
+  /uploads/files/{folder}/{name}:
+    get:
+      operationId: getUploadedImageInFolder
+      tags: [Uploads]
+      security: []
+      summary: Serve an uploaded image (public), from local disk or the private R2 bucket
+      parameters:
+        - name: folder
+          in: path
+          required: true
+          schema: { type: string, enum: [events, organizations, platform, temporary, tickets, users] }
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The image
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads/files/{name}:
     get:
       operationId: getUploadedImage
       tags: [Uploads]
       security: []
-      summary: Serve an uploaded image (public)
+      summary: Serve an uploaded image (public) stored before uploads had folders
       parameters:
         - name: name
           in: path
@@ -1771,6 +1856,10 @@ paths:
       operationId: createTicketType
       tags: [TicketTypes]
       summary: Create a TicketType (owning organizer)
+      description: |
+        Omit `sale_start_at` to start sales now (the server's current time). `sale_end_at` must be at least 1 hour after
+        `sale_start_at` (measured from the server's time when it is omitted) and at least 1 hour before the event
+        starts; otherwise 400 (BR-EVENT-003).
       requestBody:
         required: true
         content:
@@ -1782,6 +1871,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { description: "Validation error, a sale window shorter than 1 hour, or one ending less than 1 hour before the event starts" }
         "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/ticket-types/order:
@@ -1835,6 +1925,8 @@ paths:
       description: |
         A new `quantityTotal` keeps the tickets already sold or held taken: `quantityAvailable` becomes the new total minus
         (old total - old available). A total lower than what is already sold or held is refused with 409.
+        The resulting sale window (new or kept values) must run for at least 1 hour and end at least 1 hour before the
+        event starts; otherwise 400 (BR-EVENT-003).
       requestBody:
         required: true
         content:
@@ -1846,6 +1938,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { description: "Validation error, a sale window shorter than 1 hour, or one ending less than 1 hour before the event starts" }
         "409": { $ref: "#/components/responses/EventEnded" }
     delete:
       operationId: deleteTicketType
@@ -1945,8 +2038,8 @@ paths:
       tags: [PromoCodes]
       summary: Pause or resume a promo code (owning organizer, or admin)
       description: |
-        PAUSED: the code can't be applied to a cart (422, like an unknown code) and a cart that already holds it can't
-        check out (422, nothing charged). ACTIVE: usable again. Orders that already used it are untouched. Allowed
+        PAUSED: the code can't be applied to a cart (422, like an unknown code) and a cart that already holds it shows it with status PAUSED and no discount, and can't
+        check out (422 "Promo code X is paused. Remove it from your cart to check out.", nothing charged). ACTIVE: usable again. Orders that already used it are untouched. Allowed
         whatever the event's status until the event has ended (then 409); asking for the state it is already in is
         not an error.
       requestBody:
@@ -2137,6 +2230,103 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/EventEnded" }
+
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [Audit]
+      summary: The activity log behind a management tab - an organization's, or the platform's (BR-ADMIN-007)
+      description: |
+        Newest first; each entry has actorName (and eventTitle for an event's entries) filled in.
+
+        **Organization scope** (`organizationId` given) - only entries about that organization or its events:
+
+        | area | shows | readable by |
+        |---|---|---|
+        | EVENTS | every entry tagged with one of its events (event.*, ticket_type.*, promo_code.*, ticket_template.*, refund_policy.*, resale_policy.*, check_in_config.*, scanner_device.*, refund.issued, moderation.* of its events) | owner or organizer, admin |
+        | TEAM | organization_member.*, organization.* | owner or organizer, admin |
+        | FINANCE | payout.*, refund.issued | owner, admin |
+        | SETTINGS | payout_card.*, payout_account.* | owner or organizer, admin |
+
+        **Platform scope** (no `organizationId`) - admins only:
+
+        | area | shows |
+        |---|---|
+        | EVENTS | the event entries above, across all organizations |
+        | POSTS | post.* |
+        | ORGANIZATIONS | organization.*, organization_member.*, moderation.* of organizations |
+        | USERS | user.*, moderation.* of users |
+        | FINANCE | payout.*, platform_fee.*, gateway_fee.* |
+        | DISPUTES | dispute.* |
+        | SETTINGS | category.*, platform_fee.*, gateway_fee.* |
+
+        An area with no tab in the requested scope, or an unknown area, is 400. `details` follows BR-EVENT-006: updates
+        list only the changed fields; created/deleted items keep their name; never secrets, card or account numbers
+        (a payout card or account shows brand/bank and last 4 only), passwords, tokens or buyers' personal data.
+      parameters:
+        - name: area
+          in: query
+          required: true
+          schema: { type: string, enum: [EVENTS, TEAM, FINANCE, SETTINGS, POSTS, ORGANIZATIONS, USERS, DISPUTES] }
+        - { name: organizationId, in: query, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, default: 20 } }
+      responses:
+        "200":
+          description: A page of activity entries, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditLogEntry" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "400": { description: "Unknown area, or an area with no tab in this scope (e.g. POSTS with organizationId, TEAM without)" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events/{eventId}/activity:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: listEventActivity
+      tags: [Events]
+      summary: The event's activity history, newest first (owning organization's owner or organizer, or admin)
+      description: >
+        BR-EVENT-006. Who did what to the event and when: the event itself (created, updated, published, cancelled,
+        deleted, completed - the system completes it, so actor_id is null), its ticket types, promo codes, ticket
+        templates, refund and resale policies, check-in configuration and scanner devices, refunds issued on its
+        orders, and admin moderation of it. Check-in scans and posts are not listed. A deleted event's history can
+        still be read.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, default: 20 } }
+      responses:
+        "200":
+          description: A page of activity entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditLogEntry" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /events/{eventId}/analytics:
     parameters:
@@ -2540,6 +2730,14 @@ paths:
             Nothing to check out, a payment for this key is already in progress, the idempotency key was used with
             another itemIds, or the event has ended (`Event has ended`; nothing is charged - and a payment that
             completes after the end is refunded instead of issuing tickets)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: >
+            The applied promo code can't be used, and nothing is charged: "Promo code X is paused. Remove it from your cart
+            to check out.", "Promo code X is not valid right now. Remove it from your cart to check out." (outside its
+            validity window), or its usage limit is reached.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3359,6 +3557,15 @@ components:
           type: array
           items: { type: string, enum: [owner, organizer, check_in_staff] }
         assigned_at: { type: string, format: date-time }
+        name:
+          type: [string, "null"]
+          description: The member's name, from their own account (BR-ORG-007).
+        email:
+          type: [string, "null"]
+          description: Their email - null for a caller who is only check-in staff.
+        phone_number:
+          type: [string, "null"]
+          description: Their phone number, null when unset or for a caller who is only check-in staff.
 
     OrganizationMemberAssign:
       type: object
@@ -3630,8 +3837,8 @@ components:
         kind: { type: string, enum: [general_admission, reserved_seating] }
         price: { $ref: "#/components/schemas/Money" }
         quantity_total: { type: integer }
-        sale_start_at: { type: string, format: date-time }
-        sale_end_at: { type: string, format: date-time }
+        sale_start_at: { type: string, format: date-time, description: "Optional; omit to start sales now (server time). A past time is accepted." }
+        sale_end_at: { type: string, format: date-time, description: "Must be at least 1 hour after sale_start_at and at least 1 hour before the event starts." }
         max_per_order: { type: integer, default: 10 }
 
     TicketTypeSalesStatus:
@@ -3957,9 +4164,17 @@ components:
           items: { $ref: "#/components/schemas/CartItem" }
         applied_promo_code:
           type: [object, "null"]
+          description: >
+            The code applied to the cart. A code paused or outside its validity window since it was applied still shows
+            here, with a discount of 0 and that status, so the buyer can see it and remove it (DELETE
+            /carts/{cartId}/promo-code): checkout refuses it with 422 until then. A deleted code is removed from carts.
           properties:
             code: { type: string }
             discount_amount: { $ref: "#/components/schemas/Money" }
+            status:
+              type: string
+              enum: [ACTIVE, PAUSED, EXPIRED]
+              description: ACTIVE gives the discount; PAUSED (by the organizer) and EXPIRED (outside its validity window) give none.
         platform_fee:
           allOf:
             - $ref: "#/components/schemas/Money"
@@ -4271,11 +4486,36 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        actor_id: { type: string, format: uuid }
+        actorId:
+          type: [string, "null"]
+          format: uuid
+          description: Null when the system acted on its own (e.g. event.completed).
+        actorName:
+          type: [string, "null"]
+          description: Only on GET /events/{eventId}/activity; null for the system or a user that no longer exists.
         action: { type: string, example: refund.issued }
-        target_type: { type: [string, "null"] }
-        target_id: { type: [string, "null"], format: uuid }
-        created_at: { type: string, format: date-time }
+        targetType: { type: [string, "null"] }
+        targetId: { type: [string, "null"], format: uuid }
+        eventId:
+          type: [string, "null"]
+          format: uuid
+          description: The event the entry belongs to (BR-EVENT-006), when it is about an event or something of it.
+        eventTitle:
+          type: [string, "null"]
+          description: The title of eventId's event (looked up when listed), so a log can name it.
+        details:
+          type: [object, "null"]
+          description: >
+            What happened, when there is more to say (BR-EVENT-006; null on older entries). `*.updated`: only the
+            fields that changed, by their API name - `{"changes": [{"field": "title", "from": "Event Sample", "to":
+            "Event Sample 2026"}]}`; Money is `{amount, currency}`, dates ISO strings, lists (images, ...) their count,
+            text capped at 500 characters. `*.created` / `*.deleted`, sales paused/resumed, promo code paused/resumed,
+            scanner devices: `{"name": ...}` (so a deleted item can still be named); `ticket_type.reordered` also
+            `"order"` (names, first to last); `refund.issued`: `{orderId, amount, reason}`; event moderation:
+            `{"reason"}` when one was given. Never secrets, card data or buyers' personal data.
+          additionalProperties: true
+          example: { changes: [ { field: title, from: Event Sample, to: Event Sample 2026 } ] }
+        createdAt: { type: string, format: date-time }
 
     Payout:
       type: object

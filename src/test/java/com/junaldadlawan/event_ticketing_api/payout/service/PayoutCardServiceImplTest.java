@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.payout.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -52,7 +53,7 @@ class PayoutCardServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, "paymongo", true);
+        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class), "paymongo", true);
         orgId = UUID.randomUUID();
         callerId = UUID.randomUUID();
         organization = Organization.builder().id(orgId).name("Org").status(OrganizationStatus.APPROVED).build();
@@ -70,7 +71,7 @@ class PayoutCardServiceImplTest {
         lenient().when(accessGuard.isAdmin()).thenReturn(admin);
         lenient().when(accessGuard.currentUserId()).thenReturn(callerId);
         lenient().when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(owner);
-        lenient().when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(organizer);
+        lenient().when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.FINANCE)).thenReturn(organizer);
     }
 
     private PayoutCardRequest request(Boolean primary) {
@@ -96,7 +97,7 @@ class PayoutCardServiceImplTest {
 
     @Test
     void add_withTheMockPayoutGateway_alwaysSavesTheSameDemoCard_whateverWasSent() {
-        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, "mock", true);
+        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class), "mock", true);
         caller(false, true, false);
         when(payoutCardRepository.countByOrganizationIdAndDeletedAtIsNull(orgId)).thenReturn(0L);
         PayoutCardRequest other = new PayoutCardRequest("Demo Events Co.", "Mastercard", "1111", 1, 2001, "tok_other_12345678", null);

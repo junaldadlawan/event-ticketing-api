@@ -1,10 +1,13 @@
 package com.junaldadlawan.event_ticketing_api.promocode.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
+import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
@@ -22,11 +25,13 @@ import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRep
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,6 +47,8 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     private final OrganizationAccessGuard accessGuard;
     private final TicketTypeRepository ticketTypeRepository;
     private final OrderRepository orderRepository;
+    private final AuditLogService auditLogService;
+    private final CartRepository cartRepository;
 
     @Override
     public PromoCode create(UUID eventId, PromoCodeCreateRequest request) {
@@ -75,7 +82,9 @@ public class PromoCodeServiceImpl implements PromoCodeService {
                 .validFrom(request.validFrom())
                 .validUntil(request.validUntil())
                 .build();
-        return saveOrConflict(promoCode);
+        PromoCode created = saveOrConflict(promoCode);
+        auditLogService.recordByCurrentUser("promo_code.created", "PromoCode", created.getId(), eventId, AuditDetails.named(promoCode.getCode()));
+        return created;
     }
 
     @Override
@@ -97,6 +106,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         Event event = getEventOrThrow(promoCode.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         EventCompletionService.requireNotEnded(event);
+        Map<String, Object> before = AuditDetails.snapshot(promoCode, PromoCodeUpdateRequest.class);
 
         int used = usedCount(promoCode);
 
@@ -156,7 +166,11 @@ public class PromoCodeServiceImpl implements PromoCodeService {
             promoCode.getApplicableTicketTypeIds().addAll(newTicketTypeIds);
         }
         PromoCode saved = saveOrConflict(promoCode);
-        BusinessAuditLogger.record("promo_code.updated", "PromoCode", promoCodeId, BusinessAuditLogger.Outcome.SUCCESS);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(promoCode, PromoCodeUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("promo_code.updated", "PromoCode", promoCodeId, promoCode.getEventId(), changes);
+        }
         return saved;
     }
 
@@ -173,12 +187,13 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         }
         promoCode.setPaused(paused);
         PromoCode saved = promoCodeRepository.save(promoCode);
-        BusinessAuditLogger.record(paused ? "promo_code.paused" : "promo_code.resumed", "PromoCode", promoCodeId,
-                BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser(paused ? "promo_code.paused" : "promo_code.resumed", "PromoCode", promoCodeId,
+                promoCode.getEventId(), AuditDetails.named(promoCode.getCode()));
         return saved;
     }
 
     @Override
+    @Transactional
     public void delete(UUID promoCodeId) {
         PromoCode promoCode = getOrThrow(promoCodeId);
         Event event = getEventOrThrow(promoCode.getEventId());
@@ -191,7 +206,9 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         }
         promoCode.markDeleted();
         promoCodeRepository.save(promoCode);
-        BusinessAuditLogger.record("promo_code.deleted", "PromoCode", promoCodeId, BusinessAuditLogger.Outcome.SUCCESS);
+        // same transaction: no cart keeps a code that is gone - it would block that cart's checkout without showing
+        cartRepository.clearPromoCode(promoCodeId);
+        auditLogService.recordByCurrentUser("promo_code.deleted", "PromoCode", promoCodeId, promoCode.getEventId(), AuditDetails.named(promoCode.getCode()));
     }
 
     @Override
@@ -255,7 +272,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.PROMO_CODES);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event's promo codes");
         }

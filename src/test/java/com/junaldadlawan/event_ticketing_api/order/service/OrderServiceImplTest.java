@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.order.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -162,7 +163,7 @@ class OrderServiceImplTest {
         when(ticketRepository.findFirstByOrderId(orderId)).thenReturn(Optional.of(ticket(orderId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(true);
         when(ticketRepository.findByOrderId(orderId)).thenReturn(List.of());
 
         OrderResponse response = service.getOrder(orderId);
@@ -181,7 +182,7 @@ class OrderServiceImplTest {
         when(ticketRepository.findFirstByOrderId(orderId)).thenReturn(Optional.of(ticket(orderId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.getOrder(orderId)).isInstanceOf(ForbiddenException.class);
     }
@@ -198,7 +199,7 @@ class OrderServiceImplTest {
         when(ticketRepository.findFirstByOrderId(orderId)).thenReturn(Optional.of(ticket(orderId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(otherOrgOrganizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOrganizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOrganizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.getOrder(orderId)).isInstanceOf(ForbiddenException.class);
     }
@@ -247,7 +248,7 @@ class OrderServiceImplTest {
         when(ticketRepository.findFirstByOrderId(orderId)).thenReturn(Optional.of(ticket(orderId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.getOrderTickets(orderId)).isInstanceOf(ForbiddenException.class);
     }
@@ -290,7 +291,7 @@ class OrderServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(true);
         UUID orderId = UUID.randomUUID();
         when(ticketRepository.findDistinctOrderIdsByEventId(eventId)).thenReturn(List.of(orderId));
         Order o = order(orderId, UUID.randomUUID());
@@ -341,7 +342,7 @@ class OrderServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(buyerId);
         when(accessGuard.hasRole(buyerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(buyerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(buyerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.listEventOrders(eventId, PageRequest.of(0, 20)))
                 .isInstanceOf(ForbiddenException.class);
@@ -356,7 +357,7 @@ class OrderServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.listEventOrders(eventId, PageRequest.of(0, 20)))
                 .isInstanceOf(ForbiddenException.class);

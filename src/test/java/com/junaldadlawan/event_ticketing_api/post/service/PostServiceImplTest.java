@@ -58,7 +58,7 @@ class PostServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PostServiceImpl(postRepository, eventRepository, accessGuard, uploadedFileUrls);
+        service = new PostServiceImpl(postRepository, eventRepository, accessGuard, uploadedFileUrls, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private Event event(UUID id, String title) {

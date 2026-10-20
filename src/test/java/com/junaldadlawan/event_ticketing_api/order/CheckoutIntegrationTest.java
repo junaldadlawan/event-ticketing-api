@@ -860,7 +860,7 @@ class CheckoutIntegrationTest {
     }
 
     @Test
-    void promoCode_pausedAfterItWasApplied_blocksCheckoutUntilResumed_andTheCartLosesTheDiscountMeanwhile() throws Exception {
+    void promoCode_pausedAfterItWasApplied_blocksCheckoutUntilResumed_andTheCartShowsItPausedMeanwhile() throws Exception {
         User owner = inMemoryUser(Role.CUSTOMER);
         User buyer = inMemoryUser(Role.CUSTOMER);
         UUID orgId = persistOrganization(owner.getId());
@@ -876,17 +876,19 @@ class CheckoutIntegrationTest {
 
         putPromoStatus(ownerToken, promoId, "PAUSED").andExpect(status().isOk());
 
-        // the cart still loads, just without the discount
+        // the cart still loads and still shows the code - paused, without the discount - so the buyer can remove it
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/carts/{cartId}", cartId)
                         .header("Authorization", "Bearer " + buyerToken))
                 .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.appliedPromoCode").doesNotExist())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.appliedPromoCode.status").value("PAUSED"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.appliedPromoCode.discountAmount.amount").value(0))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.total.amount").value(1000));
-        // checkout is refused before anything is charged; the cart is intact and the key is free again
+        // checkout is refused before anything is charged, naming the code; the cart is intact and the key is free again
         UUID key = UUID.randomUUID();
         createdIdempotencyKeyIds.add(key);
         MvcResult refused = checkout(buyerToken, cartId, key, "tok_ok");
         assertThat(refused.getResponse().getStatus()).isEqualTo(422);
+        assertThat(refused.getResponse().getContentAsString()).contains("Promo code LATEPAUSE is paused. Remove it from your cart to check out.");
         assertThat(orderRepository.findByCartId(cartId)).isEmpty();
         assertThat(cartItemRepository.findByCartId(cartId)).hasSize(1);
         assertThat(checkoutIdempotencyKeyRepository.findById(key)).isEmpty();
@@ -902,7 +904,7 @@ class CheckoutIntegrationTest {
     }
 
     @Test
-    void promoCode_deletedAfterItWasApplied_blocksCheckout() throws Exception {
+    void promoCode_deletedAfterItWasApplied_isClearedFromTheCart_andCheckoutGoesThroughWithoutIt() throws Exception {
         User owner = inMemoryUser(Role.CUSTOMER);
         User buyer = inMemoryUser(Role.CUSTOMER);
         UUID orgId = persistOrganization(owner.getId());
@@ -917,10 +919,16 @@ class CheckoutIntegrationTest {
 
         deletePromo(jwtService.generateAccessToken(owner), promoId).andExpect(status().isNoContent());
 
+        // a deleted code never comes back, so the cart no longer holds it and pays full price
+        assertThat(cartRepository.findById(cartId).orElseThrow().getPromoCodeId()).isNull();
         UUID key = UUID.randomUUID();
         createdIdempotencyKeyIds.add(key);
-        assertThat(checkout(buyerToken, cartId, key, "tok_ok").getResponse().getStatus()).isEqualTo(422);
-        assertThat(orderRepository.findByCartId(cartId)).isEmpty();
+        MvcResult paid = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(paid.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(paid);
+        var order = objectMapper.readTree(paid.getResponse().getContentAsString());
+        assertThat(order.get("promoCode").isNull()).isTrue();
+        assertThat(order.get("total").get("amount").asLong()).isEqualTo(1000L);
     }
 
     @Test

@@ -570,11 +570,13 @@ public class CartServiceImpl implements CartService {
         long total = subtotal;
         if (cart.getPromoCodeId() != null) {
             PromoCode promoCode = promoCodeRepository.findById(cart.getPromoCodeId()).orElse(null);
-            // A code that was paused or deleted after it was applied no longer gives a discount (the cart still loads).
-            if (promoCode != null && promoCode.isRedeemable() && (selection == null || fitsItems(promoCode, items))) {
-                long discount = computeDiscount(promoCode, subtotal);
+            // A code paused or out of its window since it was applied still shows, with no discount, so the buyer can
+            // see and remove it (checkout refuses it). A deleted code is cleared from carts when it is deleted.
+            if (promoCode != null && promoCode.getDeletedAt() == null && (selection == null || fitsItems(promoCode, items))) {
+                AppliedPromoCodeResponse.Status status = promoCodeStatus(promoCode, Instant.now());
+                long discount = status == AppliedPromoCodeResponse.Status.ACTIVE ? computeDiscount(promoCode, subtotal) : 0;
                 total = subtotal - discount;
-                appliedPromoCode = new AppliedPromoCodeResponse(promoCode.getCode(), new MoneyDto(discount, currency));
+                appliedPromoCode = new AppliedPromoCodeResponse(promoCode.getCode(), new MoneyDto(discount, currency), status);
             }
         }
 
@@ -611,6 +613,12 @@ public class CartServiceImpl implements CartService {
         Set<UUID> applicable = promoCode.getApplicableTicketTypeIds();
         return applicable == null || applicable.isEmpty()
                 || applicable.containsAll(items.stream().map(CartItem::getTicketTypeId).collect(Collectors.toSet()));
+    }
+
+    private static AppliedPromoCodeResponse.Status promoCodeStatus(PromoCode promoCode, Instant now) {
+        return promoCode.isPaused() ? AppliedPromoCodeResponse.Status.PAUSED
+                : !promoCode.isValidAt(now) ? AppliedPromoCodeResponse.Status.EXPIRED
+                : AppliedPromoCodeResponse.Status.ACTIVE;
     }
 
     private long computeDiscount(PromoCode promoCode, long subtotal) {

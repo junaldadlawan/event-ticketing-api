@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.resalepolicy.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -56,7 +57,7 @@ class ResalePolicyServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new ResalePolicyServiceImpl(resalePolicyRepository, eventRepository, accessGuard);
+        service = new ResalePolicyServiceImpl(resalePolicyRepository, eventRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
     }
 
@@ -143,7 +144,7 @@ class ResalePolicyServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(eventId, request(true, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -158,7 +159,7 @@ class ResalePolicyServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(eventId, request(true, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -187,7 +188,7 @@ class ResalePolicyServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(true);
         when(resalePolicyRepository.findByEventId(eventId)).thenReturn(Optional.empty());
         when(resalePolicyRepository.saveAndFlush(any(ResalePolicy.class))).thenAnswer(inv -> inv.getArgument(0));
 

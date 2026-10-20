@@ -1,5 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.refund.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -42,6 +44,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -228,7 +232,16 @@ public class RefundServiceImpl implements RefundService {
             // BR-NFR-005 (Phase 13): sensitive-action audit trail. initiatedBy
             // is the admin/organizer who issued it, or the system itself on a
             // mandatory event-cancellation refund - never throws.
-            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId());
+            // an order has no event column; its tickets carry it (BR-EVENT-006 activity history)
+            UUID eventId = ticketRepository.findFirstByOrderId(order.getId()).map(Ticket::getEventId).orElse(null);
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("orderId", order.getId().toString());
+            details.put("amount", Map.of("amount", amountMinorUnits, "currency", currency));
+            Map<String, Object> givenReason = AuditDetails.reason(reason);
+            if (givenReason != null) {
+                details.putAll(givenReason);
+            }
+            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId(), eventId, details);
         }
 
         return saved;
@@ -309,7 +322,7 @@ public class RefundServiceImpl implements RefundService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the event's organizer/owner or an admin may issue a refund for this order");
         }
@@ -337,7 +350,7 @@ public class RefundServiceImpl implements RefundService {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(anyTicket.get().getEventId())
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + anyTicket.get().getEventId() + " not found"));
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, event.getOrganizationId(), OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the order's buyer, the event's organizer/owner, or an admin may view this order's refunds");
         }

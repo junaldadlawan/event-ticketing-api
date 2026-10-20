@@ -105,4 +105,9 @@ public class PromoCode extends Auditable {
     public boolean isRedeemable() {
         return !paused && getDeletedAt() == null;
     }
+
+    /** BR-PROMO-005: inside its validity window at {@code now}. */
+    public boolean isValidAt(java.time.Instant now) {
+        return !now.isBefore(validFrom) && !now.isAfter(validUntil);
+    }
 }

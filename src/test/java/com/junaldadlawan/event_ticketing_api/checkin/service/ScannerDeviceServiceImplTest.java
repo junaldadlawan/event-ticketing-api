@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceAuthorizeRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
@@ -61,7 +62,7 @@ class ScannerDeviceServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new ScannerDeviceServiceImpl(scannerDeviceRepository, checkInConfigRepository, eventRepository, credentialService, accessGuard);
+        service = new ScannerDeviceServiceImpl(scannerDeviceRepository, checkInConfigRepository, eventRepository, credentialService, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private Event event(UUID id, UUID orgId) {
@@ -94,7 +95,7 @@ class ScannerDeviceServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(accessGuard.currentUserId()).thenReturn(callerId);
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.CHECK_IN)).thenReturn(false);
 
         assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -273,7 +274,7 @@ class ScannerDeviceServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(callerId);
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.CHECK_IN)).thenReturn(true);
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.revoke(deviceId);
@@ -294,7 +295,7 @@ class ScannerDeviceServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(callerId);
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.CHECK_IN)).thenReturn(false);
 
         assertThatThrownBy(() -> service.revoke(deviceId)).isInstanceOf(ForbiddenException.class);
         assertThat(device.getStatus()).isEqualTo(ScannerDeviceStatus.ACTIVE);

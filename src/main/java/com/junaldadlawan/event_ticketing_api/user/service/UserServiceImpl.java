@@ -4,6 +4,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
@@ -19,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -29,6 +31,7 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final OrganizationAccessGuard accessGuard;
     private final UploadedFileUrls uploadedFileUrls;
+    private final AuditLogService auditLogService;
 
     private static final String EMAIL_TAKEN = "An account with this email already exists";
 
@@ -42,8 +45,8 @@ public class UserServiceImpl implements UserService {
                 .phoneNumber(blankToNull(request.phoneNumber())).email(request.email()).passwordHash(passwordEncoder.encode(request.passwordHash())).role(Role.CUSTOMER).build();
         User saved = userRepository.save(newUser);
         // Self-registration always creates a CUSTOMER; the role is logged so a change to that stays visible.
-        BusinessAuditLogger.recordAs(saved.getId(), "user.registered", "User", saved.getId(),
-                BusinessAuditLogger.Outcome.SUCCESS, "role=" + saved.getRole());
+        auditLogService.record(saved.getId(), "user.registered", "User", saved.getId(), null, null,
+                Map.of("role", saved.getRole().name()));
         return saved;
     }
 
@@ -93,7 +96,7 @@ public class UserServiceImpl implements UserService {
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         User saved = userRepository.save(user);
-        BusinessAuditLogger.record("user.password_changed", "User", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("user.password_changed", "User", saved.getId(), null);
         return saved;
     }
 
@@ -103,7 +106,7 @@ public class UserServiceImpl implements UserService {
         accessGuard.requireMayManageAccount(user, "delete");
         user.markDeleted();
         userRepository.save(user);
-        BusinessAuditLogger.record("user.deleted", "User", id, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("user.deleted", "User", id, null);
     }
 
     @Override

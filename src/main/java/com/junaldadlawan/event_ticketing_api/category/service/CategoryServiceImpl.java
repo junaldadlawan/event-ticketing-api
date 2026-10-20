@@ -8,7 +8,8 @@ import com.junaldadlawan.event_ticketing_api.common.config.CacheConfig;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -25,6 +27,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     /** Cached: the public list is tiny, read on every event form, and changes only on an admin write. */
     @Override
@@ -52,8 +55,7 @@ public class CategoryServiceImpl implements CategoryService {
                 .description(request.description())
                 .sortOrder(request.sortOrder() == null ? 0 : request.sortOrder())
                 .build());
-        BusinessAuditLogger.record("category.created", "Category", saved.getId(),
-                BusinessAuditLogger.Outcome.SUCCESS, "name=" + saved.getName());
+        auditLogService.recordByCurrentUser("category.created", "Category", saved.getId(), null, null, AuditDetails.named(saved.getName()));
         return saved;
     }
 
@@ -62,6 +64,7 @@ public class CategoryServiceImpl implements CategoryService {
     public Category update(UUID categoryId, CategoryUpdateRequest request) {
         accessGuard.requireAdmin();
         Category category = getOrThrow(categoryId);
+        Map<String, Object> before = AuditDetails.snapshot(category, CategoryUpdateRequest.class);
 
         if (request.name() != null) {
             String name = request.name().trim();
@@ -83,7 +86,10 @@ public class CategoryServiceImpl implements CategoryService {
             category.setActive(request.active());
         }
         Category saved = categoryRepository.save(category);
-        BusinessAuditLogger.record("category.updated", "Category", categoryId, BusinessAuditLogger.Outcome.SUCCESS);
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(category, CategoryUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("category.updated", "Category", categoryId, null, null, changes);
+        }
         return saved;
     }
 
@@ -94,8 +100,7 @@ public class CategoryServiceImpl implements CategoryService {
         Category category = getOrThrow(categoryId);
         category.setActive(false);
         categoryRepository.save(category);
-        BusinessAuditLogger.record("category.deactivated", "Category", categoryId,
-                BusinessAuditLogger.Outcome.SUCCESS, "name=" + category.getName());
+        auditLogService.recordByCurrentUser("category.deactivated", "Category", categoryId, null, null, AuditDetails.named(category.getName()));
     }
 
     @Override

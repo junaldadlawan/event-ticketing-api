@@ -2,7 +2,8 @@ package com.junaldadlawan.event_ticketing_api.platformfee.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeePayer;
@@ -23,6 +24,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 @Slf4j
@@ -34,6 +37,7 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
     private final EventRepository eventRepository;
     private final OrganizationRepository organizationRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     // ---- the fee itself ----
 
@@ -99,17 +103,22 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
 
         PlatformFeeRule rule = findLive(scope, scopeId).orElseGet(() -> PlatformFeeRule.builder()
                 .scope(scope).scopeId(scope == FeeScope.PLATFORM ? null : scopeId).build());
+        // a new rule has no "before": every field it sets is a change
+        Map<String, Object> before = rule.getId() == null ? Map.of() : AuditDetails.snapshot(PlatformFeeRuleResponse.from(rule), PlatformFeeRuleRequest.class);
         rule.setType(request.percentage() == null ? FeeType.FLAT : request.flatAmount() == null ? FeeType.PERCENTAGE : FeeType.COMBINED);
         rule.setPercentage(request.percentage());
         rule.setFlatAmount(request.flatAmount() == null ? null : request.flatAmount().amount());
         rule.setFlatCurrency(request.flatAmount() == null ? null : request.flatAmount().currency());
         rule.setPayer(request.payer() == null ? GatewayFeePayer.CUSTOMER : request.payer());
         PlatformFeeRule saved = ruleRepository.save(rule);
-        BusinessAuditLogger.record("platform_fee.set", "PlatformFeeRule", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "scope=" + scope + (scopeId == null ? "" : " scopeId=" + scopeId) + " type=" + saved.getType()
-                        + " percentage=" + saved.getPercentage() + " flat=" + saved.getFlatAmount() + " " + saved.getFlatCurrency()
-                        + " payer=" + saved.getPayer());
-        return PlatformFeeRuleResponse.from(saved);
+        PlatformFeeRuleResponse response = PlatformFeeRuleResponse.from(saved);
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(response, PlatformFeeRuleRequest.class));
+        if (changes != null) {
+            Map<String, Object> details = feeScope(scope, scopeId);
+            details.putAll(changes);
+            auditLogService.recordByCurrentUser("platform_fee.set", "PlatformFeeRule", saved.getId(), null, null, details);
+        }
+        return response;
     }
 
     @Override
@@ -119,8 +128,14 @@ public class PlatformFeeServiceImpl implements PlatformFeeService {
                 "No platform fee rule for " + scope + (scopeId == null ? "" : " " + scopeId)));
         rule.markDeleted();
         ruleRepository.save(rule);
-        BusinessAuditLogger.record("platform_fee.removed", "PlatformFeeRule", rule.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "scope=" + scope + (scopeId == null ? "" : " scopeId=" + scopeId));
+        auditLogService.recordByCurrentUser("platform_fee.removed", "PlatformFeeRule", rule.getId(), null, null, feeScope(scope, scopeId));
+    }
+
+    private static Map<String, Object> feeScope(FeeScope scope, UUID scopeId) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("scope", scope.name());
+        details.put("scopeId", scopeId == null ? null : scopeId.toString());
+        return details;
     }
 
     @Override

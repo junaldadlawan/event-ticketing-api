@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.seatmap.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -53,7 +54,7 @@ public class SeatMapServiceImpl implements SeatMapService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.EVENTS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may view this event's seat map");
         }

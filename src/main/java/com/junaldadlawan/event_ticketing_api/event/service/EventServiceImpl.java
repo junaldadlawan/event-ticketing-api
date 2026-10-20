@@ -1,13 +1,14 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.category.service.CategoryService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventRequest;
 import com.junaldadlawan.event_ticketing_api.event.dto.EventUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -36,6 +37,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -100,7 +102,7 @@ public class EventServiceImpl implements EventService {
                 .ticketPrefix(generateUniqueTicketPrefix())
                 .build();
         Event created = eventRepository.save(newEvent);
-        BusinessAuditLogger.record("event.created", "Event", created.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("event.created", "Event", created.getId(), created.getId(), AuditDetails.named(created.getTitle()));
         return created;
     }
 
@@ -167,6 +169,7 @@ public class EventServiceImpl implements EventService {
             throw new ConflictException("A suspended event cannot be updated");
         }
         EventCompletionService.requireNotEnded(event);
+        Map<String, Object> before = AuditDetails.snapshot(event, EventUpdateRequest.class);
 
         if (request.title() != null) {
             if (request.title().isBlank()) {
@@ -190,7 +193,13 @@ public class EventServiceImpl implements EventService {
             event.setImages(new ArrayList<>(request.images()));
         }
 
-        return eventRepository.save(event);
+        Event saved = eventRepository.save(event);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(event, EventUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("event.updated", "Event", eventId, eventId, changes);
+        }
+        return saved;
     }
 
     @Override
@@ -209,7 +218,7 @@ public class EventServiceImpl implements EventService {
 
         event.setStatus(EventStatus.PUBLISHED);
         Event published = eventRepository.save(event);
-        BusinessAuditLogger.record("event.published", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("event.published", "Event", eventId, eventId);
         return published;
     }
 
@@ -247,7 +256,7 @@ public class EventServiceImpl implements EventService {
                 .forEach(ownerId -> notificationService.notify(ownerId, NotificationType.EVENT_CANCELLATION, "Event", eventId));
 
         // BR-NFR-005 (Phase 13): sensitive-action audit trail. Never throws.
-        auditLogService.record(accessGuard.currentUserId(), "event.cancelled", "Event", eventId);
+        auditLogService.recordByCurrentUser("event.cancelled", "Event", eventId, eventId);
 
         return saved;
     }
@@ -271,7 +280,7 @@ public class EventServiceImpl implements EventService {
         UUID eventId = event.getId();
         event.markDeleted();
         eventRepository.save(event);
-        BusinessAuditLogger.record("event.deleted", "Event", eventId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("event.deleted", "Event", eventId, eventId, AuditDetails.named(event.getTitle()));
     }
 
     @Override
@@ -319,7 +328,7 @@ public class EventServiceImpl implements EventService {
 
     private boolean isOwnerOrOrganizer(UUID userId, UUID organizationId) {
         return accessGuard.hasRole(userId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(userId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(userId, organizationId, OrganizationPermission.EVENTS);
     }
 
     private String generateUniqueTicketPrefix() {

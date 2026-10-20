@@ -360,7 +360,8 @@ class CheckoutServiceImplTest {
         when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 900L, "SAVE10"));
         PromoCode promoCode = PromoCode.builder().id(promoCodeId).code("SAVE10")
-                .discountType(DiscountType.FIXED).discountValue(BigDecimal.valueOf(100)).build();
+                .discountType(DiscountType.FIXED).discountValue(BigDecimal.valueOf(100))
+                .validFrom(Instant.now().minus(1, ChronoUnit.DAYS)).validUntil(Instant.now().plus(1, ChronoUnit.DAYS)).build();
         when(promoCodeRepository.findById(promoCodeId)).thenReturn(Optional.of(promoCode));
         org.mockito.Mockito.doThrow(new UnprocessableEntityException("Promo code has reached its total usage limit"))
                 .when(promoCodeUsageLimitGuard).checkUsageLimits(promoCode, buyerId);
@@ -473,7 +474,7 @@ class CheckoutServiceImplTest {
 
         assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("Promo code is invalid or inapplicable to this cart");
+                .hasMessage("Promo code SAVE10 is paused. Remove it from your cart to check out.");
 
         verifyNoInteractions(paymentGatewayClient);
         verifyNoInteractions(promoCodeUsageLimitGuard);
@@ -526,7 +527,8 @@ class CheckoutServiceImplTest {
         when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
         when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1800L, "SAVE10"));
         PromoCode promoCode = PromoCode.builder().id(promoCodeId).code("SAVE10")
-                .discountType(DiscountType.FIXED).discountValue(BigDecimal.valueOf(200)).build();
+                .discountType(DiscountType.FIXED).discountValue(BigDecimal.valueOf(200))
+                .validFrom(Instant.now().minus(1, ChronoUnit.DAYS)).validUntil(Instant.now().plus(1, ChronoUnit.DAYS)).build();
         when(promoCodeRepository.findById(promoCodeId)).thenReturn(Optional.of(promoCode));
         when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, organizationId)));

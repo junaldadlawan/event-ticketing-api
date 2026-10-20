@@ -5,7 +5,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.dispute.dto.DisputeCreateRequest;
 import com.junaldadlawan.event_ticketing_api.dispute.dto.DisputeResponse;
 import com.junaldadlawan.event_ticketing_api.dispute.dto.DisputeUpdateRequest;
@@ -26,6 +26,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 /**
@@ -78,7 +80,10 @@ public class DisputeServiceImpl implements DisputeService {
                 .reason(request.reason())
                 .build();
         Dispute saved = disputeRepository.save(dispute);
-        BusinessAuditLogger.record("dispute.raised", "Dispute", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        // the order only: the buyer's own words stay out of the admin log
+        Map<String, Object> raised = new LinkedHashMap<>();
+        raised.put("orderId", saved.getOrderId() == null ? null : saved.getOrderId().toString());
+        auditLogService.recordByCurrentUser("dispute.raised", "Dispute", saved.getId(), null, null, raised);
         return DisputeResponse.from(saved);
     }
 
@@ -108,6 +113,7 @@ public class DisputeServiceImpl implements DisputeService {
         if (TERMINAL_STATUSES.contains(dispute.getStatus())) {
             throw new ConflictException("This dispute has already been resolved");
         }
+        Map<String, Object> before = AuditDetails.snapshot(dispute, DisputeUpdateRequest.class);
 
         if (request.status() != null) {
             dispute.setStatus(request.status());
@@ -122,10 +128,13 @@ public class DisputeServiceImpl implements DisputeService {
         // a terminal state. Best-effort, never throws (NFR 5.2).
         if (TERMINAL_STATUSES.contains(saved.getStatus())) {
             notificationService.notify(saved.getRaisedBy(), NotificationType.DISPUTE_RESOLVED, "Dispute", saved.getId());
-            // BR-NFR-005 (Phase 13): sensitive-action audit trail, same
-            // terminal-status condition as the notification above. Never throws.
-            String auditAction = saved.getStatus() == DisputeStatus.DISMISSED ? "dispute.dismissed" : "dispute.resolved";
-            auditLogService.record(saved.getUpdatedBy(), auditAction, "Dispute", saved.getId());
+        }
+        // BR-NFR-005 / BR-ADMIN-007: every status or resolution change, named for where it ended up. Never throws.
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(saved, DisputeUpdateRequest.class));
+        if (changes != null) {
+            String auditAction = saved.getStatus() == DisputeStatus.DISMISSED ? "dispute.dismissed"
+                    : saved.getStatus() == DisputeStatus.RESOLVED ? "dispute.resolved" : "dispute.updated";
+            auditLogService.record(saved.getUpdatedBy(), auditAction, "Dispute", saved.getId(), null, null, changes);
         }
 
         return DisputeResponse.from(saved);

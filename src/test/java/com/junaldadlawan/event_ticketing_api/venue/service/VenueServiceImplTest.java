@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.venue.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -101,7 +102,7 @@ class VenueServiceImplTest {
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         when(venueRepository.save(any(Venue.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         VenueCreateRequest request = new VenueCreateRequest("Main Hall", null, null, null);
@@ -133,7 +134,7 @@ class VenueServiceImplTest {
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization(orgId, OrganizationStatus.APPROVED)));
         when(accessGuard.currentUserId()).thenReturn(checkInStaffId);
         when(accessGuard.hasRole(checkInStaffId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(checkInStaffId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(checkInStaffId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         VenueCreateRequest request = new VenueCreateRequest("Main Hall", null, null, null);
 
@@ -300,7 +301,7 @@ class VenueServiceImplTest {
         when(venueRepository.findById(venueId)).thenReturn(Optional.of(existing));
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         when(venueRepository.save(any(Venue.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Venue result = venueService.update(venueId, new VenueUpdateRequest(null, null, null, null));
@@ -333,7 +334,7 @@ class VenueServiceImplTest {
         when(venueRepository.findById(venueId)).thenReturn(Optional.of(existing));
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> venueService.update(venueId, new VenueUpdateRequest("New Name", null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -369,7 +370,7 @@ class VenueServiceImplTest {
         when(accessGuard.currentUserId()).thenReturn(ownerOfOtherOrgId);
         // Caller owns a DIFFERENT org, not this venue's org.
         when(accessGuard.hasRole(ownerOfOtherOrgId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(ownerOfOtherOrgId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(ownerOfOtherOrgId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> venueService.update(venueId, new VenueUpdateRequest("New Name", null, null, null)))
                 .isInstanceOf(ForbiddenException.class);

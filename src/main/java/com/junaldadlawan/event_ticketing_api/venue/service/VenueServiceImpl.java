@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.venue.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -98,7 +99,7 @@ public class VenueServiceImpl implements VenueService {
 
     private void requireOwnerOrOrganizer(UUID callerId, UUID orgId) {
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, orgId, OrganizationPermission.EVENTS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner or organizer may manage its venues");
         }
