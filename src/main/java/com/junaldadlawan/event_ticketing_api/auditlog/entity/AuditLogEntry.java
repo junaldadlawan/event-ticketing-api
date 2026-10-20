@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnTransformer;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
@@ -52,6 +53,11 @@ public class AuditLogEntry {
     /** BR-EVENT-006: the event this entry belongs to (the event itself, or its ticket type, promo code, ...), for its activity history. */
     @Column(name = "event_id")
     private UUID eventId;
+
+    /** BR-EVENT-006: what changed, as a JSON object (see {@code AuditDetails}); null when there is nothing to add. */
+    @ColumnTransformer(write = "?::jsonb")
+    @Column(name = "details", columnDefinition = "jsonb")
+    private String details;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)

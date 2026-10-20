@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refund.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -42,6 +43,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -230,7 +233,14 @@ public class RefundServiceImpl implements RefundService {
             // mandatory event-cancellation refund - never throws.
             // an order has no event column; its tickets carry it (BR-EVENT-006 activity history)
             UUID eventId = ticketRepository.findFirstByOrderId(order.getId()).map(Ticket::getEventId).orElse(null);
-            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId(), eventId);
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("orderId", order.getId().toString());
+            details.put("amount", Map.of("amount", amountMinorUnits, "currency", currency));
+            Map<String, Object> givenReason = AuditDetails.reason(reason);
+            if (givenReason != null) {
+                details.putAll(givenReason);
+            }
+            auditLogService.record(initiatedBy, "refund.issued", "Refund", saved.getId(), eventId, details);
         }
 
         return saved;

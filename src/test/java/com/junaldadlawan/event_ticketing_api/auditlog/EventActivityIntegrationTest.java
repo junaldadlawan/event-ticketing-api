@@ -103,6 +103,52 @@ class EventActivityIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void anUpdateLogsExactlyWhatChanged_aNoOpUpdateLogsNothing_andADeletedTicketTypeKeepsItsName() throws Exception {
+        User owner = inMemoryUser();
+        String ownerToken = jwtService.generateAccessToken(owner);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOwner(owner.getId(), orgId);
+        List<String> categories = new ArrayList<>();
+        objectMapper.readTree(mockMvc.perform(get("/api/v1/categories")).andReturn().getResponse().getContentAsString())
+                .forEach(category -> categories.add(category.get("name").asText()));
+        UUID eventId = persistEvent(orgId);
+        Event event = eventRepository.findById(eventId).orElseThrow();
+        event.setCategory(categories.get(0));
+        eventRepository.save(event);
+
+        // title + category change, description sent unchanged
+        mockMvc.perform(patch("/api/v1/events/{eventId}", eventId).header("Authorization", "Bearer " + ownerToken)
+                        .contentType("application/json")
+                        .content("{\"title\":\"Event Activity Test Event 2026\",\"category\":\"" + categories.get(1) + "\",\"description\":\"desc\"}"))
+                .andExpect(status().isOk());
+        // the same values again: nothing changes, nothing is logged
+        mockMvc.perform(patch("/api/v1/events/{eventId}", eventId).header("Authorization", "Bearer " + ownerToken)
+                        .contentType("application/json")
+                        .content("{\"title\":\"Event Activity Test Event 2026\",\"category\":\"" + categories.get(1) + "\"}"))
+                .andExpect(status().isOk());
+        UUID ticketTypeId = createdId(ticketTypeIds, post("/api/v1/events/{eventId}/ticket-types", eventId)
+                .header("Authorization", "Bearer " + ownerToken).contentType("application/json").content(TICKET_TYPE_BODY));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/ticket-types/{id}", ticketTypeId)
+                .header("Authorization", "Bearer " + ownerToken)).andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/events/{eventId}/activity", eventId).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(3))
+                .andExpect(jsonPath("$.content[0].action").value("ticket_type.deleted"))
+                .andExpect(jsonPath("$.content[0].details.name").value("General Admission"))
+                .andExpect(jsonPath("$.content[1].action").value("ticket_type.created"))
+                .andExpect(jsonPath("$.content[1].details.name").value("General Admission"))
+                .andExpect(jsonPath("$.content[2].action").value("event.updated"))
+                .andExpect(jsonPath("$.content[2].details.changes.length()").value(2))
+                .andExpect(jsonPath("$.content[2].details.changes[0].field").value("title"))
+                .andExpect(jsonPath("$.content[2].details.changes[0].from").value("Event Activity Test Event"))
+                .andExpect(jsonPath("$.content[2].details.changes[0].to").value("Event Activity Test Event 2026"))
+                .andExpect(jsonPath("$.content[2].details.changes[1].field").value("category"))
+                .andExpect(jsonPath("$.content[2].details.changes[1].from").value(categories.get(0)))
+                .andExpect(jsonPath("$.content[2].details.changes[1].to").value(categories.get(1)));
+    }
+
     // ---- helpers ----
 
     private UUID createdId(List<UUID> tracker, org.springframework.test.web.servlet.RequestBuilder request) throws Exception {

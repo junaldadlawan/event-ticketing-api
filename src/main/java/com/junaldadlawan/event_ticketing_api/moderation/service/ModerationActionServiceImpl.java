@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.moderation.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -28,6 +29,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -75,9 +77,10 @@ public class ModerationActionServiceImpl implements ModerationActionService {
         // BR-NFR-005 (Phase 13): sensitive-action audit trail, for every
         // action (SUSPEND/REINSTATE/REMOVE are all "admin interventions" per
         // BR-NFR-005's framing, not just suspend). Never throws.
+        boolean aboutAnEvent = saved.getTargetType() == ModerationTargetType.EVENT;
         auditLogService.record(adminId, "moderation." + saved.getAction().name().toLowerCase(),
-                saved.getTargetType().name(), saved.getTargetId(),
-                saved.getTargetType() == ModerationTargetType.EVENT ? saved.getTargetId() : null);
+                saved.getTargetType().name(), saved.getTargetId(), aboutAnEvent ? saved.getTargetId() : null,
+                aboutAnEvent ? AuditDetails.reason(request.reason()) : null);
         return ModerationActionResponse.from(saved);
     }
 

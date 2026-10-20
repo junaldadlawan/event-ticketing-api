@@ -198,15 +198,15 @@
     "semantic_hash": "64193fd3b5af9479acdba75d1caec862"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/auditlog/dto/AuditLogEntryResponse.java": {
-    "mtime": 1792440988.4136593,
-    "seen": 1792442129.4076731,
-    "ast_hash": "e76dc5065b1b4bbd31a20f26f1c47c90",
+    "mtime": 1792443372.3307624,
+    "seen": 1792444141.834889,
+    "ast_hash": "44cda4843521a1ef4c1f8108228074b0",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/auditlog/entity/AuditLogEntry.java": {
-    "mtime": 1792440987.6071784,
-    "seen": 1792442129.4076748,
-    "ast_hash": "3798c5cda49c18de8f5fdc1bbc2c1d22",
+    "mtime": 1792443296.389502,
+    "seen": 1792444141.8348918,
+    "ast_hash": "83a0e949028fa660f7412054285f7aa4",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/auditlog/repository/AuditLogEntryRepository.java": {
@@ -216,15 +216,15 @@
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/auditlog/service/AuditLogService.java": {
-    "mtime": 1792441762.1403575,
-    "seen": 1792442129.4076786,
-    "ast_hash": "3b9726cb0a49ebe5f43518e2669a6078",
+    "mtime": 1792443338.262693,
+    "seen": 1792444141.8348992,
+    "ast_hash": "5ee1ad8be67a649f1c547f6a232e4bc5",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/auditlog/service/AuditLogServiceImpl.java": {
-    "mtime": 1792441762.4383435,
-    "seen": 1792442129.4076805,
-    "ast_hash": "7fa53ddc7f3a40039541095f9c2decc9",
+    "mtime": 1792443360.0884638,
+    "seen": 1792444141.8349013,
+    "ast_hash": "85c98a6d68d465453cb5188a955d9309",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/auth/controller/AuthController.java": {
@@ -606,9 +606,9 @@
     "semantic_hash": "2210992b260ce39cb9e6bb7eeb16126b"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/checkin/service/CheckInConfigServiceImpl.java": {
-    "mtime": 1792441766.652703,
-    "seen": 1792442129.407797,
-    "ast_hash": "2c124cda6c61e95e40eae79e7afff87b",
+    "mtime": 1792444010.391013,
+    "seen": 1792444141.8350174,
+    "ast_hash": "f179e2d05fd9f82615d02258095999a5",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/checkin/service/CheckInService.java": {
@@ -630,9 +630,9 @@
     "semantic_hash": "6a3fb9c47d4a388e83d746021d5364e1"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/checkin/service/ScannerDeviceServiceImpl.java": {
-    "mtime": 1792441766.7641022,
-    "seen": 1792442129.4078043,
-    "ast_hash": "2bc44a4edf8702b39acb16310decb71e",
+    "mtime": 1792443560.3293393,
+    "seen": 1792444141.8350244,
+    "ast_hash": "bd146a2c66e38019a5e11d83e5dc278e",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/common/config/CacheConfig.java": {
@@ -912,9 +912,9 @@
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/event/service/EventServiceImpl.java": {
-    "mtime": 1792441765.8303814,
-    "seen": 1792442129.4079094,
-    "ast_hash": "209bab12cc171b4c74ed5bb9950915f6",
+    "mtime": 1792443448.775645,
+    "seen": 1792444141.8351119,
+    "ast_hash": "875003887876904b87328fa96fc6b662",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/event/specification/EventSpecification.java": {
@@ -1068,9 +1068,9 @@
     "semantic_hash": "7d34fa5b7627bbd910a399858064d29b"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/moderation/service/ModerationActionServiceImpl.java": {
-    "mtime": 1792441257.9897542,
-    "seen": 1792442129.4079516,
-    "ast_hash": "8f6ddbf4071fa515a7662ab00b7ca6ac",
+    "mtime": 1792443581.550607,
+    "seen": 1792444141.8351614,
+    "ast_hash": "475aef644eb1f2016888fbade5b8aa5c",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/notification/controller/NotificationController.java": {
@@ -1914,9 +1914,9 @@
     "semantic_hash": "81f11ecd65dfa78b673d64d213198842"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/promocode/service/PromoCodeServiceImpl.java": {
-    "mtime": 1792441766.0815039,
-    "seen": 1792442129.408187,
-    "ast_hash": "7e887f60e3bffd8d1be007244cb1aca1",
+    "mtime": 1792443496.069841,
+    "seen": 1792444141.835502,
+    "ast_hash": "1831ac4f46bd67d655d9bb66b8901a00",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/promocode/service/PromoCodeUsageLimitGuard.java": {
@@ -1968,9 +1968,9 @@
     "semantic_hash": "adef95c39deda2b735bdfe63c019c926"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/refund/service/RefundServiceImpl.java": {
-    "mtime": 1792441782.3795853,
-    "seen": 1792442129.4082026,
-    "ast_hash": "81f99fa1606e6f9750dc2257fd0b7f5b",
+    "mtime": 1792443581.7313952,
+    "seen": 1792444141.8355188,
+    "ast_hash": "c876f802f99a392f5b0cb90d776f9af7",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/refundpolicy/controller/EventRefundPolicyController.java": {
@@ -2016,9 +2016,9 @@
     "semantic_hash": "542e4778096d76ce5b5b18d56e2a1218"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/refundpolicy/service/RefundPolicyServiceImpl.java": {
-    "mtime": 1792441766.3692205,
-    "seen": 1792442129.4082172,
-    "ast_hash": "0be559f40fc3ddef3f03b28cc4ccd8b6",
+    "mtime": 1792444009.9568617,
+    "seen": 1792444141.8355374,
+    "ast_hash": "890293f4e82695aa21a5f55ff149fedf",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/resalelisting/controller/ResaleListingController.java": {
@@ -2136,9 +2136,9 @@
     "semantic_hash": "e80e8ab1e034fd2a685acb11b468670c"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/resalepolicy/service/ResalePolicyServiceImpl.java": {
-    "mtime": 1792441766.4967914,
-    "seen": 1792442129.408251,
-    "ast_hash": "cdae91d9aa51dc218410c9dc1b1d4a5a",
+    "mtime": 1792444010.164474,
+    "seen": 1792444141.8355746,
+    "ast_hash": "838fed2dcfc5d43d894738d90294ae25",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/seatmap/controller/SeatMapController.java": {
@@ -2424,9 +2424,9 @@
     "semantic_hash": "673111185e261e8a72b0e90ba02d8c9a"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/tickettemplate/service/TicketTemplateServiceImpl.java": {
-    "mtime": 1792441766.2461493,
-    "seen": 1792442129.4083302,
-    "ast_hash": "53ecde823484e94019aa2a5036213678",
+    "mtime": 1792443529.8910913,
+    "seen": 1792444141.835655,
+    "ast_hash": "5c9f2496d9a1acc497668f47fb9f6a76",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/tickettransfer/dto/TicketTransferRequest.java": {
@@ -2484,10 +2484,10 @@
     "semantic_hash": "be09ae33d43d2e46b0c8a34273cc35b8"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/tickettype/dto/TicketTypeCreateRequest.java": {
-    "mtime": 1791996738.3224704,
-    "seen": 1792088844.8380375,
-    "ast_hash": "dd606712c8f44e8cd10120bf54d9af12",
-    "semantic_hash": "dd606712c8f44e8cd10120bf54d9af12"
+    "mtime": 1792467170.9413364,
+    "seen": 1792467255.8471231,
+    "ast_hash": "2e6f426911c0e8197a4fcff377fdf500",
+    "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/tickettype/dto/TicketTypeOrderRequest.java": {
     "mtime": 1791996738.3224704,
@@ -2544,9 +2544,9 @@
     "semantic_hash": "a3be68c9254e063beca7dff633d267b9"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/tickettype/service/TicketTypeServiceImpl.java": {
-    "mtime": 1792441765.9626105,
-    "seen": 1792442129.4083633,
-    "ast_hash": "e00a8cd18cfb5f3ca2ba7778de4a7957",
+    "mtime": 1792467155.6406589,
+    "seen": 1792467255.8471618,
+    "ast_hash": "d5f6d7a7c36dda6fb39da5a8ddfb725e",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/upload/controller/UploadController.java": {
@@ -3786,9 +3786,9 @@
     "semantic_hash": "72bcd04fbfda6340199a23c674f4bcaf"
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/tickettemplate/service/TicketTemplateServiceImplTest.java": {
-    "mtime": 1792441358.0281303,
-    "seen": 1792442129.4088223,
-    "ast_hash": "1d19580b832499402b3b4dee541aaf02",
+    "mtime": 1792443653.021685,
+    "seen": 1792444141.8362541,
+    "ast_hash": "8ba1710937af8501c252d139afb40e41",
     "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/tickettransfer/TicketTransferIntegrationTest.java": {
@@ -3822,9 +3822,9 @@
     "semantic_hash": "952baba89028b2e59355e9fbf46fef77"
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/tickettype/service/TicketTypeServiceImplTest.java": {
-    "mtime": 1792441358.151577,
-    "seen": 1792442129.4088392,
-    "ast_hash": "9efa88535400c051fedc6cc6fabd1dd2",
+    "mtime": 1792467171.1705728,
+    "seen": 1792467255.847569,
+    "ast_hash": "072d67f08cf875a6d081e61a0b1287dd",
     "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/upload/UploadIntegrationTest.java": {
@@ -3996,9 +3996,9 @@
     "semantic_hash": "8ab35a4812e61acc1a6561fd25ab18c0"
   },
   "docs/event-ticketing-api-business-rules.md": {
-    "mtime": 1792441958.238191,
-    "seen": 1792442129.408911,
-    "ast_hash": "cc00f16e0a87a4f4f8f9ad9fa93b04cb",
+    "mtime": 1792467188.9494715,
+    "seen": 1792467255.847622,
+    "ast_hash": "4a51472556a61b625c9aadd2d2915acc",
     "semantic_hash": ""
   },
   "docs/event-ticketing-api-constants.md": {
@@ -4074,9 +4074,9 @@
     "semantic_hash": "413dc1cdacf9b8ea78e98ce7a5692af3"
   },
   "openapi.yaml": {
-    "mtime": 1792441958.0145338,
-    "seen": 1792442129.4089391,
-    "ast_hash": "729d40baa443c625c224164d2ba5a229",
+    "mtime": 1792467188.844807,
+    "seen": 1792467255.8476443,
+    "ast_hash": "36b23ca5166a84562bcac5475467a4ea",
     "semantic_hash": ""
   },
   "testing/admin-moderation-test-plan.md": {
@@ -4584,15 +4584,33 @@
     "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/auditlog/EventActivityIntegrationTest.java": {
-    "mtime": 1792441475.290082,
-    "seen": 1792442129.4085345,
-    "ast_hash": "1fc3a83369247b2cf957da0419cb61a3",
+    "mtime": 1792443743.8905613,
+    "seen": 1792444141.8359506,
+    "ast_hash": "7fea886bc40ab7e9f62991043d2c52bb",
     "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/common/OrphanEventAuditRowsCleanup.java": {
     "mtime": 1792441519.2442007,
     "seen": 1792442129.4085724,
     "ast_hash": "81a61a08f916d5e0fcf36d865210f6ed",
+    "semantic_hash": ""
+  },
+  "src/main/java/com/junaldadlawan/event_ticketing_api/auditlog/service/AuditDetails.java": {
+    "mtime": 1792443577.9301448,
+    "seen": 1792444141.8348966,
+    "ast_hash": "70e83e3c41ed3c478860d5706ba5a568",
+    "semantic_hash": ""
+  },
+  "src/main/resources/db/migration/V59__audit_log_details.sql": {
+    "mtime": 1792443287.1763868,
+    "seen": 1792444141.8358357,
+    "ast_hash": "51c1920df67293d14cb81ce1eabe5e83",
+    "semantic_hash": ""
+  },
+  "src/test/java/com/junaldadlawan/event_ticketing_api/auditlog/service/AuditDetailsTest.java": {
+    "mtime": 1792443728.2356067,
+    "seen": 1792444141.8359575,
+    "ast_hash": "f7d39ea8c1ef8cb4aa71866d76ba2305",
     "semantic_hash": ""
   }
 }

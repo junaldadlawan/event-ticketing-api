@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.category.service.CategoryService;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -35,6 +36,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -99,7 +101,7 @@ public class EventServiceImpl implements EventService {
                 .ticketPrefix(generateUniqueTicketPrefix())
                 .build();
         Event created = eventRepository.save(newEvent);
-        auditLogService.recordByCurrentUser("event.created", "Event", created.getId(), created.getId());
+        auditLogService.recordByCurrentUser("event.created", "Event", created.getId(), created.getId(), AuditDetails.named(created.getTitle()));
         return created;
     }
 
@@ -166,6 +168,7 @@ public class EventServiceImpl implements EventService {
             throw new ConflictException("A suspended event cannot be updated");
         }
         EventCompletionService.requireNotEnded(event);
+        Map<String, Object> before = AuditDetails.snapshot(event, EventUpdateRequest.class);
 
         if (request.title() != null) {
             if (request.title().isBlank()) {
@@ -190,7 +193,11 @@ public class EventServiceImpl implements EventService {
         }
 
         Event saved = eventRepository.save(event);
-        auditLogService.recordByCurrentUser("event.updated", "Event", eventId, eventId);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(event, EventUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("event.updated", "Event", eventId, eventId, changes);
+        }
         return saved;
     }
 
@@ -272,7 +279,7 @@ public class EventServiceImpl implements EventService {
         UUID eventId = event.getId();
         event.markDeleted();
         eventRepository.save(event);
-        auditLogService.recordByCurrentUser("event.deleted", "Event", eventId, eventId);
+        auditLogService.recordByCurrentUser("event.deleted", "Event", eventId, eventId, AuditDetails.named(event.getTitle()));
     }
 
     @Override

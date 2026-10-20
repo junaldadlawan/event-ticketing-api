@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refundpolicy.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -16,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -39,16 +42,22 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
 
     @Override
     public RefundPolicyResponse update(UUID eventId, RefundPolicyUpdateRequest request) {
-        RefundPolicyResponse response = applyUpdate(eventId, request);
-        auditLogService.recordByCurrentUser("refund_policy.updated", "RefundPolicy", eventId, eventId);
-        return response;
-    }
-
-    private RefundPolicyResponse applyUpdate(UUID eventId, RefundPolicyUpdateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 
         var existing = refundPolicyRepository.findByEventId(eventId);
+        Map<String, Object> before = AuditDetails.snapshot(
+                existing.map(RefundPolicyResponse::from).orElseGet(() -> RefundPolicyResponse.defaultFor(eventId)), RefundPolicyUpdateRequest.class);
+        RefundPolicyResponse response = applyUpdate(eventId, request, existing);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(response, RefundPolicyUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("refund_policy.updated", "RefundPolicy", eventId, eventId, changes);
+        }
+        return response;
+    }
+
+    private RefundPolicyResponse applyUpdate(UUID eventId, RefundPolicyUpdateRequest request, Optional<RefundPolicy> existing) {
         RefundPolicy policy = existing.orElseGet(() -> RefundPolicy.builder().eventId(eventId).build());
         applyRequest(policy, request);
 

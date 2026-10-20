@@ -4,6 +4,7 @@ import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -24,6 +25,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,6 +40,10 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
     // openapi.yaml TicketTypeCreate: max_per_order default: 10.
     private static final int DEFAULT_MAX_PER_ORDER = 10;
+    // BR-EVENT-003: ticket sales close at least this long before the event starts.
+    private static final Duration SALES_CLOSE_BEFORE_START = Duration.ofHours(1);
+    // BR-EVENT-003: a sale window runs for at least this long.
+    private static final Duration MIN_SALE_WINDOW = Duration.ofHours(1);
 
     private final TicketTypeRepository ticketTypeRepository;
     private final EventRepository eventRepository;
@@ -53,9 +60,10 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         EventCompletionService.requireNotEnded(event);
 
-        if (!request.saleEndAt().isAfter(request.saleStartAt())) {
-            throw new BadRequestException("saleEndAt must be after saleStartAt");
-        }
+        // omitted = start now, on the server's clock rather than the buyer's
+        Instant saleStartAt = request.saleStartAt() != null ? request.saleStartAt() : Instant.now();
+        requireMinimumSaleWindow(saleStartAt, request.saleEndAt());
+        requireSalesEndBeforeEventStart(event, request.saleEndAt());
 
         TicketType ticketType = TicketType.builder()
                 .eventId(event.getId())
@@ -67,14 +75,14 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                         .build())
                 .quantityTotal(request.quantityTotal())
                 .quantityAvailable(request.quantityTotal())
-                .saleStartAt(request.saleStartAt())
+                .saleStartAt(saleStartAt)
                 .saleEndAt(request.saleEndAt())
                 .maxPerOrder(request.maxPerOrder() != null ? request.maxPerOrder() : DEFAULT_MAX_PER_ORDER)
                 // New ticket types go to the end of the organizer's arrangement.
                 .position(ticketTypeRepository.findMaxPositionByEventId(event.getId()) + 1)
                 .build();
         TicketType created = ticketTypeRepository.save(ticketType);
-        auditLogService.recordByCurrentUser("ticket_type.created", "TicketType", created.getId(), created.getEventId());
+        auditLogService.recordByCurrentUser("ticket_type.created", "TicketType", created.getId(), created.getEventId(), AuditDetails.named(ticketType.getName()));
         return created;
     }
 
@@ -109,6 +117,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         Event event = getEventOrThrow(ticketType.getEventId());
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         EventCompletionService.requireNotEnded(event);
+        Map<String, Object> before = AuditDetails.snapshot(ticketType, TicketTypeUpdateRequest.class);
         if (request.quantityTotal() != null) {
             // under the row lock holds take, re-read before anything is changed, so a sale made since the row was loaded is not overwritten
             ticketTypeRepository.findByIdForUpdate(ticketTypeId);
@@ -150,13 +159,31 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             ticketType.setSalesPaused(request.salesPaused());
         }
 
-        if (!ticketType.getSaleEndAt().isAfter(ticketType.getSaleStartAt())) {
-            throw new BadRequestException("saleEndAt must be after saleStartAt");
-        }
+        requireMinimumSaleWindow(ticketType.getSaleStartAt(), ticketType.getSaleEndAt());
+        requireSalesEndBeforeEventStart(event, ticketType.getSaleEndAt());
 
         TicketType updated = ticketTypeRepository.save(ticketType);
-        auditLogService.recordByCurrentUser("ticket_type.updated", "TicketType", updated.getId(), updated.getEventId());
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(ticketType, TicketTypeUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("ticket_type.updated", "TicketType", ticketTypeId, ticketType.getEventId(), changes);
+        }
         return updated;
+    }
+
+    // also covers end > start
+    private static void requireMinimumSaleWindow(Instant saleStartAt, Instant saleEndAt) {
+        if (saleEndAt.isBefore(saleStartAt.plus(MIN_SALE_WINDOW))) {
+            throw new BadRequestException("Ticket sales must run for at least 1 hour");
+        }
+    }
+
+    // shortcut: checked only on ticket-type create/update because an event's startAt can't change today; if EventUpdateRequest ever takes startAt, clamp or reject this event's ticket types in EventServiceImpl.update.
+    private static void requireSalesEndBeforeEventStart(Event event, Instant saleEndAt) {
+        Instant latestEnd = event.getStartAt().minus(SALES_CLOSE_BEFORE_START);
+        if (saleEndAt.isAfter(latestEnd)) {
+            throw new BadRequestException("Ticket sales must end at least 1 hour before the event starts (by " + latestEnd + ")");
+        }
     }
 
     @Override
@@ -186,7 +213,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             arranged.add(ticketType);
         }
         List<TicketType> saved = ticketTypeRepository.saveAll(arranged);
-        auditLogService.recordByCurrentUser("ticket_type.reordered", "Event", eventId, eventId);
+        Map<String, Object> details = AuditDetails.named(event.getTitle());
+        details.put("order", arranged.stream().map(TicketType::getName).toList());
+        auditLogService.recordByCurrentUser("ticket_type.reordered", "Event", eventId, eventId, details);
         return saved;
     }
 
@@ -208,7 +237,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
         ticketType.markDeleted();
         ticketTypeRepository.save(ticketType);
-        auditLogService.recordByCurrentUser("ticket_type.deleted", "TicketType", ticketTypeId, ticketType.getEventId());
+        auditLogService.recordByCurrentUser("ticket_type.deleted", "TicketType", ticketTypeId, ticketType.getEventId(), AuditDetails.named(ticketType.getName()));
     }
 
     @Override
@@ -235,7 +264,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         ticketType.setSalesPaused(paused);
         TicketType saved = ticketTypeRepository.save(ticketType);
         auditLogService.recordByCurrentUser(paused ? "ticket_type.sales_paused" : "ticket_type.sales_resumed",
-                "TicketType", ticketTypeId, ticketType.getEventId());
+                "TicketType", ticketTypeId, ticketType.getEventId(), AuditDetails.named(ticketType.getName()));
         return saved;
     }
 

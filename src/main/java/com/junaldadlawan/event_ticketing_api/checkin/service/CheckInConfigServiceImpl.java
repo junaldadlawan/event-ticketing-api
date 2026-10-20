@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInConfigUpdateRequest;
@@ -18,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -40,16 +43,22 @@ public class CheckInConfigServiceImpl implements CheckInConfigService {
 
     @Override
     public CheckInConfigResponse update(UUID eventId, CheckInConfigUpdateRequest request) {
-        CheckInConfigResponse response = applyUpdate(eventId, request);
-        auditLogService.recordByCurrentUser("check_in_config.updated", "CheckInConfig", eventId, eventId);
-        return response;
-    }
-
-    private CheckInConfigResponse applyUpdate(UUID eventId, CheckInConfigUpdateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
 
         var existing = checkInConfigRepository.findByEventId(eventId);
+        Map<String, Object> before = AuditDetails.snapshot(
+                existing.map(CheckInConfigResponse::from).orElseGet(() -> CheckInConfigResponse.defaultFor(eventId)), CheckInConfigUpdateRequest.class);
+        CheckInConfigResponse response = applyUpdate(eventId, request, existing);
+        // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(response, CheckInConfigUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("check_in_config.updated", "CheckInConfig", eventId, eventId, changes);
+        }
+        return response;
+    }
+
+    private CheckInConfigResponse applyUpdate(UUID eventId, CheckInConfigUpdateRequest request, Optional<CheckInConfig> existing) {
         CheckInMode previousMode = existing.map(CheckInConfig::getMode).orElse(CheckInMode.STANDARD);
         CheckInConfig config = existing.orElseGet(() -> CheckInConfig.builder().eventId(eventId).mode(CheckInMode.STANDARD).build());
         applyRequest(config, request);

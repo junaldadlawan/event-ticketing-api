@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.auditlog.dto;
 
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import com.junaldadlawan.event_ticketing_api.auditlog.entity.AuditLogEntry;
 
 import java.io.Serializable;
@@ -18,6 +19,8 @@ public record AuditLogEntryResponse(
         String targetType,
         UUID targetId,
         UUID eventId,
+        // already JSON (an object, or null) - written into the response as-is
+        @JsonRawValue String details,
         Instant createdAt) implements Serializable {
 
     public static AuditLogEntryResponse from(AuditLogEntry entry) {
@@ -33,6 +36,7 @@ public record AuditLogEntryResponse(
                 entry.getTargetType(),
                 entry.getTargetId(),
                 entry.getEventId(),
+                entry.getDetails(),
                 entry.getCreatedAt());
     }
 }

@@ -20,6 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -39,6 +42,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AuditLogServiceImpl implements AuditLogService {
 
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
+
     private final AuditLogEntryRepository auditLogEntryRepository;
     private final OrganizationAccessGuard accessGuard;
     private final EventRepository eventRepository;
@@ -53,6 +58,13 @@ public class AuditLogServiceImpl implements AuditLogService {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(UUID actorId, String action, String targetType, UUID targetId, UUID eventId) {
+        record(actorId, action, targetType, targetId, eventId, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void record(UUID actorId, String action, String targetType, UUID targetId, UUID eventId,
+                       Map<String, Object> details) {
         try {
             AuditLogEntry entry = AuditLogEntry.builder()
                     .actorId(actorId)
@@ -60,6 +72,7 @@ public class AuditLogServiceImpl implements AuditLogService {
                     .targetType(targetType)
                     .targetId(targetId)
                     .eventId(eventId)
+                    .details(details == null ? null : JSON.writeValueAsString(details))
                     .build();
             auditLogEntryRepository.saveAndFlush(entry);
         } catch (Exception e) {
@@ -76,6 +89,13 @@ public class AuditLogServiceImpl implements AuditLogService {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordByCurrentUser(String action, String targetType, UUID targetId, UUID eventId) {
+        recordByCurrentUser(action, targetType, targetId, eventId, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordByCurrentUser(String action, String targetType, UUID targetId, UUID eventId,
+                                    Map<String, Object> details) {
         UUID actorId;
         try {
             actorId = accessGuard.currentUserId();
@@ -84,7 +104,7 @@ public class AuditLogServiceImpl implements AuditLogService {
             log.error("Failed to resolve the caller for audit log entry (action={}, targetId={})", action, targetId, e);
             return;
         }
-        record(actorId, action, targetType, targetId, eventId);
+        record(actorId, action, targetType, targetId, eventId, details);
     }
 
     @Override

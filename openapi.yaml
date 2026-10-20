@@ -1771,6 +1771,10 @@ paths:
       operationId: createTicketType
       tags: [TicketTypes]
       summary: Create a TicketType (owning organizer)
+      description: |
+        Omit `sale_start_at` to start sales now (the server's current time). `sale_end_at` must be at least 1 hour after
+        `sale_start_at` (measured from the server's time when it is omitted) and at least 1 hour before the event
+        starts; otherwise 400 (BR-EVENT-003).
       requestBody:
         required: true
         content:
@@ -1782,6 +1786,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { description: "Validation error, a sale window shorter than 1 hour, or one ending less than 1 hour before the event starts" }
         "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/ticket-types/order:
@@ -1835,6 +1840,8 @@ paths:
       description: |
         A new `quantityTotal` keeps the tickets already sold or held taken: `quantityAvailable` becomes the new total minus
         (old total - old available). A total lower than what is already sold or held is refused with 409.
+        The resulting sale window (new or kept values) must run for at least 1 hour and end at least 1 hour before the
+        event starts; otherwise 400 (BR-EVENT-003).
       requestBody:
         required: true
         content:
@@ -1846,6 +1853,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { description: "Validation error, a sale window shorter than 1 hour, or one ending less than 1 hour before the event starts" }
         "409": { $ref: "#/components/responses/EventEnded" }
     delete:
       operationId: deleteTicketType
@@ -3666,8 +3674,8 @@ components:
         kind: { type: string, enum: [general_admission, reserved_seating] }
         price: { $ref: "#/components/schemas/Money" }
         quantity_total: { type: integer }
-        sale_start_at: { type: string, format: date-time }
-        sale_end_at: { type: string, format: date-time }
+        sale_start_at: { type: string, format: date-time, description: "Optional; omit to start sales now (server time). A past time is accepted." }
+        sale_end_at: { type: string, format: date-time, description: "Must be at least 1 hour after sale_start_at and at least 1 hour before the event starts." }
         max_per_order: { type: integer, default: 10 }
 
     TicketTypeSalesStatus:
@@ -4307,21 +4315,33 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        actor_id:
+        actorId:
           type: [string, "null"]
           format: uuid
           description: Null when the system acted on its own (e.g. event.completed).
-        actor_name:
+        actorName:
           type: [string, "null"]
           description: Only on GET /events/{eventId}/activity; null for the system or a user that no longer exists.
         action: { type: string, example: refund.issued }
-        target_type: { type: [string, "null"] }
-        target_id: { type: [string, "null"], format: uuid }
-        event_id:
+        targetType: { type: [string, "null"] }
+        targetId: { type: [string, "null"], format: uuid }
+        eventId:
           type: [string, "null"]
           format: uuid
           description: The event the entry belongs to (BR-EVENT-006), when it is about an event or something of it.
-        created_at: { type: string, format: date-time }
+        details:
+          type: [object, "null"]
+          description: >
+            What happened, when there is more to say (BR-EVENT-006; null on older entries). `*.updated`: only the
+            fields that changed, by their API name - `{"changes": [{"field": "title", "from": "Event Sample", "to":
+            "Event Sample 2026"}]}`; Money is `{amount, currency}`, dates ISO strings, lists (images, ...) their count,
+            text capped at 500 characters. `*.created` / `*.deleted`, sales paused/resumed, promo code paused/resumed,
+            scanner devices: `{"name": ...}` (so a deleted item can still be named); `ticket_type.reordered` also
+            `"order"` (names, first to last); `refund.issued`: `{orderId, amount, reason}`; event moderation:
+            `{"reason"}` when one was given. Never secrets, card data or buyers' personal data.
+          additionalProperties: true
+          example: { changes: [ { field: title, from: Event Sample, to: Event Sample 2026 } ] }
+        createdAt: { type: string, format: date-time }
 
     Payout:
       type: object

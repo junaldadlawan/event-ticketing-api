@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceAuthorizeRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceResponse;
@@ -61,7 +62,8 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                     existing.setStatus(ScannerDeviceStatus.REVOKED);
                     existing.setUpdatedBy(callerId);
                     scannerDeviceRepository.save(existing);
-                    auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", existing.getId(), eventId);
+                    auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", existing.getId(), eventId,
+                            AuditDetails.named(existing.getDeviceLabel()));
                 }
             }
         }
@@ -76,7 +78,8 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                 .createdBy(accessGuard.currentUserId().toString())
                 .build();
         ScannerDevice saved = scannerDeviceRepository.save(device);
-        auditLogService.recordByCurrentUser("scanner_device.authorized", "ScannerDevice", saved.getId(), eventId);
+        auditLogService.recordByCurrentUser("scanner_device.authorized", "ScannerDevice", saved.getId(), eventId,
+                AuditDetails.named(device.getDeviceLabel()));
         return ScannerDeviceResponse.from(saved, credential);
     }
 
@@ -90,7 +93,8 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
         device.setStatus(ScannerDeviceStatus.REVOKED);
         device.setUpdatedBy(accessGuard.currentUserId().toString());
         scannerDeviceRepository.save(device);
-        auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", deviceId, device.getEventId());
+        auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", deviceId, device.getEventId(),
+                AuditDetails.named(device.getDeviceLabel()));
     }
 
     private Event getEventOrThrow(UUID eventId) {

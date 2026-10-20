@@ -14,16 +14,17 @@ import java.time.Instant;
 /**
  * DTO for {@link com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType}
  * creation. Deliberate deviation from openapi.yaml's {@code TicketTypeCreate}
- * schema: {@code quantityTotal}/{@code saleStartAt}/{@code saleEndAt} are
- * required here (not optional as the schema's {@code required: [name, kind,
- * price]} literally states) because BR-EVENT-003 is unambiguous that every
- * ticket type must define its own quantity and sale window. {@code
+ * schema: {@code quantityTotal}/{@code saleEndAt} are required here (not
+ * optional as the schema's {@code required: [name, kind, price]} literally
+ * states) because BR-EVENT-003 is unambiguous that every ticket type must
+ * define its own quantity and sale window. {@code saleStartAt} may be omitted
+ * to mean "start now" (taken from the server's clock). {@code
  * maxPerOrder} stays optional — openapi gives it a real server-side default
  * ({@code default: 10}), applied in the service layer when omitted.
  * <p>
- * {@code saleEndAt} must be after {@code saleStartAt}; enforced as an
- * explicit service-level check (no existing cross-field annotation covers
- * this shape).
+ * {@code saleEndAt} must be at least 1 hour after {@code saleStartAt} and at
+ * least 1 hour before the event starts; enforced as explicit service-level checks (they
+ * need the event).
  */
 public record TicketTypeCreateRequest(
         @NotBlank
@@ -42,7 +43,6 @@ public record TicketTypeCreateRequest(
         @Positive
         Integer quantityTotal,
 
-        @NotNull
         Instant saleStartAt,
 
         @NotNull
