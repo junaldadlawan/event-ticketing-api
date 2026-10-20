@@ -2,8 +2,8 @@ package com.junaldadlawan.event_ticketing_api.upload.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.upload.storage.FileStorage;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -15,17 +15,16 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Stores uploaded images (ticket template backgrounds) on local disk and hands
- * them back by name.
+ * Stores uploaded images in {@link FileStorage} (local disk, or Cloudflare R2 in prod)
+ * and hands them back by name. A name is the object key: one of the bucket's top-level
+ * folders plus a random file name, e.g. {@code users/<uuid>.png}.
  * <p>
  * What is trusted: nothing the client sends about the file. The type is decided
  * from the file's own first bytes (PNG, JPEG, GIF or WebP only - never SVG, which
@@ -34,17 +33,22 @@ import java.util.regex.Pattern;
  * so nothing a user types ever reaches the file system path. PNG/JPEG/GIF are
  * also decoded far enough to read their dimensions, which rejects truncated or
  * disguised files and oversized "decompression bomb" images.
- * <p>
- * Local disk is fine for one instance and for local development; on ECS Fargate
- * the container disk is lost on every deployment, so production needs a
- * durable store (S3) behind this same class.
  */
 @Service
 public class ImageStorageService {
 
-    /** The only names {@link #load} will serve: our own random name + a known extension. */
-    private static final Pattern STORED_NAME =
-            Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|gif|webp)");
+    /** The bucket's top-level folders (event-ticketing-media); every new upload goes in one of them. */
+    public static final Set<String> FOLDERS = Set.of("events", "organizations", "platform", "temporary", "tickets", "users");
+
+    /** Where an upload goes when the client does not say what it is for. */
+    public static final String DEFAULT_FOLDER = "temporary";
+
+    /**
+     * The only names {@link #load} will serve: a known folder + our own random name + a known extension. The folder
+     * is optional only so files uploaded before folders existed (flat in the upload dir) keep working.
+     */
+    private static final Pattern STORED_NAME = Pattern.compile("(?:(?:" + String.join("|", FOLDERS) + ")/)?"
+            + "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|gif|webp)");
 
     private static final Map<String, String> CONTENT_TYPE_BY_EXTENSION = Map.of(
             "png", "image/png",
@@ -56,16 +60,24 @@ public class ImageStorageService {
     private static final int MAX_SIDE_PX = 8_000;
     private static final long MAX_PIXELS = 40_000_000L;
 
-    private final Path directory;
+    private final FileStorage storage;
     private final long maxBytes;
 
-    public ImageStorageService(@Value("${app.upload.dir:uploads}") String directory,
+    public ImageStorageService(FileStorage storage,
                                @Value("${app.upload.max-bytes:5242880}") long maxBytes) {
-        this.directory = Path.of(directory).toAbsolutePath().normalize();
+        this.storage = storage;
         this.maxBytes = maxBytes;
     }
 
     public StoredImage store(MultipartFile file) {
+        return store(file, DEFAULT_FOLDER);
+    }
+
+    /** Stores the image under {@code folder} (one of {@link #FOLDERS}); the returned name includes the folder. */
+    public StoredImage store(MultipartFile file, String folder) {
+        if (folder == null || !FOLDERS.contains(folder)) {
+            throw new BadRequestException("folder must be one of " + String.join(", ", FOLDERS.stream().sorted().toList()));
+        }
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("An image file is required");
         }
@@ -86,30 +98,19 @@ public class ImageStorageService {
             requireDecodableWithinLimits(bytes);
         }
 
-        String name = UUID.randomUUID() + "." + extension;
-        try {
-            Files.createDirectories(directory);
-            Path target = directory.resolve(name);
-            // Write to a temp name first so a half-written file is never served.
-            Path temp = directory.resolve(name + ".part");
-            Files.write(temp, bytes);
-            Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to store the uploaded image", e);
-        }
-        return new StoredImage(name, CONTENT_TYPE_BY_EXTENSION.get(extension), bytes.length);
+        String name = folder + "/" + UUID.randomUUID() + "." + extension;
+        String contentType = CONTENT_TYPE_BY_EXTENSION.get(extension);
+        storage.put(name, bytes, contentType);
+        return new StoredImage(name, contentType, bytes.length);
     }
 
     public LoadedImage load(String name) {
-        if (name == null || !STORED_NAME.matcher(name).matches()) {
-            throw new ResourceNotFoundException("Image not found");
-        }
-        Path file = directory.resolve(name).normalize();
-        if (!file.startsWith(directory) || !Files.isRegularFile(file)) {
+        Resource resource = isStoredName(name) ? storage.get(name) : null;
+        if (resource == null) {
             throw new ResourceNotFoundException("Image not found");
         }
         String extension = name.substring(name.lastIndexOf('.') + 1);
-        return new LoadedImage(new FileSystemResource(file), CONTENT_TYPE_BY_EXTENSION.get(extension));
+        return new LoadedImage(resource, CONTENT_TYPE_BY_EXTENSION.get(extension));
     }
 
     /** Whether {@code name} has the shape of a name this service generates (random UUID + a known extension). */
@@ -119,26 +120,13 @@ public class ImageStorageService {
 
     /** Whether a stored file with this name exists. */
     public boolean exists(String name) {
-        if (!isStoredName(name)) {
-            return false;
-        }
-        Path file = directory.resolve(name).normalize();
-        return file.startsWith(directory) && Files.isRegularFile(file);
+        return isStoredName(name) && storage.exists(name);
     }
 
     /** Removes a stored file; a name that is not ours or a file that is already gone is ignored. */
     public void delete(String name) {
-        if (!isStoredName(name)) {
-            return;
-        }
-        Path file = directory.resolve(name).normalize();
-        if (!file.startsWith(directory)) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(file);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to delete the stored image", e);
+        if (isStoredName(name)) {
+            storage.delete(name);
         }
     }
 

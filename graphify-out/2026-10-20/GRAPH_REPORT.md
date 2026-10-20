@@ -1,13 +1,13 @@
 # Graph Report - event-ticketing-api  (2026-10-20)
 
 ## Corpus Check
-- 765 files · ~372,277 words
+- 765 files · ~372,556 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 24 file(s) not represented in the graph (top: .xml 12, (none) 5, .properties 4)
 
 ## Summary
-- 7303 nodes · 35347 edges · 304 communities (145 shown, 159 thin omitted)
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 5338 edges (avg confidence: 0.85)
+- 7308 nodes · 35372 edges · 299 communities (151 shown, 148 thin omitted)
+- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 5345 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
@@ -28,7 +28,7 @@
 - CheckInServiceImplTest
 - PayoutCardServiceImplTest
 - Event Ticketing API (OpenAPI 1.3.0-draft)
-- EventRepository
+- FunnelRetentionJob.java
 - REST Controller Wiring
 - FinanceSummaryIntegrationTest
 - Use Cases & Rule Sections
@@ -36,12 +36,12 @@
 - Cart Service Tests
 - PlatformFeeServiceImplTest
 - Ticket Canvas Renderer Tests
-- Order Service & Ticket Access
+- .currentUserId
 - Resale Listing Service Tests
 - Post Integration Tests
 - Ticket Template Controller Tests
 - Waitlist Service
-- org.junit.jupiter.api.Test
+- PromoCodeControllerTest
 - ModerationActionServiceImplTest
 - Post Service
 - EventOrganizationAccessIntegrationTest
@@ -50,15 +50,16 @@
 - EventControllerTest
 - Ticket Canvas Rendering
 - PayMongoSavedCardIntegrationTest
-- PayoutServiceImpl
+- VenueServiceImplTest
 - .post
 - .requireAdmin
-- .list
+- ScannerDevice
 - .platformSummary
 - FunnelRepository
 - NotificationIntegrationTest
+- QR & Barcode Generation
 - CartServiceImpl
-- ModerationActionControllerTest
+- ModerationTargetType
 - Ticket Type Controller Tests
 - .currentUserId
 - PayMongo Checkout Rules
@@ -71,11 +72,12 @@
 - Ticket Artifact Service
 - Global Exception Handling
 - .listEvents
-- TicketRepository
+- CheckoutServiceImpl.java
 - NotificationType
 - VenueControllerTest
 - PayoutResponse
 - Payout Card & Ticket Access Tests
+- CheckoutServiceImplPendingTest
 - API Contract (Core) v1.2
 - OrderRefundControllerTest
 - PayMongo Gateway Client
@@ -83,7 +85,6 @@
 - Cart Access Tests
 - AI Agent Team Docs
 - PostControllerTest
-- JwtAuthenticationFilter.java
 - Cart, Inventory & Resale Rules
 - AuthController.java
 - ResaleListingIntegrationTest
@@ -98,11 +99,11 @@
 - PromoCodeServiceImplTest
 - UserServiceImplTest
 - ScannerDeviceControllerTest
-- TextFieldKey
-- MockStripeGateway
+- RefundPolicyIntegrationTest
+- org.springframework.stereotype.Component
 - Check-in Integration Tests
 - TransferResult
-- value
+- AccountNumberCipher
 - Gateway Fee Service
 - ScannerDeviceServiceImplTest
 - Registration Validation Tests
@@ -113,27 +114,25 @@
 - TicketTypeOrderIntegrationTest
 - PayMongo Payout Webhook Tests
 - .findByUserIdAndOrganizationId
-- Payout Wallet Client
-- TicketTransferServiceImplTest
+- EventCompletionServiceTest
+- OrganizationController
 - Refund Integration Tests
 - RefundPolicyServiceImplTest
 - PayoutAccountServiceImpl
-- .startCheckout
-- EventCompletionIntegrationTest
+- Order
+- PublicEventCacheEvictionListener
 - GatewayFeeIntegrationTest
-- RefundServiceImpl
+- AuditDetails
 - PlatformFeeIntegrationTest
 - Transfer & Resale Test Results
-- .generate
+- EventCompletionIntegrationTest
 - Gateway Fee Check Service
 - Image Storage Tests
 - Check-in Config Integration Tests
-- CartServiceImplTest
-- .generateAccessToken
-- tools.jackson.databind.JsonNode
+- SuperAdminIntegrationTest
 - Cart Line Quantity Tests
 - FunnelIntegrationTest
-- PlatformFeeRuleResponse
+- PlatformFeeRuleRequest
 - .charge
 - ProdLoggingConfigurationTest.java
 - Order Access Tests
@@ -144,7 +143,7 @@
 - PaymentMethodService
 - WaitlistIntegrationTest
 - org.springframework.data.domain.Pageable
-- VenueSecurityIntegrationTest
+- CheckInConfigResponse
 - GatewayFeeController.java
 - OrphanEventAuditRowsCleanup.java
 - .record
@@ -152,15 +151,15 @@
 - .generateAccessToken
 - Posts & Profile Picture Rules
 - PayoutServiceImplSendTest
+- PayMongo Checkout Tests
 - Ticket Template Access Tests
 - RefundPolicyResponse
 - OrganizationControllerTest
 - Stripe API Gateway
-- ResalePolicyResponse
 - Checkout Test Plan
 - Refund & Payout Test Results
 - AnalyticsIntegrationTest
-- AuditLoggingIntegrationTest
+- UserRepository
 - Category Integration Tests
 - Payout Batch Tests
 - Ticket Transfer Tests
@@ -174,7 +173,6 @@
 - ResalePolicyResponse
 - Ticket Type Access Tests
 - Event Hardening Test Results
-- PayoutCardResponse
 - Roles & Organization Requirements
 - EventInsightsIntegrationTest
 - VenueController
@@ -182,7 +180,7 @@
 - TicketServiceImplTest
 - Orders & Idempotency Schema
 - uuid
-- ValidationResultResponse
+- RequestIdFilter.java
 - Resale Policy Tests
 - Terraform State Backend
 - Seat Map Service Tests
@@ -191,35 +189,33 @@
 - Users & Payment Methods Schema
 - EventPromoCodeAccessIntegrationTest
 - Notification Test Results
-- Suspension Enforcement
+- pattern
 - Account Rules Guard Tests
 - Refund & Payout Schema
 - Promo Code Rules
 - CategoryController
 - EventAnalyticsResponse
-- org.springframework.data.jpa.repository.Query
+- org.springframework.data.domain.Page
 - TicketAccessIntegrationTest
-- CheckInServiceImplTest.java
+- org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 - Dispute Test Results
 - Organization Test Results
 - Organization Onboarding Rules
 - Audit & Security Requirements
 - EventCancellationRefundIntegrationTest
-- TicketTemplateResponse
 - OrganizationMineIntegrationTest
 - Analytics Requirements
 - RegisterRequest.java
 - Transfer & Resale Schema
 - Ticket Issuance Results
 - Waitlist Test Results
-- Strict Date Deserializer
+- LogbackConfigurationTest
 - Audit Log Design
 - EventRequest
 - Check-in Schema
 - Payment Gateway Roadmap
 - PayMongo Guide Features
-- .generate
-- MoneyDto
+- PayoutWalletResponse
 - Ticket Rendering Results
 - Ticket Resource Design
 - Line Breaks Converter
@@ -229,20 +225,21 @@
 - Waitlist Schema
 - Venue Test Results
 - StripeGateway
-- SalesStatus
+- OrganizationMemberId
+- TicketTypeController
 - Ticket Types & Seats Schema
 - Payout Test Plan
 - Check-in Modes Design
 - Application Entry Point
-- DemoDataSeeder.java
-- PayoutCardRepository
+- OrganizationCreateRequest
+- RefundRuleType
 - SeatMapAccessIntegrationTest
 - Pending Checkouts Schema
 - Organizations Schema
 - Deploy Safety
 - Admin Moderation Results
 - StripeCustomerServiceImpl
-- PlatformFeeRuleRequest
+- PromoCodeStatus
 - Disputes Schema
 - Audit Log Schema
 - Categories Schema
@@ -278,17 +275,13 @@
 - CodeType
 - jakarta.servlet.http.HttpServletRequest
 - V57__event_funnel_tracking.sql
-- CartActivityRecorder.java
-- PayMongoPaymentFeeSampler
+- RefundStatus
+- CorsIntegrationTest
 - PromoCodeController
 - StripeCustomerIntegrationTest
-- .submitFallbackScans
 - GatewayFeePayer
-- AuditLogIntegrationTest
-- OrganizationEarningsResponse
 - PostStatus
-- AuditLogControllerTest
-- MockPaymentGatewayClient
+- ImageStorageService
 
 ## God Nodes (most connected - your core abstractions)
 1. `EventRepository` - 203 edges
@@ -296,7 +289,7 @@
 3. `Event` - 188 edges
 4. `OrganizationAccessGuard` - 165 edges
 5. `BadRequestException` - 159 edges
-6. `MoneyDto` - 148 edges
+6. `MoneyDto` - 151 edges
 7. `OrganizationRepository` - 145 edges
 8. `JwtService` - 131 edges
 9. `Role` - 129 edges
@@ -336,27 +329,27 @@
 - **Ticket credential secrecy, QR encoding and transfer invalidation** — testing_ticket_issuance_test_results_credential_never_exposed, testing_ticket_template_artifact_test_results_qr_decode_equals_credential, testing_transfer_resale_test_results_br_transfer_005_credential_invalidation [INFERRED 0.85]
 - **Ticket ownership drift after transfer defects** — testing_refund_payout_test_results_transferred_ticket_stripped_finding, testing_transfer_resale_test_results_stale_listing_wrong_seller_finding, testing_transfer_resale_test_results_auto_cancel_listing_on_transfer [INFERRED 0.85]
 
-## Communities (304 total, 159 thin omitted)
+## Communities (299 total, 148 thin omitted)
 
 ### Community 0 - "CheckoutIntegrationTest"
 Cohesion: 0.16
 Nodes (3): NoFeesExtension, Saved, CheckoutIntegrationTest
 
 ### Community 1 - "Money"
-Cohesion: 0.12
-Nodes (27): AuditLogEntry, RefreshToken, CheckInConfig, FallbackScanRecord, ScannerDevice, Auditable, Money, Notification (+19 more)
+Cohesion: 0.18
+Nodes (21): AuditLogEntry, RefreshToken, Category, CheckInConfig, CheckInRecord, FallbackScanRecord, Auditable, Dispute (+13 more)
 
 ### Community 2 - "TicketControllerTest"
 Cohesion: 0.09
-Nodes (10): CheckInService, RenderedTicketArtifact, TicketArtifactService, TicketController, TicketResponse, TicketService, TicketTransferRequest, TicketTransferResponse (+2 more)
+Nodes (7): CheckInRecordResponse, TicketController, TicketResponse, TicketService, TicketTransferRequest, TicketTransferResponse, TicketControllerTest
 
 ### Community 3 - "list"
-Cohesion: 0.11
-Nodes (15): JwtAuthenticationFilter, DeviceAuthenticationFilter, BadRequestException, ConflictException, ForbiddenException, ResourceNotFoundException, OrganizationAccessGuard, PromoCodeStatus (+7 more)
+Cohesion: 0.09
+Nodes (34): AuditLogService, CheckInMode, PURE_OFFLINE, STANDARD, ScannerDeviceStatus, ACTIVE, REVOKED, CheckInConfigRepository (+26 more)
 
 ### Community 4 - "MockMvc Test Infrastructure"
 Cohesion: 0.08
-Nodes (43): AuditLogEntryRepository, JwtService, EventStatus, CANCELLED, COMPLETED, DRAFT, ON_SALE, PUBLISHED (+35 more)
+Nodes (52): JwtService, CartItemRepository, CartRepository, Money, Event, EventStatus, CANCELLED, COMPLETED (+44 more)
 
 ### Community 5 - "AWS ECS Terraform"
 Cohesion: 0.06
@@ -364,119 +357,131 @@ Nodes (89): aws_cloudwatch_log_group.app, aws_db_instance.main, aws_db_subnet_gr
 
 ### Community 6 - "org.junit.jupiter.api.Test"
 Cohesion: 0.08
-Nodes (3): TicketTemplateCreateRequest, TicketTemplateUpdateRequest, TicketTemplateServiceImplTest
+Nodes (4): TicketTemplateCreateRequest, TicketTemplateUpdateRequest, TicketTemplateServiceImpl, TicketTemplateServiceImplTest
 
 ### Community 7 - "Ticket Type Service Tests"
-Cohesion: 0.09
-Nodes (4): TicketTypeCreateRequest, TicketTypeServiceImpl, TicketAccessGuardTest, TicketTypeServiceImplTest
+Cohesion: 0.07
+Nodes (4): TicketTypeCreateRequest, TicketTypeServiceImpl, EventTicketingApiApplicationTests, TicketTypeServiceImplTest
 
 ### Community 8 - "Event Service"
-Cohesion: 0.06
+Cohesion: 0.08
 Nodes (3): EventUpdateRequest, EventServiceImpl, EventServiceImplTest
 
 ### Community 9 - "CheckInServiceImplTest"
-Cohesion: 0.26
-Nodes (3): ValidateScanRequest, ParsedCredential, CheckInServiceImplTest
+Cohesion: 0.05
+Nodes (14): FallbackScanBatchRequest, FallbackScanItemDto, TicketSummaryDto, ValidateScanRequest, ValidationResultResponse, DeviceAccessGuard, CheckInServiceImpl, ScanOutcome (+6 more)
+
+### Community 10 - "PayoutCardServiceImplTest"
+Cohesion: 0.13
+Nodes (6): PayoutCardRequest, PayoutCardResponse, PayoutCardRepository, PayoutCardService, PayoutCardServiceImpl, PayoutCardServiceImplTest
 
 ### Community 11 - "Event Ticketing API (OpenAPI 1.3.0-draft)"
 Cohesion: 0.07
 Nodes (73): T-3 / G-15 Contract Tests vs openapi.yaml, AuditLogEntry schema, bearerAuth security scheme, Cart schema, CartItem schema, Category schema, CheckInConfig schema, CheckInRecord schema (+65 more)
 
-### Community 12 - "EventRepository"
-Cohesion: 0.03
-Nodes (36): N-1 Real Email/SMS Provider, R-5 Caching (Caffeine public event cache), AuditDetails, AuditLogService, AuditLogServiceImpl, RefreshTokenRepository, AuthServiceImpl, ScannerDeviceResponse (+28 more)
-
 ### Community 13 - "REST Controller Wiring"
 Cohesion: 0.07
-Nodes (23): PlatformAnalyticsController, PlatformFinanceController, AuditLogController, EventActivityController, CartController, CheckInController, EventCheckInConfigController, ScannerDeviceController (+15 more)
+Nodes (26): PlatformAnalyticsController, PlatformFinanceController, AuditLogController, EventActivityController, CartController, ApplyPromoCodeRequest, CheckInController, EventCheckInConfigController (+18 more)
 
 ### Community 14 - "FinanceSummaryIntegrationTest"
-Cohesion: 0.12
-Nodes (4): GatewayFeeCardOrigin, DOMESTIC, FOREIGN, FinanceSummaryIntegrationTest
+Cohesion: 0.09
+Nodes (10): GatewayFeeCardOrigin, DOMESTIC, FOREIGN, PayoutStatus, CANCELLED, FAILED, PAID, PROCESSING (+2 more)
 
 ### Community 15 - "Use Cases & Rule Sections"
 Cohesion: 0.05
 Nodes (29): Analytics & Reporting Rules, Identity, Access & Roles Rules, Payments & Refunds Rules, Platform Administration Rules, OrganizationRole enum (OWNER, ORGANIZER, CHECK_IN_STAFF), PayoutStatus enum, Event Ticketing API Use Cases, Actor: Event Organizer (+21 more)
 
-### Community 21 - "Resale Listing Service Tests"
-Cohesion: 0.13
-Nodes (4): ResaleListingCreateRequest, ClaimOutcome, ResalePurchaseIdempotencyKeyManager, ResaleListingServiceImplTest
+### Community 16 - "RefundServiceImplTest"
+Cohesion: 0.14
+Nodes (7): SalesOverTimeEntry, RefundCreateRequest, RefundResponse, RefundServiceImpl, MoneyDto, TicketTypeUpdateRequest, RefundServiceImplTest
+
+### Community 20 - ".currentUserId"
+Cohesion: 0.06
+Nodes (3): OrderServiceImpl, OrderServiceImplTest, TicketAccessGuardTest
 
 ### Community 24 - "Waitlist Service"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (5): WaitlistEntryRepository, WaitlistPositionAssigner, WaitlistServiceImpl, WaitlistPositionAssignerTest, WaitlistServiceImplTest
-
-### Community 25 - "org.junit.jupiter.api.Test"
-Cohesion: 0.05
-Nodes (4): PromoCodeService, CorsIntegrationTest, EventTicketingApiApplicationTests, PromoCodeControllerTest
 
 ### Community 26 - "ModerationActionServiceImplTest"
 Cohesion: 0.12
-Nodes (8): EventService, ModerationActionCreateRequest, ModerationActionType, REINSTATE, REMOVE, SUSPEND, ModerationActionServiceImpl, ModerationActionServiceImplTest
+Nodes (7): ModerationActionCreateRequest, ModerationActionType, REINSTATE, REMOVE, SUSPEND, ModerationActionServiceImpl, ModerationActionServiceImplTest
 
 ### Community 29 - ".hasRole"
-Cohesion: 0.06
-Nodes (8): OrganizationMemberAssignRequest, OrganizationUpdateRequest, OrganizationServiceImpl, VenueCreateRequest, VenueUpdateRequest, VenueServiceImpl, OrganizationServiceImplTest, VenueServiceImplTest
+Cohesion: 0.11
+Nodes (5): OrganizationMemberAssignRequest, OrganizationRejectRequest, OrganizationUpdateRequest, OrganizationServiceImpl, OrganizationServiceImplTest
 
 ### Community 30 - "SeatMapControllerTest"
 Cohesion: 0.26
 Nodes (5): SeatMapController, SeatMapResponse, SeatResponse, SeatMapService, SeatMapControllerTest
 
 ### Community 31 - "EventControllerTest"
-Cohesion: 0.07
+Cohesion: 0.06
 Nodes (5): EventController, EventResponse, EventVenueSnapshot, EventQueryService, EventControllerTest
 
 ### Community 32 - "Ticket Canvas Rendering"
-Cohesion: 0.07
-Nodes (18): CodeDrawer, Box, PngTicketRenderer, TicketArtifactFields, TicketCanvasRenderer, TicketDesign, TicketValues, TicketTextFieldDto (+10 more)
+Cohesion: 0.05
+Nodes (23): CodeDrawer, Box, PngTicketRenderer, TicketCanvasRenderer, TicketValues, TicketTextFieldDto, TicketTextField, TextAlign (+15 more)
 
-### Community 33 - "PayMongoSavedCardIntegrationTest"
-Cohesion: 0.18
-Nodes (3): AttachOutcome, CardVaultingStatus, PayMongoSavedCardIntegrationTest
-
-### Community 34 - "PayoutServiceImpl"
+### Community 34 - "VenueServiceImplTest"
 Cohesion: 0.14
-Nodes (13): EligiblePayoutsResponse, Item, Status, ON_HOLD, READY, Summary, EventScope, ALL (+5 more)
+Nodes (4): VenueCreateRequest, VenueUpdateRequest, VenueServiceImpl, VenueServiceImplTest
 
 ### Community 35 - ".post"
 Cohesion: 0.05
 Nodes (4): AuthRefreshIntegrationTest, ModerationActionIntegrationTest, CartCheckoutControllerTest, ResaleListingControllerTest
 
 ### Community 36 - ".requireAdmin"
-Cohesion: 0.12
-Nodes (7): CategoryCreateRequest, CategoryUpdateRequest, Category, CategoryRepository, CategoryService, CategoryServiceImpl, CategoryServiceImplTest
+Cohesion: 0.14
+Nodes (5): CategoryCreateRequest, CategoryUpdateRequest, CategoryRepository, CategoryServiceImpl, CategoryServiceImplTest
+
+### Community 37 - "ScannerDevice"
+Cohesion: 0.13
+Nodes (7): ScannerDevice, CheckoutIdempotencyKey, ResalePurchaseIdempotencyKey, ResalePurchaseIdempotencyKeyRepository, ResaleListingServiceImpl, ClaimOutcome, ResalePurchaseIdempotencyKeyManager
 
 ### Community 38 - ".platformSummary"
-Cohesion: 0.16
-Nodes (6): Figures, FinanceSummaryRepository, PayoutTotal, FinancePeriod, FinanceSummaryServiceImpl, FinanceSummaryServiceImplTest
+Cohesion: 0.09
+Nodes (18): FinanceSummaryResponse, GatewayFees, Orders, Organizers, Payouts, PayoutTotal, Platform, Sales (+10 more)
 
 ### Community 39 - "FunnelRepository"
-Cohesion: 0.18
-Nodes (6): DayActivity, DayViews, FunnelRepository, ViewTotals, CartActivityRecorder, FunnelRetentionJob
+Cohesion: 0.13
+Nodes (10): CartAction, ADD, CHECKOUT, EXPIRE, REMOVE, DayActivity, DayViews, FunnelRepository (+2 more)
+
+### Community 40 - "NotificationIntegrationTest"
+Cohesion: 0.09
+Nodes (5): EmailSender, NotificationServiceImpl, AuditLogServiceImplTest, NotificationIntegrationTest, NotificationServiceImplTest
+
+### Community 41 - "QR & Barcode Generation"
+Cohesion: 0.07
+Nodes (11): BarcodeGenerator, QrCodeGenerator, TicketArtifactFields, Rect, TicketDesign, BackgroundFit, CONTAIN, COVER (+3 more)
 
 ### Community 42 - "CartServiceImpl"
 Cohesion: 0.07
-Nodes (7): AppliedPromoCodeResponse, ApplyPromoCodeRequest, CartItemQuantityRequest, CartResponse, CartService, CartServiceImpl, CartControllerTest
+Nodes (6): AppliedPromoCodeResponse, CartItemQuantityRequest, CartResponse, CartService, CartServiceImpl, CartControllerTest
 
-### Community 44 - "Ticket Type Controller Tests"
-Cohesion: 0.08
-Nodes (5): TicketTypeController, TicketTypeResponse, TicketTypeUpdateRequest, TicketTypeService, TicketTypeControllerTest
+### Community 43 - "ModerationTargetType"
+Cohesion: 0.16
+Nodes (8): ModerationActionController, ModerationActionResponse, ModerationTargetType, EVENT, ORGANIZATION, USER, ModerationActionService, ModerationActionControllerTest
 
 ### Community 45 - ".currentUserId"
 Cohesion: 0.07
-Nodes (14): DisputeCreateRequest, DisputeResponse, DisputeUpdateRequest, Dispute, DisputeStatus, DISMISSED, INVESTIGATING, OPEN (+6 more)
+Nodes (12): DisputeController, DisputeCreateRequest, DisputeResponse, DisputeUpdateRequest, DisputeStatus, DISMISSED, INVESTIGATING, OPEN (+4 more)
 
 ### Community 46 - "PayMongo Checkout Rules"
 Cohesion: 0.08
 Nodes (10): Audit Log, Cross-Cutting Rules (NFR) Rules, Idempotency-Key, Exactly-One-Primary-Card Invariant, Saved Payment Methods Rules, Stripe Payment Gateway, UC-ATTND-04: Checkout / Complete Purchase, UC-ATTND-04b: Checkout with PayMongo (+2 more)
 
-### Community 47 - "Checkout Service Tests"
-Cohesion: 0.23
-Nodes (3): CheckoutIdempotencyKeyManager, ClaimOutcome, CheckoutServiceImplTest
+### Community 48 - "ApiException"
+Cohesion: 0.12
+Nodes (6): ApiException, InvalidCredentialsException, Status, FAILED, PENDING, SUCCEEDED
+
+### Community 49 - "Check-in Config Service"
+Cohesion: 0.21
+Nodes (3): CheckInConfigUpdateRequest, CheckInConfigServiceImpl, CheckInConfigServiceImplTest
 
 ### Community 50 - "PaymentMethod"
-Cohesion: 0.22
-Nodes (3): PaymentMethod, PaymentMethodRepository, PaymentMethodServiceImpl
+Cohesion: 0.16
+Nodes (3): PaymentMethodRepository, SavedCardCharge, PaymentMethodServiceImpl
 
 ### Community 51 - "event-ticketing-api-constants.md"
 Cohesion: 0.07
@@ -484,30 +489,30 @@ Nodes (20): ddl-auto=update and Flyway enabled simultaneously, Flyway migrations
 
 ### Community 53 - "Ticket Artifact Service"
 Cohesion: 0.13
-Nodes (7): BarcodeGenerator, TicketArtifactServiceImpl, Rect, TicketTemplateFormat, DIGITAL, PHYSICAL, TicketArtifactServiceImplTest
+Nodes (7): RenderedTicketArtifact, TicketArtifactService, TicketArtifactServiceImpl, TicketTemplateFormat, DIGITAL, PHYSICAL, TicketArtifactServiceImplTest
 
-### Community 56 - "TicketRepository"
-Cohesion: 0.04
-Nodes (64): CartItemResponse, Cart, CartItem, CartItemRepository, CartRepository, PaymentFailedException, UnprocessableEntityException, NotificationService (+56 more)
+### Community 56 - "CheckoutServiceImpl.java"
+Cohesion: 0.05
+Nodes (26): UnprocessableEntityException, EventCompletionService, OrderStatus, CANCELLED, PAID, PARTIALLY_REFUNDED, PENDING, REFUNDED (+18 more)
 
 ### Community 57 - "NotificationType"
-Cohesion: 0.09
-Nodes (20): NotificationResponse, NotificationChannel, EMAIL, PUSH, SMS, NotificationStatus, FAILED, PENDING (+12 more)
+Cohesion: 0.10
+Nodes (19): NotificationResponse, NotificationChannel, EMAIL, PUSH, SMS, NotificationStatus, FAILED, PENDING (+11 more)
 
 ### Community 59 - "PayoutResponse"
-Cohesion: 0.13
-Nodes (7): PayMongoWebhookController, PayoutTransferController, Line, PayoutBatchRequest, PayoutResponse, PayoutService, OrganizationPayoutControllerTest
+Cohesion: 0.08
+Nodes (20): OrganizationPayoutController, PayoutBatchController, PayoutTransferController, EligiblePayoutsResponse, Item, Status, ON_HOLD, READY (+12 more)
+
+### Community 61 - "CheckoutServiceImplPendingTest"
+Cohesion: 0.08
+Nodes (12): GoneException, CheckoutStartResponse, PendingCheckoutStatus, FAILED, PAID, PENDING, REFUNDED, PaymentGatewayClient (+4 more)
 
 ### Community 62 - "API Contract (Core) v1.2"
 Cohesion: 0.06
 Nodes (29): ci.yml (CI workflow, tests on push to main), CI postgres:16-alpine service container, CI test job (JDK 21, ./mvnw -B clean test), deploy.yml (Deploy to ECS Fargate workflow), Docker build and push to ECR tagged with commit SHA, AWS OIDC authentication (no stored access keys), terraform apply with container_image=SHA, AWS Deployment Guide (ECS Fargate + RDS) (+21 more)
 
-### Community 63 - "OrderRefundControllerTest"
-Cohesion: 0.17
-Nodes (3): RefundResponse, RefundService, OrderRefundControllerTest
-
 ### Community 64 - "PayMongo Gateway Client"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (3): VaultedCard, PayMongoPaymentGatewayClient, PayMongoPaymentGatewayClientTest
 
 ### Community 67 - "AI Agent Team Docs"
@@ -515,92 +520,100 @@ Cohesion: 0.09
 Nodes (22): api-architect agent (API/data design), application-owner agent (product/scope, BR and UC docs), code-reviewer agent (read-only review), developer agent (implements Java/Spring code), orchestrator agent (team leader, sequences pipeline), qa-tester agent (tests and proof docs), requirements-agent (owns requirements.md), CLAUDE.md (AI assistant guidance) (+14 more)
 
 ### Community 68 - "PostControllerTest"
-Cohesion: 0.13
-Nodes (3): PostResponse, PostService, PostControllerTest
+Cohesion: 0.10
+Nodes (7): PostResponse, PostUpdateRequest, PostKind, ANNOUNCEMENT, SALE, PostService, PostControllerTest
 
 ### Community 70 - "Cart, Inventory & Resale Rules"
 Cohesion: 0.08
 Nodes (14): Event Ticketing API Business Rules, Cart, Checkout & Orders Rules, Notifications Rules, Search & Discovery Rules, Ticket Inventory Rules, Ticket Transfer & Resale Rules, Waitlists Rules, Actor: Attendee (+6 more)
 
 ### Community 71 - "AuthController.java"
-Cohesion: 0.15
+Cohesion: 0.11
 Nodes (7): AuthController, AccessTokenResponse, LoginRequest, LogoutRequest, RefreshRequest, TokenPairResponse, AuthService
 
+### Community 72 - "ResaleListingIntegrationTest"
+Cohesion: 0.17
+Nodes (8): ResalePolicyResponse, ResalePolicyUpdateRequest, PriceCapRule, FACE_VALUE, FACE_VALUE_PLUS_FEE, NONE, ResaleListingIntegrationTest, EventResalePolicyControllerTest
+
 ### Community 73 - "Security & JPA Config"
-Cohesion: 0.08
-Nodes (8): CORS Allowed Origins (APP_CORS_ALLOWED_ORIGINS), S-7 CORS Policy, S-8 Method Security (@PreAuthorize), JpaAuditingConfig, SchedulingConfig, SecurityConfig, PayMongoClientConfig, StripeClientConfig
+Cohesion: 0.06
+Nodes (10): CORS Allowed Origins (APP_CORS_ALLOWED_ORIGINS), S-7 CORS Policy, S-8 Method Security (@PreAuthorize), JpaAuditingConfig, SchedulingConfig, SecurityConfig, PayMongoPaymentFeeSampler, PayMongoClientConfig (+2 more)
 
 ### Community 79 - "UserControllerTest"
-Cohesion: 0.09
-Nodes (4): UserController, UserResponse, UserService, UserControllerTest
+Cohesion: 0.08
+Nodes (5): UserController, RegisterRequest, UserResponse, UserService, UserControllerTest
+
+### Community 80 - "WaitlistControllerTest"
+Cohesion: 0.17
+Nodes (5): WaitlistController, WaitlistEntryResponse, WaitlistJoinRequest, WaitlistService, WaitlistControllerTest
 
 ### Community 81 - "PromoCodeServiceImplTest"
 Cohesion: 0.09
-Nodes (4): PromoCodeCreateRequest, PromoCodeUpdateRequest, PromoCodeServiceImpl, PromoCodeServiceImplTest
+Nodes (3): PromoCodeCreateRequest, PromoCodeServiceImpl, PromoCodeServiceImplTest
 
 ### Community 82 - "UserServiceImplTest"
 Cohesion: 0.12
-Nodes (5): RegisterRequest, UserPasswordUpdateRequest, UserUpdateRequest, UserServiceImpl, UserServiceImplTest
+Nodes (4): UserPasswordUpdateRequest, UserUpdateRequest, UserServiceImpl, UserServiceImplTest
 
 ### Community 83 - "ScannerDeviceControllerTest"
-Cohesion: 0.16
-Nodes (3): TicketDatasetEntryDto, TicketDatasetResponse, ScannerDeviceControllerTest
+Cohesion: 0.13
+Nodes (7): ScannerDeviceController, ScannerDeviceResponse, TicketDatasetEntryDto, TicketDatasetResponse, CheckInService, ScannerDeviceService, ScannerDeviceControllerTest
 
-### Community 84 - "TextFieldKey"
-Cohesion: 0.15
-Nodes (12): TextFieldKey, ATTENDEE_NAME, CUSTOM, EVENT_DATE, EVENT_NAME, EVENT_TIME, ROW, SEAT (+4 more)
+### Community 85 - "org.springframework.stereotype.Component"
+Cohesion: 0.07
+Nodes (8): N-1 Real Email/SMS Provider, DemoDataSeeder, MockPaymentFeeSampler, MockEmailSender, MockPaymentGatewayClient, CardVaultingStatus, MockStripeGateway, DemoDataSeederIntegrationTest
 
 ### Community 87 - "TransferResult"
-Cohesion: 0.14
-Nodes (4): PayMongoPayoutTransferClient, Bank, TransferRequest, PayMongoPayoutTransferClientTest
+Cohesion: 0.09
+Nodes (11): MockPayoutTransferClient, PayMongoPayoutTransferClient, Bank, PayoutTransferClient, TransferRequest, WalletAccount, WalletInfo, WalletLimits (+3 more)
 
 ### Community 89 - "Gateway Fee Service"
 Cohesion: 0.14
-Nodes (3): GatewayFeeSetting, GatewayFeeServiceImpl, GatewayFeeServiceImplTest
+Nodes (3): GatewayFeeSettingRepository, GatewayFeeServiceImpl, GatewayFeeServiceImplTest
 
 ### Community 92 - "Cart & Promo Test Plans"
 Cohesion: 0.11
 Nodes (27): Cart no admin bypass verified (ADMIN JWT 403), CartAccessIntegrationTest, CartServiceImpl, CartAccessIntegrationTest GA concurrency test, CartAccessIntegrationTest same-seat concurrency test, computeDiscount clamps FIXED discount to subtotal (never negative), Cart, CartItem & PromoCode (Phase 5a) Test Results, EventPromoCodeAccessIntegrationTest (+19 more)
 
 ### Community 93 - "CheckoutStartResponse"
-Cohesion: 0.12
-Nodes (10): CartCheckoutController, CheckoutStatusController, CheckoutRequest, CheckoutStartResponse, PendingCheckoutStatus, FAILED, PAID, PENDING (+2 more)
+Cohesion: 0.17
+Nodes (4): CartCheckoutController, PayMongoWebhookController, CheckoutRequest, CheckoutService
 
 ### Community 94 - "FeeScope"
-Cohesion: 0.15
-Nodes (12): PlatformFeeRule, FeeScope, EVENT, ORGANIZATION, PLATFORM, FeeType, COMBINED, FLAT (+4 more)
+Cohesion: 0.20
+Nodes (7): PlatformFeeRule, FeeScope, EVENT, ORGANIZATION, PLATFORM, PlatformFeeRuleRepository, PlatformFeeServiceImpl
 
-### Community 99 - "Payout Wallet Client"
-Cohesion: 0.14
-Nodes (11): MockPayoutTransferClient, PayoutTransferClient, Status, FAILED, PENDING, SUCCEEDED, WalletAccount, WalletInfo (+3 more)
-
-### Community 100 - "TicketTransferServiceImplTest"
-Cohesion: 0.18
-Nodes (3): ResaleListingRepository, TicketTransferServiceImpl, TicketTransferServiceImplTest
+### Community 100 - "OrganizationController"
+Cohesion: 0.21
+Nodes (3): OrganizationController, OrganizationMemberResponse, OrganizationResponse
 
 ### Community 103 - "PayoutAccountServiceImpl"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (5): PayoutAccountController, PayoutAccountRequest, PayoutAccountResponse, PayoutAccountService, PayoutAccountServiceImpl
 
-### Community 105 - "EventCompletionIntegrationTest"
-Cohesion: 0.05
-Nodes (5): CacheConfig, TransactionSynchronization, EventCompletionIntegrationTest, PublicEventCacheIntegrationTest, EventCompletionServiceTest
+### Community 104 - "Order"
+Cohesion: 0.09
+Nodes (12): CartItemResponse, Cart, CartItem, OrderResponse, Order, CheckoutServiceImpl, Quote, TicketTransfer (+4 more)
+
+### Community 105 - "PublicEventCacheEvictionListener"
+Cohesion: 0.13
+Nodes (4): R-5 Caching (Caffeine public event cache), CacheConfig, PublicEventCacheEvictionListener, TransactionSynchronization
+
+### Community 107 - "AuditDetails"
+Cohesion: 0.22
+Nodes (3): AuditDetails, AuditDetailsTest, SecretishRequest
 
 ### Community 109 - "Transfer & Resale Test Results"
 Cohesion: 0.12
 Nodes (18): OrderRepository.findByIdForUpdate pessimistic lock, GET refund-policy is not public (401/403/200 matrix), Resale Test Plan, Public listing endpoint returns only ACTIVE listings, Resale price cap (FACE_VALUE, FACE_VALUE_PLUS_FEE, NONE), Resale purchase requires Idempotency-Key, Resale purchase transfers ticket and pays seller (RESALE source), One active resale listing per ticket (DB partial unique index) (+10 more)
 
 ### Community 111 - "Gateway Fee Check Service"
-Cohesion: 0.16
-Nodes (8): Configured, GatewayFeeCheckResponse, Sample, SuggestedSetting, PaymentFeeSampler, PaymentSample, GatewayFeeCheckService, GatewayFeeCheckServiceImplTest
+Cohesion: 0.15
+Nodes (10): Configured, GatewayFeeCheckResponse, Sample, SuggestedSetting, PaymentFeeSampler, PaymentSample, GatewayFeeCheckService, GatewayFeeCheckServiceImpl (+2 more)
 
-### Community 112 - "Image Storage Tests"
-Cohesion: 0.16
-Nodes (3): ImageStorageService, StoredImage, ImageStorageServiceTest
-
-### Community 119 - "PlatformFeeRuleResponse"
-Cohesion: 0.19
-Nodes (4): EffectivePlatformFeeResponse, PlatformFeeRuleResponse, PlatformFeeService, PlatformFeeControllerTest
+### Community 119 - "PlatformFeeRuleRequest"
+Cohesion: 0.11
+Nodes (8): EffectivePlatformFeeResponse, PlatformFeeRuleRequest, PlatformFeeRuleResponse, FeeType, COMBINED, FLAT, PERCENTAGE, PlatformFeeControllerTest
 
 ### Community 124 - "Check-in Rules & Use Cases"
 Cohesion: 0.16
@@ -611,16 +624,20 @@ Cohesion: 0.17
 Nodes (4): Order Fee Snapshot, Payment Gateway Fee Rules, Platform Fee Rules, UC-ADMIN-08: Set the Payment Gateway Fee
 
 ### Community 126 - ".getEventFunnel"
-Cohesion: 0.27
+Cohesion: 0.33
 Nodes (5): AddToCart, CheckedOut, EventFunnelResponse, TicketTypeFunnel, ActivityTotal
 
 ### Community 127 - "PaymentMethodService"
-Cohesion: 0.15
-Nodes (4): PaymentMethodResponse, SetupIntentResponse, PaymentMethodService, SavedCardCharge
+Cohesion: 0.18
+Nodes (3): PaymentMethodResponse, SetupIntentResponse, PaymentMethodService
 
 ### Community 129 - "org.springframework.data.domain.Pageable"
-Cohesion: 0.05
-Nodes (20): OrganizationFinanceController, TransactionResponse, FinanceSummaryService, AuditLogEntryResponse, PageResponse, ModerationActionResponse, ModerationAction, ModerationTargetType (+12 more)
+Cohesion: 0.06
+Nodes (15): OrganizationFinanceController, Interval, DAY, MONTH, OrganizationEarningsResponse, Point, TransactionResponse, FinanceSummaryService (+7 more)
+
+### Community 130 - "CheckInConfigResponse"
+Cohesion: 0.29
+Nodes (3): CheckInConfigResponse, CheckInConfigService, EventCheckInConfigControllerTest
 
 ### Community 131 - "GatewayFeeController.java"
 Cohesion: 0.44
@@ -630,25 +647,21 @@ Nodes (4): GatewayFeeController, GatewayFeeSettingRequest, GatewayFeeSettingResp
 Cohesion: 0.14
 Nodes (4): Outcome, FAILURE, SUCCESS, BusinessAuditLoggerTest
 
-### Community 134 - ".create"
-Cohesion: 0.16
-Nodes (4): PostCreateRequest, PostKind, ANNOUNCEMENT, SALE
+### Community 135 - ".generateAccessToken"
+Cohesion: 0.09
+Nodes (3): DisputeIntegrationTest, TicketTemplateDesignIntegrationTest, UserSecurityIntegrationTest
 
 ### Community 136 - "Posts & Profile Picture Rules"
 Cohesion: 0.15
 Nodes (8): Posts (Sales & Announcements) Rules, Profile Picture Rules, Soft Delete, Actor: Any Registered User, UC-ADMIN-05: Publish, Schedule, Hide or Remove a Post, UC-USER-02: Log In, UC-USER-03: Set or Remove a Profile Picture, UC-USER-04: Read Sales and Announcements
 
+### Community 137 - "PayoutServiceImplSendTest"
+Cohesion: 0.13
+Nodes (8): Payout, PayoutAccount, TransferResult, PayoutAccountRepository, PayoutRepository, Destination, PayoutServiceImpl, PayoutServiceImplSendTest
+
 ### Community 140 - "RefundPolicyResponse"
 Cohesion: 0.21
-Nodes (5): EventRefundPolicyController, RefundPolicyResponse, RefundPolicyUpdateRequest, RefundPolicyService, EventRefundPolicyControllerTest
-
-### Community 141 - "OrganizationControllerTest"
-Cohesion: 0.07
-Nodes (8): OrganizationController, DocumentDto, OrganizationCreateRequest, OrganizationMemberResponse, OrganizationRejectRequest, OrganizationResponse, OrganizationService, OrganizationControllerTest
-
-### Community 143 - "ResalePolicyResponse"
-Cohesion: 0.20
-Nodes (5): EventResalePolicyController, ResalePolicyResponse, ResalePolicyUpdateRequest, ResalePolicyService, EventResalePolicyControllerTest
+Nodes (4): RefundPolicyResponse, RefundPolicyUpdateRequest, RefundPolicyService, EventRefundPolicyControllerTest
 
 ### Community 144 - "Checkout Test Plan"
 Cohesion: 0.15
@@ -657,6 +670,10 @@ Nodes (19): Checkout success creates Order/Payment, finalizes holds, Checkout Te
 ### Community 145 - "Refund & Payout Test Results"
 Cohesion: 0.18
 Nodes (11): Refunds & Payouts (Phase 8) Test Results, POST /events/{id}/cancel returns 202 Accepted, EventCancellationRefundIntegrationTest (cancel event triggers refunds), Full refund -> REFUNDED, partial -> PARTIALLY_REFUNDED state split, RefundIntegrationTest (real Postgres end-to-end refund), RefundPolicyIntegrationTest, RefundServiceImplTest (28 Mockito tests), Refund Test Plan (+3 more)
+
+### Community 147 - "UserRepository"
+Cohesion: 0.07
+Nodes (11): AuditLogEntryRepository, AuditLogServiceImpl, AuthServiceImpl, PayMongoCustomerService, AccountStatus, ACTIVE, SUSPENDED, UserRepository (+3 more)
 
 ### Community 151 - "Check-in Test Results"
 Cohesion: 0.18
@@ -671,12 +688,8 @@ Cohesion: 0.15
 Nodes (15): Cart & Hold, POST /v1/carts/{cartId}/checkout, Event Resource, Order / Payment / Ticket, Open Item: Payment Gateway Webhooks, TicketArtifact (rendered from TicketTemplate), Event.ticket_number_prefix, TicketType Resource (+7 more)
 
 ### Community 157 - "AnalyticsServiceImpl"
-Cohesion: 0.12
+Cohesion: 0.15
 Nodes (5): AudienceBuyer, EventInsightsRepository, SalesSlot, AnalyticsServiceImpl, AnalyticsServiceImplTest
-
-### Community 158 - "ResalePolicyResponse"
-Cohesion: 0.12
-Nodes (4): ResalePolicyServiceImpl, AuditDetailsTest, SecretishRequest, ResalePolicyServiceImplTest
 
 ### Community 160 - "Event Hardening Test Results"
 Cohesion: 0.16
@@ -691,12 +704,8 @@ Cohesion: 0.19
 Nodes (12): checkout_idempotency_keys, idx_checkout_idempotency_keys_buyer_id, idx_checkout_idempotency_keys_cart_id, idx_orders_promo_code_buyer_status, idx_orders_promo_code_status, orders, payments, uq_orders_cart_id (+4 more)
 
 ### Community 168 - "uuid"
-Cohesion: 0.03
-Nodes (24): OrganizationMemberId, PayoutStatus, CANCELLED, FAILED, PAID, PROCESSING, SCHEDULED, PayoutAccountRepository (+16 more)
-
-### Community 169 - "ValidationResultResponse"
-Cohesion: 0.17
-Nodes (3): TicketSummaryDto, ValidationResultResponse, CheckInControllerTest
+Cohesion: 0.04
+Nodes (10): RefreshTokenRepository, CheckInRecordRepository, FallbackScanRecordRepository, GatewayFeeActualSyncService, NotificationRepository, ResalePolicyRepository, TicketTransferRepository, SalesStatus (+2 more)
 
 ### Community 171 - "Terraform State Backend"
 Cohesion: 0.25
@@ -718,13 +727,21 @@ Nodes (10): idx_payouts_organization_id, idx_refunds_order_id, payouts, refund_p
 Cohesion: 0.33
 Nodes (3): Promo Codes & Discounts Rules, UC-ATTND-03: Apply a Promo Code, UC-EVENT-06: Create a Promo Code
 
-### Community 183 - "EventAnalyticsResponse"
-Cohesion: 0.15
-Nodes (10): EventAnalyticsController, EventAnalyticsResponse, AgeGroup, EventAudienceResponse, Day, Day, EventSalesPatternsResponse, PlatformAnalyticsResponse (+2 more)
+### Community 182 - "CategoryController"
+Cohesion: 0.22
+Nodes (3): CategoryController, CategoryResponse, CategoryService
 
-### Community 186 - "CheckInServiceImplTest.java"
+### Community 183 - "EventAnalyticsResponse"
+Cohesion: 0.12
+Nodes (9): EventAnalyticsController, EventAnalyticsResponse, AgeGroup, EventAudienceResponse, Day, Day, EventSalesPatternsResponse, PlatformAnalyticsResponse (+1 more)
+
+### Community 184 - "org.springframework.data.domain.Page"
 Cohesion: 0.09
-Nodes (21): CheckInConfigResponse, CheckInRecordResponse, CheckInRecord, CheckInMode, PURE_OFFLINE, STANDARD, CheckInResult, DUPLICATE (+13 more)
+Nodes (14): ModerationAction, ModerationActionRepository, PendingCheckout, PendingCheckoutRepository, Post, PostRepository, ResaleListingResponse, ResaleListing (+6 more)
+
+### Community 186 - "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc"
+Cohesion: 0.12
+Nodes (14): JwtAuthenticationFilter, CheckInResult, DUPLICATE, INVALID, VALID, WRONG_EVENT, CheckInSourceType, RECONCILED_FALLBACK (+6 more)
 
 ### Community 187 - "Dispute Test Results"
 Cohesion: 0.27
@@ -742,17 +759,9 @@ Nodes (5): Organization Onboarding Rules, OrganizationStatus enum (PENDING, APPR
 Cohesion: 0.20
 Nodes (9): Audit log of sensitive actions (requirement 5.3), Payments, refunds and payouts requirement, Security and PCI-DSS requirements, Dispute and AuditLogEntry resources, Phase 13 Audit Log, Phase 8 Refunds and Payouts, Three-tier test coverage (Mockito, WebMvcTest, SpringBootTest), Audit Log Test Plan (+1 more)
 
-### Community 193 - "TicketTemplateResponse"
-Cohesion: 0.36
-Nodes (3): TicketTemplateController, TicketTemplateResponse, TicketTemplateService
-
 ### Community 195 - "Analytics Requirements"
 Cohesion: 0.22
 Nodes (8): Analytics and reporting requirement, Phase 14 Analytics, Admin role (ADMIN), Super admin role (SUPER_ADMIN), BR-ADMIN-002 unified ModerationAction log, Analytics Test Plan, Analytics Test Results (Phase 14), AnalyticsService and Event/Platform analytics controllers
-
-### Community 197 - "RegisterRequest.java"
-Cohesion: 0.29
-Nodes (3): UserInput, ValidBirthDate, ValidEndTime
 
 ### Community 198 - "Transfer & Resale Schema"
 Cohesion: 0.31
@@ -786,9 +795,9 @@ Nodes (8): N-4 Waitlist Offer Lifecycle, P-1 Payout Generation Job, R-10 Schedul
 Cohesion: 0.25
 Nodes (8): cloudflared Tunnel for Local Webhooks, GET /payment-gateway-fee/check, Finance Summary with Real PayMongo Fee, Payment Gateway Fee Setting (payer, domestic/foreign rates), Organizer Payouts via Wallet Transfers (InstaPay/PESONet), Encrypted Payout Account (PAYOUT_ENCRYPTION_KEY), GET /payout-wallet, Paymongo-Signature HMAC Verification
 
-### Community 209 - "MoneyDto"
-Cohesion: 0.12
-Nodes (19): FinanceSummaryResponse, GatewayFees, Orders, Organizers, Payouts, PayoutTotal, Platform, Sales (+11 more)
+### Community 209 - "PayoutWalletResponse"
+Cohesion: 0.17
+Nodes (6): StrictLocalDateDeserializer, Account, Balance, Limits, PayoutWalletResponse, Usage
 
 ### Community 210 - "Ticket Rendering Results"
 Cohesion: 0.39
@@ -815,12 +824,12 @@ Cohesion: 0.38
 Nodes (6): Venue Test Plan, Venue details publicly viewable without login, Venue without address (virtual venue), Venue Feature Test Results, Blank name on PATCH rejected with 400, existsById does not filter soft-deleted orgs (pre-existing gap)
 
 ### Community 218 - "StripeGateway"
-Cohesion: 0.23
+Cohesion: 0.26
 Nodes (3): CardDetails, StripeGateway, StripeGatewayWiringIntegrationTest
 
-### Community 220 - "SalesStatus"
-Cohesion: 0.17
-Nodes (4): TicketTypeSalesStatusRequest, SalesStatus, ACTIVE, PAUSED
+### Community 220 - "TicketTypeController"
+Cohesion: 0.35
+Nodes (4): TicketTypeController, TicketTypeOrderRequest, TicketTypeResponse, TicketTypeSalesStatusRequest
 
 ### Community 221 - "Ticket Types & Seats Schema"
 Cohesion: 0.33
@@ -833,6 +842,10 @@ Nodes (6): Org-scoped role assignment: owner, organizer, check-in staff, Payout 
 ### Community 223 - "Check-in Modes Design"
 Cohesion: 0.50
 Nodes (5): Pure offline check-in mode, Standard (online) check-in mode, CheckInConfig, ScannerDevice, FallbackScanRecord, CheckInRecord, Phase 10 Check-in and Scanning, Scanner device (ROLE_SCANNER_DEVICE)
+
+### Community 226 - "RefundRuleType"
+Cohesion: 0.33
+Nodes (4): RefundRuleType, CUSTOM, NO_REFUNDS, REFUNDABLE_UNTIL_N_DAYS
 
 ### Community 228 - "Pending Checkouts Schema"
 Cohesion: 0.70
@@ -851,8 +864,12 @@ Cohesion: 0.67
 Nodes (4): Platform administration (approve, suspend, disputes), Phase 12 Disputes and Admin Moderation, Admin Moderation Test Plan, Admin Moderation Test Results (Phase 12)
 
 ### Community 232 - "StripeCustomerServiceImpl"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (3): StripeCustomerService, StripeCustomerServiceImpl, StripeCustomerServiceImplTest
+
+### Community 233 - "PromoCodeStatus"
+Cohesion: 0.50
+Nodes (4): PromoCodeStatusRequest, PromoCodeStatus, ACTIVE, PAUSED
 
 ### Community 234 - "Disputes Schema"
 Cohesion: 0.83
@@ -891,32 +908,32 @@ Cohesion: 0.22
 Nodes (5): CodePlacement, CodeType, BARCODE, NONE, QR
 
 ### Community 288 - "jakarta.servlet.http.HttpServletRequest"
-Cohesion: 0.39
+Cohesion: 0.43
 Nodes (3): EventViewController, ViewRequest, EventViewService
 
 ### Community 289 - "V57__event_funnel_tracking.sql"
 Cohesion: 0.43
 Nodes (7): cart_activity, event_views, idx_cart_activity_event_time, idx_cart_activity_time, idx_event_views_event_time, idx_event_views_event_visitor, idx_event_views_time
 
-### Community 290 - "CartActivityRecorder.java"
-Cohesion: 0.20
-Nodes (5): CartAction, ADD, CHECKOUT, EXPIRE, REMOVE
+### Community 290 - "RefundStatus"
+Cohesion: 0.40
+Nodes (4): RefundStatus, COMPLETED, FAILED, PENDING
 
 ### Community 293 - "PromoCodeController"
-Cohesion: 0.38
-Nodes (3): PromoCodeController, PromoCodeResponse, PromoCodeStatusRequest
+Cohesion: 0.40
+Nodes (3): PromoCodeController, PromoCodeResponse, PromoCodeUpdateRequest
 
 ### Community 297 - "GatewayFeePayer"
-Cohesion: 0.32
+Cohesion: 0.24
 Nodes (5): GatewayFeePayer, CUSTOMER, ORGANIZATION, PLATFORM, GatewayFeeQuote
 
-### Community 299 - "OrganizationEarningsResponse"
-Cohesion: 0.43
-Nodes (5): Interval, DAY, MONTH, OrganizationEarningsResponse, Point
-
 ### Community 300 - "PostStatus"
-Cohesion: 0.29
+Cohesion: 0.25
 Nodes (5): PostStatus, EXPIRED, HIDDEN, LIVE, SCHEDULED
+
+### Community 301 - "ImageStorageService"
+Cohesion: 0.12
+Nodes (4): ImageStorageService, StoredImage, UploadedFileUrls, UploadedFileUrlsTest
 
 ## Ambiguous Edges - Review These
 - `Web App Changes (PayMongo.js, clientKey, polling)` → `CORS Allowed Origins (APP_CORS_ALLOWED_ORIGINS)`  [AMBIGUOUS]
@@ -925,23 +942,23 @@ Nodes (5): PostStatus, EXPIRED, HIDDEN, LIVE, SCHEDULED
 ## Knowledge Gaps
 - **276 isolated node(s):** `com.junaldadlawan:event-ticketing-api`, `DAY`, `MONTH`, `ADD`, `REMOVE` (+271 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 582 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **159 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **148 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `MockEmailSender` connect `EventRepository` to `API Contract (Core) v1.2`?**
+- **Why does `MockEmailSender` connect `org.springframework.stereotype.Component` to `NotificationIntegrationTest`, `API Contract (Core) v1.2`?**
   _High betweenness centrality (0.095) - this node is a cross-community bridge._
 - **What connects `com.junaldadlawan:event-ticketing-api`, `DAY`, `MONTH` to the rest of the system?**
   _276 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Money` be split into smaller, more focused modules?**
-  _Cohesion score 0.1179197450383891 - nodes in this community are weakly interconnected._
-- **Why does `Deliberately Not Set Up (Multi-AZ, autoscaling, SMTP)` connect `API Contract (Core) v1.2` to `EventRepository`?**
-  _High betweenness centrality (0.094) - this node is a cross-community bridge._
 - **Should `TicketControllerTest` be split into smaller, more focused modules?**
-  _Cohesion score 0.08879492600422834 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08858858858858859 - nodes in this community are weakly interconnected._
+- **Why does `Deliberately Not Set Up (Multi-AZ, autoscaling, SMTP)` connect `API Contract (Core) v1.2` to `org.springframework.stereotype.Component`?**
+  _High betweenness centrality (0.094) - this node is a cross-community bridge._
 - **Should `list` be split into smaller, more focused modules?**
-  _Cohesion score 0.10885186999836681 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08882053857259431 - nodes in this community are weakly interconnected._
+- **Should `MockMvc Test Infrastructure` be split into smaller, more focused modules?**
+  _Cohesion score 0.07753768844221105 - nodes in this community are weakly interconnected._
 
 ### Low-confidence Hints
 _AMBIGUOUS edges — the extractor was unsure. Verify before acting on these._

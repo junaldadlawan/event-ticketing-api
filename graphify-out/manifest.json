@@ -90,9 +90,9 @@
     "semantic_hash": "ab50dd89da7da2346b28003352eeeeeb"
   },
   "pom.xml": {
-    "mtime": 1792438767.6024723,
-    "seen": 1792442129.4076028,
-    "ast_hash": "c3df7b36f05ff6a81bf370d3f8bf144d",
+    "mtime": 1792467928.8657792,
+    "seen": 1792468339.657653,
+    "ast_hash": "3be679a4f698cdfb7148433a0bd2edd2",
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/EventTicketingApiApplication.java": {
@@ -2550,10 +2550,10 @@
     "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/upload/controller/UploadController.java": {
-    "mtime": 1791996738.3373413,
-    "seen": 1792088844.8380508,
-    "ast_hash": "927026feaf74b88fdf5af026fdd827c4",
-    "semantic_hash": "927026feaf74b88fdf5af026fdd827c4"
+    "mtime": 1792468002.9411073,
+    "seen": 1792468339.6604326,
+    "ast_hash": "40f7e1935bfa86b49c1153a6fb2313e2",
+    "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/upload/dto/UploadedImageResponse.java": {
     "mtime": 1791996738.3396225,
@@ -2562,10 +2562,10 @@
     "semantic_hash": "64446fe20b69d706a1da34c158750895"
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/upload/service/ImageStorageService.java": {
-    "mtime": 1791996738.3423269,
-    "seen": 1792088844.8380532,
-    "ast_hash": "ef7b6a86241436216bb5310ae614a6fc",
-    "semantic_hash": "ef7b6a86241436216bb5310ae614a6fc"
+    "mtime": 1792467991.430526,
+    "seen": 1792468339.6604412,
+    "ast_hash": "9d3c3b267b9790e7d46e5a9f837f86fb",
+    "semantic_hash": ""
   },
   "src/main/java/com/junaldadlawan/event_ticketing_api/upload/service/UploadedFileUrls.java": {
     "mtime": 1791996738.3431034,
@@ -3828,22 +3828,22 @@
     "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/upload/UploadIntegrationTest.java": {
-    "mtime": 1791996738.5909095,
-    "seen": 1792088844.838304,
-    "ast_hash": "86cb7a283b492198ae96d0966264d711",
-    "semantic_hash": "86cb7a283b492198ae96d0966264d711"
+    "mtime": 1792468043.236965,
+    "seen": 1792468339.6613429,
+    "ast_hash": "57ed17f70a863d33adb44297dfb64384",
+    "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/upload/service/ImageStorageServiceTest.java": {
-    "mtime": 1791996738.5909095,
-    "seen": 1792088844.838305,
-    "ast_hash": "0c58708a48a8e6dc663d5fdcfa5ed7fd",
-    "semantic_hash": "0c58708a48a8e6dc663d5fdcfa5ed7fd"
+    "mtime": 1792468058.988476,
+    "seen": 1792468339.6613467,
+    "ast_hash": "664841222511216708221010a28d9d72",
+    "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/upload/service/UploadedFileUrlsTest.java": {
-    "mtime": 1791996738.5909095,
-    "seen": 1792088844.8383062,
-    "ast_hash": "52b93d5a4a934f92a71010cd682bd46e",
-    "semantic_hash": "52b93d5a4a934f92a71010cd682bd46e"
+    "mtime": 1792468091.496426,
+    "seen": 1792468339.6613493,
+    "ast_hash": "207802e59e0c4651082170d803e241e8",
+    "semantic_hash": ""
   },
   "src/test/java/com/junaldadlawan/event_ticketing_api/user/AvatarIntegrationTest.java": {
     "mtime": 1791996738.5952199,
@@ -4074,9 +4074,9 @@
     "semantic_hash": "413dc1cdacf9b8ea78e98ce7a5692af3"
   },
   "openapi.yaml": {
-    "mtime": 1792467188.844807,
-    "seen": 1792467255.8476443,
-    "ast_hash": "36b23ca5166a84562bcac5475467a4ea",
+    "mtime": 1792468263.213993,
+    "seen": 1792468339.6614952,
+    "ast_hash": "a5bdb685ee832c02173ef21ce9918fae",
     "semantic_hash": ""
   },
   "testing/admin-moderation-test-plan.md": {
@@ -4611,6 +4611,36 @@
     "mtime": 1792443728.2356067,
     "seen": 1792444141.8359575,
     "ast_hash": "f7d39ea8c1ef8cb4aa71866d76ba2305",
+    "semantic_hash": ""
+  },
+  "src/main/java/com/junaldadlawan/event_ticketing_api/upload/storage/FileStorage.java": {
+    "mtime": 1792467952.7974281,
+    "seen": 1792468339.6604493,
+    "ast_hash": "1687e661aa7d31aa4e2578feb8d6c661",
+    "semantic_hash": ""
+  },
+  "src/main/java/com/junaldadlawan/event_ticketing_api/upload/storage/LocalFileStorage.java": {
+    "mtime": 1792467953.0724566,
+    "seen": 1792468339.6604536,
+    "ast_hash": "4f414c324913220cf68178f92461c713",
+    "semantic_hash": ""
+  },
+  "src/main/java/com/junaldadlawan/event_ticketing_api/upload/storage/R2FileStorage.java": {
+    "mtime": 1792467953.3158011,
+    "seen": 1792468339.6604571,
+    "ast_hash": "cca65fde392bcd02928fbb80bc2e5caf",
+    "semantic_hash": ""
+  },
+  "src/test/java/com/junaldadlawan/event_ticketing_api/upload/storage/FileStorageSelectionTest.java": {
+    "mtime": 1792468091.9410827,
+    "seen": 1792468339.6613529,
+    "ast_hash": "5cf60a212eb4fc4574d6070c5a652d82",
+    "semantic_hash": ""
+  },
+  "src/test/java/com/junaldadlawan/event_ticketing_api/upload/storage/R2FileStorageTest.java": {
+    "mtime": 1792468091.7224886,
+    "seen": 1792468339.6613562,
+    "ast_hash": "f5a646511bd32d78422792d282b8319d",
     "semantic_hash": ""
   }
 }

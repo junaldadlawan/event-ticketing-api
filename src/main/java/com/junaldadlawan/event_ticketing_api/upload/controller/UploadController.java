@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,7 +25,9 @@ import java.time.Duration;
 /**
  * Image upload for the ticket template designer: {@code POST /api/v1/uploads}
  * (any signed-in user) stores one PNG/JPEG/WebP/GIF of up to 5 MB and returns
- * its absolute URL; {@code GET /api/v1/uploads/files/{name}} serves it publicly
+ * its absolute URL, under the optional {@code folder} it is for (events, organizations,
+ * platform, tickets, users; default temporary); {@code GET /api/v1/uploads/files/{folder}/{name}}
+ * serves it publicly from whichever storage is configured
  * (the image ends up on tickets, which buyers and scanners render without any
  * special access).
  */
@@ -43,14 +46,21 @@ public class UploadController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public UploadedImageResponse upload(@RequestPart("file") MultipartFile file) {
-        ImageStorageService.StoredImage stored = imageStorageService.store(file);
+    public UploadedImageResponse upload(@RequestPart("file") MultipartFile file,
+                                        @RequestParam(value = "folder", defaultValue = ImageStorageService.DEFAULT_FOLDER) String folder) {
+        ImageStorageService.StoredImage stored = imageStorageService.store(file, folder);
         String base = publicBaseUrl == null || publicBaseUrl.isBlank()
                 ? ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString()
                 : publicBaseUrl.replaceAll("/+$", "");
         return new UploadedImageResponse(base + FILES_PATH + stored.name(), stored.contentType(), stored.size());
     }
 
+    @GetMapping("/files/{folder}/{name}")
+    public ResponseEntity<Resource> serve(@PathVariable String folder, @PathVariable String name) {
+        return serve(folder + "/" + name);
+    }
+
+    /** Files uploaded before folders existed. */
     @GetMapping("/files/{name}")
     public ResponseEntity<Resource> serve(@PathVariable String name) {
         ImageStorageService.LoadedImage image = imageStorageService.load(name);

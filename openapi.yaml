@@ -1083,21 +1083,49 @@ paths:
               required: [file]
               properties:
                 file: { type: string, format: binary }
+                folder:
+                  type: string
+                  enum: [events, organizations, platform, temporary, tickets, users]
+                  default: temporary
+                  description: "What the image is for, which decides where it is stored: events (event images), organizations (organization documents), platform (posts), tickets (ticket template backgrounds and logos), users (profile pictures). Omitted = temporary."
       responses:
         "201":
-          description: Stored
+          description: Stored. The returned URL is `/uploads/files/{folder}/{name}` on this server.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadedImage" }
-        "400": { description: "Not a PNG/JPEG/WebP/GIF image, or no file part" }
+        "400": { description: "Not a PNG/JPEG/WebP/GIF image, no file part, or an unknown folder" }
         "413": { description: Larger than 5 MB }
+
+  /uploads/files/{folder}/{name}:
+    get:
+      operationId: getUploadedImageInFolder
+      tags: [Uploads]
+      security: []
+      summary: Serve an uploaded image (public), from local disk or the private R2 bucket
+      parameters:
+        - name: folder
+          in: path
+          required: true
+          schema: { type: string, enum: [events, organizations, platform, temporary, tickets, users] }
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The image
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads/files/{name}:
     get:
       operationId: getUploadedImage
       tags: [Uploads]
       security: []
-      summary: Serve an uploaded image (public)
+      summary: Serve an uploaded image (public) stored before uploads had folders
       parameters:
         - name: name
           in: path

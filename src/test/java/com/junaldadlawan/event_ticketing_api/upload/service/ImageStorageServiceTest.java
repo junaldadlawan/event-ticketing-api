@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.upload.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
+import com.junaldadlawan.event_ticketing_api.upload.storage.LocalFileStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,7 +28,7 @@ class ImageStorageServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ImageStorageService(directory.toString(), 5 * 1024 * 1024);
+        service = new ImageStorageService(new LocalFileStorage(directory.toString()), 5 * 1024 * 1024);
     }
 
     private byte[] image(String format) throws Exception {
@@ -51,7 +52,7 @@ class ImageStorageServiceTest {
 
         assertThat(stored.contentType()).isEqualTo("image/png");
         assertThat(stored.size()).isEqualTo(bytes.length);
-        assertThat(stored.name()).matches("[0-9a-f-]{36}\\.png");
+        assertThat(stored.name()).matches("temporary/[0-9a-f-]{36}\\.png");
         assertThat(stored.name()).doesNotContain("holiday");
         assertThat(Files.readAllBytes(directory.resolve(stored.name()))).isEqualTo(bytes);
     }
@@ -72,6 +73,41 @@ class ImageStorageServiceTest {
 
         assertThat(stored.contentType()).isEqualTo("image/webp");
         assertThat(stored.name()).endsWith(".webp");
+    }
+
+    // ---- bucket layout (same keys on local disk and in R2) ----
+
+    @Test
+    void store_eachFolder_isTheKeyPrefix_andTheSameLayoutOnDisk() throws Exception {
+        for (String folder : new String[] {"events", "organizations", "platform", "temporary", "tickets", "users"}) {
+            String name = service.store(file("a.png", "image/png", image("png")), folder).name();
+
+            assertThat(name).matches(folder + "/[0-9a-f-]{36}\\.png");
+            assertThat(directory.resolve(folder).resolve(name.substring(folder.length() + 1))).isRegularFile();
+            assertThat(service.load(name).contentType()).isEqualTo("image/png");
+        }
+        assertThat(ImageStorageService.FOLDERS).containsExactlyInAnyOrder(
+                "events", "organizations", "platform", "temporary", "tickets", "users");
+    }
+
+    @Test
+    void store_unknownFolder_isRejected_andNothingIsWritten() {
+        for (String folder : new String[] {"secrets", "../users", "users/x", "", "USERS"}) {
+            assertThatThrownBy(() -> service.store(file("a.png", "image/png", image("png")), folder))
+                    .isInstanceOf(BadRequestException.class);
+        }
+        assertThatThrownBy(() -> service.store(file("a.png", "image/png", image("png")), null))
+                .isInstanceOf(BadRequestException.class);
+        assertThat(directory.toFile().list()).isEmpty();
+    }
+
+    @Test
+    void load_aFlatNameFromBeforeFolders_stillWorks() throws Exception {
+        String name = UUID.randomUUID() + ".png";
+        Files.write(directory.resolve(name), image("png"));
+
+        assertThat(service.load(name).contentType()).isEqualTo("image/png");
+        assertThat(service.exists(name)).isTrue();
     }
 
     @Test
@@ -122,7 +158,7 @@ class ImageStorageServiceTest {
 
     @Test
     void store_overTheSizeLimit_isRejected() throws Exception {
-        ImageStorageService small = new ImageStorageService(directory.toString(), 10);
+        ImageStorageService small = new ImageStorageService(new LocalFileStorage(directory.toString()), 10);
 
         assertThatThrownBy(() -> small.store(file("a.png", "image/png", image("png"))))
                 .isInstanceOf(BadRequestException.class)

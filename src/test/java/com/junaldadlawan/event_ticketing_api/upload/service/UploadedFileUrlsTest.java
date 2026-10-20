@@ -62,6 +62,16 @@ class UploadedFileUrlsTest {
     }
 
     @Test
+    void ownFileName_acceptsAnUploadInABucketFolder_butNotAnUnknownFolder() {
+        when(storage.exists("users/" + NAME)).thenReturn(true);
+
+        assertThat(urls.ownFileName("https://api.example.com/api/v1/uploads/files/users/" + NAME)).contains("users/" + NAME);
+        assertThat(urls.ownFileName("https://api.example.com/api/v1/uploads/files/secrets/" + NAME)).isEmpty();
+        assertThat(urls.ownFileName("https://api.example.com/api/v1/uploads/files/users/../" + NAME)).isEmpty();
+        assertThat(urls.ownFileName("https://api.example.com/api/v1/uploads/files/users/users/" + NAME)).isEmpty();
+    }
+
+    @Test
     void ownFileName_rejectsEverythingElse() {
         for (String bad : new String[] {
                 null, "", "   ",
