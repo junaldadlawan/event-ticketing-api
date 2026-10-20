@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.analytics.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAnalyticsResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAudienceResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventSalesPatternsResponse;
@@ -96,7 +97,7 @@ class AnalyticsServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(accessGuard.currentUserId()).thenReturn(callerId);
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.ANALYTICS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.getEventAnalytics(eventId))
                 .isInstanceOf(ForbiddenException.class);

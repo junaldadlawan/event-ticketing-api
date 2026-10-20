@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refund.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
@@ -321,7 +322,7 @@ public class RefundServiceImpl implements RefundService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the event's organizer/owner or an admin may issue a refund for this order");
         }
@@ -349,7 +350,7 @@ public class RefundServiceImpl implements RefundService {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(anyTicket.get().getEventId())
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + anyTicket.get().getEventId() + " not found"));
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, event.getOrganizationId(), OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the order's buyer, the event's organizer/owner, or an admin may view this order's refunds");
         }

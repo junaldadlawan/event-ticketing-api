@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refundpolicy.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -98,7 +99,7 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event's refund policy");
         }
@@ -116,7 +117,7 @@ public class RefundPolicyServiceImpl implements RefundPolicyService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, event.getOrganizationId(), OrganizationPermission.ORDERS_REFUNDS);
         if (isOwnerOrOrganizer) {
             return;
         }

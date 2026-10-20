@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.order.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -116,6 +117,6 @@ public class OrderServiceImpl implements OrderService {
 
     private boolean isOwnerOrOrganizer(UUID userId, UUID organizationId) {
         return accessGuard.hasRole(userId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(userId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(userId, organizationId, OrganizationPermission.ORDERS_REFUNDS);
     }
 }

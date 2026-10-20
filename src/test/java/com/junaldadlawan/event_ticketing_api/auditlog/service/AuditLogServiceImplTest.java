@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.auditlog.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.entity.AuditLogEntry;
 import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -153,7 +154,7 @@ class AuditLogServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ANALYTICS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.listForEvent(eventId, PageRequest.of(0, 20)))
                 .isInstanceOf(ForbiddenException.class);
@@ -170,7 +171,7 @@ class AuditLogServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ANALYTICS)).thenReturn(true);
         AuditLogEntry byOrganizer = AuditLogEntry.builder().actorId(organizerId).action("ticket_type.created").eventId(eventId).build();
         AuditLogEntry bySystem = AuditLogEntry.builder().action("event.completed").eventId(eventId).build();
         when(auditLogEntryRepository.findByEventIdOrderByCreatedAtDesc(eventId, pageable))

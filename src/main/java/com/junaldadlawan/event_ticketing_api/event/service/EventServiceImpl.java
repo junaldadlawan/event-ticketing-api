@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.category.service.CategoryService;
@@ -327,7 +328,7 @@ public class EventServiceImpl implements EventService {
 
     private boolean isOwnerOrOrganizer(UUID userId, UUID organizationId) {
         return accessGuard.hasRole(userId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(userId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(userId, organizationId, OrganizationPermission.EVENTS);
     }
 
     private String generateUniqueTicketPrefix() {

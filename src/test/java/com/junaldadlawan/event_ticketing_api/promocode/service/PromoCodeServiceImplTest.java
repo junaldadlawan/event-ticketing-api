@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.promocode.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -119,7 +120,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(true);
         when(promoCodeRepository.findByEventIdAndCodeAndDeletedAtIsNull(eventId, "SAVE10")).thenReturn(Optional.empty());
         when(promoCodeRepository.save(any(PromoCode.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -165,7 +166,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(eventId, createRequest(DiscountType.PERCENTAGE, BigDecimal.valueOf(10),
                 Instant.now(), Instant.now().plus(1, ChronoUnit.DAYS))))
@@ -182,7 +183,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(eventId, createRequest(DiscountType.PERCENTAGE, BigDecimal.valueOf(10),
                 Instant.now(), Instant.now().plus(1, ChronoUnit.DAYS))))
@@ -326,7 +327,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(eventId)).isInstanceOf(ForbiddenException.class);
         verify(promoCodeRepository, never()).findByEventIdAndDeletedAtIsNull(any());
@@ -340,7 +341,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(eventId)).isInstanceOf(ForbiddenException.class);
     }
@@ -605,7 +606,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(true);
         lenient().when(promoCodeRepository.save(any(PromoCode.class))).thenAnswer(invocation -> invocation.getArgument(0));
         assertThat(service.update(id, nothing())).isNotNull();
 
@@ -623,7 +624,7 @@ class PromoCodeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.PROMO_CODES)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(id, nothing())).isInstanceOf(ForbiddenException.class);
         assertThatThrownBy(() -> service.setStatus(id, PromoCodeStatus.PAUSED)).isInstanceOf(ForbiddenException.class);

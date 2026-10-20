@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.ticket.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -37,7 +38,7 @@ public class TicketAccessGuard {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(ticket.getEventId())
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + ticket.getEventId() + " not found"));
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, event.getOrganizationId(), OrganizationPermission.ORDERS_REFUNDS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the ticket's owning buyer, the event's organizer/owner, or an admin may view this ticket");
         }

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.payout.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.payout.dto.PayoutGenerateRequest;
 import com.junaldadlawan.event_ticketing_api.order.enums.PayeeType;
@@ -154,7 +155,7 @@ class PayoutServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.FINANCE)).thenReturn(true);
         Pageable pageable = PageRequest.of(0, 20);
         when(payoutRepository.findByOrganizationId(eq(orgId), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.of(), pageable, 0));
@@ -186,7 +187,7 @@ class PayoutServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.FINANCE)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(orgId, PageRequest.of(0, 20)))
                 .isInstanceOf(ForbiddenException.class);
@@ -201,7 +202,7 @@ class PayoutServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(ownerOfDifferentOrgId);
         when(accessGuard.hasRole(ownerOfDifferentOrgId, otherOrgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(ownerOfDifferentOrgId, otherOrgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(ownerOfDifferentOrgId, otherOrgId, OrganizationPermission.FINANCE)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(otherOrgId, PageRequest.of(0, 20)))
                 .isInstanceOf(ForbiddenException.class);

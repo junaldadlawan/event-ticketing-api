@@ -16,6 +16,7 @@ import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationReject
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
@@ -27,6 +28,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -171,6 +173,9 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (request.role() == OrganizationRole.OWNER) {
             throw new ForbiddenException("The owner role cannot be granted through this endpoint");
         }
+        if (request.permissions() != null && request.role() != OrganizationRole.ORGANIZER) {
+            throw new BadRequestException("permissions only apply to the ORGANIZER role");
+        }
         UUID callerId = accessGuard.currentUserId();
         UUID targetUserId = request.userId();
 
@@ -180,20 +185,41 @@ public class OrganizationServiceImpl implements OrganizationService {
             if (!callerHasStandingRole) {
                 throw new ForbiddenException("Must already hold a role in this organization to self-assign");
             }
-        } else {
-            if (!accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)) {
-                throw new ForbiddenException("Only the organization's owner may assign roles to other users");
-            }
+        } else if (!accessGuard.hasPermission(callerId, orgId, OrganizationPermission.TEAM)) {
+            throw new ForbiddenException("Only the organization's owner, or an organizer with the TEAM permission, may assign roles to other users");
         }
 
-        OrganizationMember member = grantRole(targetUserId, orgId, request.role());
+        OrganizationMember member = organizationMemberRepository.findByUserIdAndOrganizationId(targetUserId, orgId)
+                .orElseGet(() -> OrganizationMember.builder().userId(targetUserId).organizationId(orgId).build());
+        Set<OrganizationPermission> before = OrganizationAccessGuard.permissionsOf(member);
+        boolean newOrganizer = request.role() == OrganizationRole.ORGANIZER && !member.getRoles().contains(OrganizationRole.ORGANIZER);
+        member.getRoles().add(request.role());
+        if (request.permissions() != null) {
+            member.choosePermissions(request.permissions());
+        } else if (newOrganizer) {
+            member.choosePermissions(OrganizationPermission.organizerDefaults());
+        }
+        requireMayGrant(callerId, orgId, before, OrganizationAccessGuard.permissionsOf(member));
+        OrganizationMember saved = organizationMemberRepository.save(member);
+
         // BR-NFR-005 (Phase 13): sensitive-action audit trail. targetId is
         // the organization whose membership changed - OrganizationMember has
         // no standalone id of its own callers would find useful to look up.
-        Map<String, Object> details = AuditDetails.named(userRepository.findById(targetUserId).map(User::fullName).orElse(null));
+        String name = userRepository.findById(targetUserId).map(User::fullName).orElse(null);
+        Map<String, Object> details = AuditDetails.named(name);
         details.put("role", request.role().name());
         auditLogService.record(callerId, "organization_member.assigned", "OrganizationMember", orgId, null, orgId, details);
-        return member;
+        logPermissionChange(targetUserId, orgId, name, before, OrganizationAccessGuard.permissionsOf(saved));
+        return saved;
+    }
+
+    @Override
+    public OrganizationMemberResponse myMembership(UUID orgId) {
+        getOrThrow(orgId);
+        UUID callerId = accessGuard.currentUserId();
+        OrganizationMember member = organizationMemberRepository.findByUserIdAndOrganizationId(callerId, orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("You are not a member of this organization"));
+        return OrganizationMemberResponse.from(member, userRepository.findById(callerId).orElse(null), true);
     }
 
     /**
@@ -216,40 +242,54 @@ public class OrganizationServiceImpl implements OrganizationService {
     }
 
     @Override
-    public OrganizationMemberResponse setMemberRoles(UUID orgId, UUID userId, Set<OrganizationRole> roles) {
+    public OrganizationMemberResponse setMemberRoles(UUID orgId, UUID userId, Set<OrganizationRole> roles,
+                                                     Set<OrganizationPermission> permissions) {
         getOrThrow(orgId);
-        requireOwner(orgId);
+        UUID callerId = requireTeamManager(orgId);
         if (roles == null || roles.isEmpty()) {
             throw new BadRequestException("roles must not be empty - remove the member instead");
         }
         if (roles.contains(OrganizationRole.OWNER)) {
             throw new BadRequestException("The OWNER role can't be given to a member");
         }
-        OrganizationMember member = memberOfOrThrow(orgId, userId);
+        if (permissions != null && !roles.contains(OrganizationRole.ORGANIZER)) {
+            throw new BadRequestException("permissions only apply to the ORGANIZER role");
+        }
+        OrganizationMember member = memberOfOrThrow(orgId, userId, callerId);
         List<String> from = sortedNames(member.getRoles());
+        Set<OrganizationPermission> permissionsBefore = OrganizationAccessGuard.permissionsOf(member);
+        boolean wasOrganizer = member.getRoles().contains(OrganizationRole.ORGANIZER);
+
         member.getRoles().clear();
         member.getRoles().addAll(roles);
+        if (!roles.contains(OrganizationRole.ORGANIZER)) {
+            member.choosePermissions(Set.of());   // permissions only mean something for an organizer
+        } else if (permissions != null) {
+            member.choosePermissions(permissions);
+        } else if (!wasOrganizer) {
+            member.choosePermissions(OrganizationPermission.organizerDefaults());
+        }
+        Set<OrganizationPermission> permissionsAfter = OrganizationAccessGuard.permissionsOf(member);
+        requireMayGrant(callerId, orgId, permissionsBefore, permissionsAfter);
         OrganizationMember saved = organizationMemberRepository.save(member);
         User user = userRepository.findById(userId).orElse(null);
+        String name = user == null ? null : user.fullName();
 
         List<String> to = sortedNames(roles);
         if (!from.equals(to)) {
-            Map<String, Object> change = new LinkedHashMap<>();
-            change.put("field", "roles");
-            change.put("from", from);
-            change.put("to", to);
-            Map<String, Object> details = AuditDetails.named(user == null ? null : user.fullName());
-            details.put("changes", List.of(change));
+            Map<String, Object> details = AuditDetails.named(name);
+            details.put("changes", List.of(change("roles", from, to)));
             auditLogService.recordByCurrentUser("organization_member.roles_changed", "OrganizationMember", userId, null, orgId, details);
         }
+        logPermissionChange(userId, orgId, name, permissionsBefore, permissionsAfter);
         return OrganizationMemberResponse.from(saved, user, true);
     }
 
     @Override
     public void removeMember(UUID orgId, UUID userId) {
         getOrThrow(orgId);
-        requireOwner(orgId);
-        OrganizationMember member = memberOfOrThrow(orgId, userId);
+        UUID callerId = requireTeamManager(orgId);
+        OrganizationMember member = memberOfOrThrow(orgId, userId, callerId);
         List<String> roles = sortedNames(member.getRoles());
         organizationMemberRepository.delete(member);
         // their past actions stay in the logs: the audit entries point at their user id, not the membership
@@ -258,19 +298,58 @@ public class OrganizationServiceImpl implements OrganizationService {
         auditLogService.recordByCurrentUser("organization_member.removed", "OrganizationMember", userId, null, orgId, details);
     }
 
-    /** Only the owner manages the team's roles - not organizers, not admins. */
-    private void requireOwner(UUID orgId) {
-        if (!accessGuard.hasRole(accessGuard.currentUserId(), orgId, OrganizationRole.OWNER)) {
-            throw new ForbiddenException("Only the organization's owner may change or remove its members");
+    /** BR-ORG-008: the owner, or an organizer with TEAM, manages the team - not admins, not other organizers. */
+    private UUID requireTeamManager(UUID orgId) {
+        UUID callerId = accessGuard.currentUserId();
+        if (!accessGuard.hasPermission(callerId, orgId, OrganizationPermission.TEAM)) {
+            throw new ForbiddenException("Only the organization's owner, or an organizer with the TEAM permission, may change or remove its members");
+        }
+        return callerId;
+    }
+
+    /** A TEAM organizer can't hand out a permission they don't hold themselves (the owner holds them all). */
+    private void requireMayGrant(UUID callerId, UUID orgId, Set<OrganizationPermission> before, Set<OrganizationPermission> after) {
+        Set<OrganizationPermission> granted = EnumSet.noneOf(OrganizationPermission.class);
+        granted.addAll(after);
+        granted.removeAll(before);
+        if (!granted.isEmpty() && !accessGuard.permissionsOf(callerId, orgId).containsAll(granted)) {
+            throw new ForbiddenException("You can't grant a permission you don't hold yourself");
         }
     }
 
-    /** 404 if not a member of this organization; 409 for the owner's own membership, which can't be changed here. */
-    private OrganizationMember memberOfOrThrow(UUID orgId, UUID userId) {
+    /** organization_member.permissions_changed with from/to; nothing when they are the same. */
+    private void logPermissionChange(UUID userId, UUID orgId, String name, Set<OrganizationPermission> before,
+                                     Set<OrganizationPermission> after) {
+        List<String> from = before.stream().map(Enum::name).sorted().toList();
+        List<String> to = after.stream().map(Enum::name).sorted().toList();
+        if (from.equals(to)) {
+            return;
+        }
+        Map<String, Object> details = AuditDetails.named(name);
+        details.put("changes", List.of(change("permissions", from, to)));
+        auditLogService.recordByCurrentUser("organization_member.permissions_changed", "OrganizationMember", userId, null, orgId, details);
+    }
+
+    private static Map<String, Object> change(String field, Object from, Object to) {
+        Map<String, Object> change = new LinkedHashMap<>();
+        change.put("field", field);
+        change.put("from", from);
+        change.put("to", to);
+        return change;
+    }
+
+    /**
+     * 404 if not a member of this organization; 409 for the owner's own membership, which can't be changed here, and
+     * for the caller's own (a TEAM organizer can't raise or remove themselves).
+     */
+    private OrganizationMember memberOfOrThrow(UUID orgId, UUID userId, UUID callerId) {
         OrganizationMember member = organizationMemberRepository.findByUserIdAndOrganizationId(userId, orgId)
                 .orElseThrow(() -> new ResourceNotFoundException("User " + userId + " is not a member of this organization"));
         if (member.getRoles().contains(OrganizationRole.OWNER)) {
             throw new ConflictException("The owner's membership can't be changed or removed");
+        }
+        if (userId.equals(callerId)) {
+            throw new ConflictException("You can't change or remove your own membership");
         }
         return member;
     }

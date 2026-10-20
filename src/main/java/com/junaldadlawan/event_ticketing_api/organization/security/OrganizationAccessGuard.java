@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.organization.security;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 import com.junaldadlawan.event_ticketing_api.user.enums.Role;
@@ -81,6 +82,35 @@ public class OrganizationAccessGuard {
 
     public boolean hasRole(UUID userId, UUID organizationId, OrganizationRole role) {
         return organizationMemberRepository.existsByUserIdAndOrganizationIdAndRolesContaining(userId, organizationId, role);
+    }
+
+    /**
+     * BR-ORG-008: may this user do {@code permission} in the organization? The OWNER always may; an ORGANIZER only when
+     * they hold it (CHECK_IN_STAFF never). Admin access is checked separately by each caller, as before.
+     */
+    public boolean hasPermission(UUID userId, UUID organizationId, OrganizationPermission permission) {
+        return permissionsOf(userId, organizationId).contains(permission);
+    }
+
+    /** What the user may do in the organization: all of it for the owner, an organizer's chosen set, else nothing. */
+    public Set<OrganizationPermission> permissionsOf(UUID userId, UUID organizationId) {
+        if (userId == null) {
+            return Set.of();
+        }
+        return organizationMemberRepository.findByUserIdAndOrganizationId(userId, organizationId)
+                .map(OrganizationAccessGuard::permissionsOf)
+                .orElse(Set.of());
+    }
+
+    public static Set<OrganizationPermission> permissionsOf(OrganizationMember member) {
+        if (member.getRoles().contains(OrganizationRole.OWNER)) {
+            return EnumSet.allOf(OrganizationPermission.class);
+        }
+        Set<OrganizationPermission> held = EnumSet.noneOf(OrganizationPermission.class);
+        if (member.getRoles().contains(OrganizationRole.ORGANIZER)) {
+            held.addAll(member.getPermissions());
+        }
+        return held;
     }
 
     /** Ids of every organization where the user is an OWNER or an ORGANIZER. */

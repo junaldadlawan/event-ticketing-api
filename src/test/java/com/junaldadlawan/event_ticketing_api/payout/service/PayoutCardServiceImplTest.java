@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.payout.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -70,7 +71,7 @@ class PayoutCardServiceImplTest {
         lenient().when(accessGuard.isAdmin()).thenReturn(admin);
         lenient().when(accessGuard.currentUserId()).thenReturn(callerId);
         lenient().when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(owner);
-        lenient().when(accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(organizer);
+        lenient().when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.FINANCE)).thenReturn(organizer);
     }
 
     private PayoutCardRequest request(Boolean primary) {

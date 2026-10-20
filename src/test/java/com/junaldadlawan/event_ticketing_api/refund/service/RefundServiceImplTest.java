@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.refund.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -176,7 +177,7 @@ class RefundServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(true);
     }
 
     private RefundCreateRequest requestWithReason(String reason) {
@@ -204,7 +205,7 @@ class RefundServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(buyerId);
         when(accessGuard.hasRole(buyerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(buyerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(buyerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.createRefund(orderId, requestWithReason("buyer self-refund attempt")))
                 .isInstanceOf(ForbiddenException.class);
@@ -219,7 +220,7 @@ class RefundServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.createRefund(orderId, requestWithReason("not my order")))
                 .isInstanceOf(ForbiddenException.class);
@@ -641,7 +642,7 @@ class RefundServiceImplTest {
         when(ticketRepository.findFirstByOrderId(orderId)).thenReturn(Optional.of(anyTicket));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(Instant.now().plus(10, ChronoUnit.DAYS))));
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(true);
         when(refundRepository.findByOrderId(orderId)).thenReturn(List.of());
 
         List<RefundResponse> result = service.listRefunds(orderId);
@@ -660,7 +661,7 @@ class RefundServiceImplTest {
         when(ticketRepository.findFirstByOrderId(orderId)).thenReturn(Optional.of(anyTicket));
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(Instant.now().plus(10, ChronoUnit.DAYS))));
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.ORDERS_REFUNDS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.listRefunds(orderId)).isInstanceOf(ForbiddenException.class);
         verifyNoInteractions(refundRepository);

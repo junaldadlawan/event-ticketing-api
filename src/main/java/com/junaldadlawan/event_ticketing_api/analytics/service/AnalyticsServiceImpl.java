@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.analytics.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAnalyticsResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAudienceResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventSalesPatternsResponse;
@@ -318,7 +319,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         }
         UUID callerId = accessGuard.currentUserId();
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER);
+                || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.ANALYTICS);
         if (!isOwnerOrOrganizer) {
             throw new ForbiddenException("Only the event's organizer/owner or an admin may view its analytics");
         }

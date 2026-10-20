@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.event.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.category.entity.Category;
 import com.junaldadlawan.event_ticketing_api.category.service.CategoryService;
@@ -159,7 +160,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         when(eventRepository.existsByTicketPrefix(anyString())).thenReturn(false);
         when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -230,7 +231,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.createEvent(createRequest(orgId, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -250,7 +251,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.createEvent(createRequest(orgId, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -367,7 +368,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.getEvent(eventId))
                 .isInstanceOf(ForbiddenException.class);
@@ -407,7 +408,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.getEvent(eventId))
                 .isInstanceOf(ForbiddenException.class);
@@ -573,7 +574,7 @@ class EventServiceImplTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.updateEvent(eventId, new EventUpdateRequest("New Title", null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -594,7 +595,7 @@ class EventServiceImplTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.updateEvent(eventId, new EventUpdateRequest("Hijacked", null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -611,7 +612,7 @@ class EventServiceImplTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
         when(accessGuard.currentUserId()).thenReturn(adminId);
         when(accessGuard.hasRole(adminId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(adminId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(adminId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.updateEvent(eventId, new EventUpdateRequest("Renamed By Admin", null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -683,7 +684,7 @@ class EventServiceImplTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.publishEvent(eventId))
                 .isInstanceOf(ForbiddenException.class);
@@ -698,7 +699,7 @@ class EventServiceImplTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId, EventStatus.DRAFT)));
         when(accessGuard.currentUserId()).thenReturn(adminId);
         when(accessGuard.hasRole(adminId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(adminId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(adminId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.publishEvent(eventId))
                 .isInstanceOf(ForbiddenException.class);
@@ -845,7 +846,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.cancelEvent(eventId))
                 .isInstanceOf(ForbiddenException.class);
@@ -946,7 +947,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.delete(eventId))
                 .isInstanceOf(ForbiddenException.class);
@@ -961,7 +962,7 @@ class EventServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> eventService.delete(eventId))
                 .isInstanceOf(ForbiddenException.class);

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.auditlog.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.dto.AuditLogEntryResponse;
 import com.junaldadlawan.event_ticketing_api.auditlog.entity.AuditLogEntry;
 import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
@@ -139,7 +140,7 @@ public class AuditLogServiceImpl implements AuditLogService {
         if (!accessGuard.isAdmin()) {
             UUID callerId = accessGuard.currentUserId();
             if (!accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.OWNER)
-                    && !accessGuard.hasRole(callerId, event.getOrganizationId(), OrganizationRole.ORGANIZER)) {
+                    && !accessGuard.hasPermission(callerId, event.getOrganizationId(), OrganizationPermission.ANALYTICS)) {
                 throw new ForbiddenException("Only the organization's owner, organizer, or an admin may see this event's activity");
             }
         }
@@ -184,7 +185,7 @@ public class AuditLogServiceImpl implements AuditLogService {
         UUID callerId = accessGuard.currentUserId();
         boolean allowed = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
                 || (area.organizationReader() == ActivityArea.Reader.OWNER_OR_ORGANIZER
-                    && accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER));
+                    && accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.ANALYTICS));
         if (!allowed) {
             throw new ForbiddenException(area.organizationReader() == ActivityArea.Reader.OWNER
                     ? "Only the organization's owner or an admin may see its " + area + " activity"

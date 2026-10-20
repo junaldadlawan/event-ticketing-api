@@ -7,6 +7,7 @@ import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationReject
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 
 import java.util.List;
@@ -39,9 +40,13 @@ public interface OrganizationService {
 
     OrganizationMember assignMember(UUID orgId, OrganizationMemberAssignRequest request);
 
-    /** BR-ORG-007: the member's roles become exactly {@code roles}. Owner only; never the owner's own membership. */
-    OrganizationMemberResponse setMemberRoles(UUID orgId, UUID userId, Set<OrganizationRole> roles);
+    /** BR-ORG-007: the member's roles become exactly {@code roles}. The owner or a TEAM organizer (BR-ORG-008). */
+    OrganizationMemberResponse setMemberRoles(UUID orgId, UUID userId, Set<OrganizationRole> roles,
+                                              Set<OrganizationPermission> permissions);
 
-    /** BR-ORG-007: removes the member and all their roles. Owner only; never the owner. */
+    /** BR-ORG-008: the caller's own membership - roles and permissions - so the web app knows which tabs to show. */
+    OrganizationMemberResponse myMembership(UUID orgId);
+
+    /** BR-ORG-007: removes the member and all their roles. The owner or a TEAM organizer; never the owner. */
     void removeMember(UUID orgId, UUID userId);
 }

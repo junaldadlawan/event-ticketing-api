@@ -1,7 +1,9 @@
 package com.junaldadlawan.event_ticketing_api.organization.dto;
 
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
+import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 
 import java.io.Serializable;
@@ -20,7 +22,9 @@ public record OrganizationMemberResponse(
         Instant assignedAt,
         String name,
         String email,
-        String phoneNumber) implements Serializable {
+        String phoneNumber,
+        // BR-ORG-008: what the member may do - every permission for the owner, an organizer's chosen set, else empty
+        Set<OrganizationPermission> permissions) implements Serializable {
 
     public static OrganizationMemberResponse from(OrganizationMember member) {
         return from(member, null, false);
@@ -35,6 +39,7 @@ public record OrganizationMemberResponse(
                 member.getAssignedAt(),
                 user == null ? null : user.fullName(),
                 user == null || !withContact ? null : user.getEmail(),
-                user == null || !withContact ? null : user.getPhoneNumber());
+                user == null || !withContact ? null : user.getPhoneNumber(),
+                OrganizationAccessGuard.permissionsOf(member));
     }
 }

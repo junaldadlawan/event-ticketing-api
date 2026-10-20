@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.tickettype.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -149,7 +150,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TicketType result = service.create(eventId, createRequest(null));
@@ -191,7 +192,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(eventId, createRequest(null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -212,7 +213,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(eventId, createRequest(null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -324,7 +325,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(eventId)).isInstanceOf(ForbiddenException.class);
     }
@@ -364,7 +365,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.list(eventId)).isInstanceOf(ForbiddenException.class);
     }
@@ -403,7 +404,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.get(ticketTypeId)).isInstanceOf(ForbiddenException.class);
     }
@@ -447,7 +448,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.get(ticketTypeId)).isInstanceOf(ForbiddenException.class);
     }
@@ -522,7 +523,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.delete(ticketTypeId)).isInstanceOf(ForbiddenException.class);
         verify(ticketTypeRepository, never()).save(any());
@@ -630,7 +631,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(true);
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.EVENTS)).thenReturn(true);
         lenient().when(ticketTypeRepository.save(any(TicketType.class))).thenAnswer(invocation -> invocation.getArgument(0));
         assertThat(service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED).isSalesPaused()).isTrue();
 
@@ -688,7 +689,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.PAUSED)).isInstanceOf(ForbiddenException.class);
         assertThatThrownBy(() -> service.setSalesStatus(ticketTypeId, SalesStatus.ACTIVE)).isInstanceOf(ForbiddenException.class);
@@ -818,7 +819,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.reorder(eventId, List.of(UUID.randomUUID()))).isInstanceOf(ForbiddenException.class);
         verify(ticketTypeRepository, never()).saveAll(any());
@@ -875,7 +876,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(strangerId);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(strangerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest("Hijacked", null, null, null, null, null)))
                 .isInstanceOf(ForbiddenException.class);
@@ -894,7 +895,7 @@ class TicketTypeServiceImplTest {
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(otherOrgOwnerId);
         when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
-        when(accessGuard.hasRole(otherOrgOwnerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
+        when(accessGuard.hasPermission(otherOrgOwnerId, orgId, OrganizationPermission.EVENTS)).thenReturn(false);
 
         assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest("Hijacked", null, null, null, null, null)))
                 .isInstanceOf(ForbiddenException.class);

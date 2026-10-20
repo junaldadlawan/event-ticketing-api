@@ -1,8 +1,10 @@
 package com.junaldadlawan.event_ticketing_api.organization.dto;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import jakarta.validation.constraints.NotNull;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -13,5 +15,7 @@ import java.util.UUID;
  */
 public record OrganizationMemberAssignRequest(
         @NotNull UUID userId,
-        @NotNull OrganizationRole role) {
+        @NotNull OrganizationRole role,
+        // BR-ORG-008: only with role ORGANIZER; left out = the default set (everything but TEAM) for a new organizer
+        Set<@NotNull OrganizationPermission> permissions) {
 }

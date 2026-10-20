@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.payout.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
@@ -38,7 +39,7 @@ public class PayoutAccountServiceImpl implements PayoutAccountService {
         if (!accessGuard.isAdmin()) {
             UUID callerId = accessGuard.currentUserId();
             if (!accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
-                    && !accessGuard.hasRole(callerId, organizationId, OrganizationRole.ORGANIZER)) {
+                    && !accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.FINANCE)) {
                 throw new ForbiddenException("Only the organization's owner, organizer, or an admin may view its payout account");
             }
         }

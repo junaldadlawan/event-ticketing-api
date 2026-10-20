@@ -66,11 +66,17 @@ public class OrganizationController {
         return organizationService.listMembersWithDetails(orgId);
     }
 
+    /** BR-ORG-008: the caller's own roles and permissions in this organization. */
+    @GetMapping("/{orgId}/members/me")
+    public OrganizationMemberResponse myMembership(@PathVariable UUID orgId) {
+        return organizationService.myMembership(orgId);
+    }
+
     /** BR-ORG-007: set a member's roles to exactly this set (owner only). */
     @PutMapping("/{orgId}/members/{userId}/roles")
     public OrganizationMemberResponse setMemberRoles(@PathVariable UUID orgId, @PathVariable UUID userId,
                                                      @Valid @RequestBody OrganizationMemberRolesRequest request) {
-        return organizationService.setMemberRoles(orgId, userId, request.roles());
+        return organizationService.setMemberRoles(orgId, userId, request.roles(), request.permissions());
     }
 
     /** BR-ORG-007: remove a member and all their roles (owner only). */

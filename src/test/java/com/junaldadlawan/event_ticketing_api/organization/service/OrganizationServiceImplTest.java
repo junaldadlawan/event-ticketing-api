@@ -368,7 +368,7 @@ class OrganizationServiceImplTest {
     void assignMember_ownerRoleRequested_alwaysForbidden() {
         Organization organization = approvedOrg();
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization));
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(applicantId, OrganizationRole.OWNER);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(applicantId, OrganizationRole.OWNER, null);
 
         assertThatThrownBy(() -> organizationService.assignMember(orgId, request))
                 .isInstanceOf(ForbiddenException.class);
@@ -384,7 +384,7 @@ class OrganizationServiceImplTest {
         when(organizationMemberRepository.findByUserIdAndOrganizationId(applicantId, orgId)).thenReturn(Optional.empty());
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(applicantId, OrganizationRole.ORGANIZER);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(applicantId, OrganizationRole.ORGANIZER, null);
         OrganizationMember result = organizationService.assignMember(orgId, request);
 
         assertThat(result.getRoles()).contains(OrganizationRole.ORGANIZER);
@@ -401,7 +401,7 @@ class OrganizationServiceImplTest {
         when(organizationMemberRepository.findByUserIdAndOrganizationId(organizerId, orgId)).thenReturn(Optional.empty());
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(organizerId, OrganizationRole.CHECK_IN_STAFF);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(organizerId, OrganizationRole.CHECK_IN_STAFF, null);
         OrganizationMember result = organizationService.assignMember(orgId, request);
 
         assertThat(result.getRoles()).contains(OrganizationRole.CHECK_IN_STAFF);
@@ -416,7 +416,7 @@ class OrganizationServiceImplTest {
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasRole(strangerId, orgId, OrganizationRole.ORGANIZER)).thenReturn(false);
 
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(strangerId, OrganizationRole.CHECK_IN_STAFF);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(strangerId, OrganizationRole.CHECK_IN_STAFF, null);
 
         assertThatThrownBy(() -> organizationService.assignMember(orgId, request))
                 .isInstanceOf(ForbiddenException.class);
@@ -433,7 +433,7 @@ class OrganizationServiceImplTest {
         when(organizationMemberRepository.findByUserIdAndOrganizationId(targetUserId, orgId)).thenReturn(Optional.empty());
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF, null);
         OrganizationMember result = organizationService.assignMember(orgId, request);
 
         assertThat(result.getUserId()).isEqualTo(targetUserId);
@@ -453,7 +453,7 @@ class OrganizationServiceImplTest {
         when(accessGuard.currentUserId()).thenReturn(organizerId);
         when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
 
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF, null);
 
         assertThatThrownBy(() -> organizationService.assignMember(orgId, request))
                 .isInstanceOf(ForbiddenException.class);
@@ -475,7 +475,7 @@ class OrganizationServiceImplTest {
         when(organizationMemberRepository.findByUserIdAndOrganizationId(targetUserId, orgId)).thenReturn(Optional.of(existingMember));
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF);
+        OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF, null);
         OrganizationMember result = organizationService.assignMember(orgId, request);
 
         assertThat(result.getRoles()).containsExactlyInAnyOrder(OrganizationRole.ORGANIZER, OrganizationRole.CHECK_IN_STAFF);
