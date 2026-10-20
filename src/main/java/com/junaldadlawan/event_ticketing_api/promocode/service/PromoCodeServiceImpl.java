@@ -6,6 +6,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
+import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
@@ -23,6 +24,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRep
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -45,6 +47,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     private final TicketTypeRepository ticketTypeRepository;
     private final OrderRepository orderRepository;
     private final AuditLogService auditLogService;
+    private final CartRepository cartRepository;
 
     @Override
     public PromoCode create(UUID eventId, PromoCodeCreateRequest request) {
@@ -189,6 +192,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     }
 
     @Override
+    @Transactional
     public void delete(UUID promoCodeId) {
         PromoCode promoCode = getOrThrow(promoCodeId);
         Event event = getEventOrThrow(promoCode.getEventId());
@@ -201,6 +205,8 @@ public class PromoCodeServiceImpl implements PromoCodeService {
         }
         promoCode.markDeleted();
         promoCodeRepository.save(promoCode);
+        // same transaction: no cart keeps a code that is gone - it would block that cart's checkout without showing
+        cartRepository.clearPromoCode(promoCodeId);
         auditLogService.recordByCurrentUser("promo_code.deleted", "PromoCode", promoCodeId, promoCode.getEventId(), AuditDetails.named(promoCode.getCode()));
     }
 

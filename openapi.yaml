@@ -496,6 +496,10 @@ paths:
       operationId: listOrganizationMembers
       tags: [Organizations]
       summary: List an organization's members and their roles (members or admin)
+      description: >
+        BR-ORG-007: each member's name, email and phone come from their own account (read-only here - a member's
+        account stays theirs to change). The owner, organizers and admins see all three; a caller who is only check-in
+        staff sees names, with email and phone null.
       responses:
         "200":
           description: OK
@@ -530,6 +534,59 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /organizations/{orgId}/members/{userId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: setOrganizationMemberRoles
+      tags: [Organizations]
+      summary: Set a member's roles to exactly this set - change, add or take away in one call (owner only)
+      description: >
+        BR-ORG-007. Logged as organization_member.roles_changed with the member's name and the roles before and after
+        (nothing is logged when the set is unchanged).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items: { type: string, enum: [ORGANIZER, CHECK_IN_STAFF] }
+                  example: [ORGANIZER, CHECK_IN_STAFF]
+      responses:
+        "200":
+          description: The updated member, with name, email and phone
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { description: "Empty set (remove the member instead), the OWNER role, or an unknown role" }
+        "403": { description: "Not the organization's owner (organizers and admins included)" }
+        "404": { description: "The organization, or this user is not one of its members" }
+        "409": { description: "The owner's own membership can't be changed here" }
+
+  /organizations/{orgId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: removeOrganizationMember
+      tags: [Organizations]
+      summary: Remove a member and all their roles (owner only)
+      description: >
+        BR-ORG-007. Their past actions stay in the logs. Logged as organization_member.removed with the member's name
+        and the roles they had.
+      responses:
+        "204": { description: Removed }
+        "403": { description: "Not the organization's owner (organizers and admins included)" }
+        "404": { description: "The organization, or this user is not one of its members" }
+        "409": { description: "The owner can't be removed" }
 
   /analytics/platform/finance:
     get:
@@ -1981,8 +2038,8 @@ paths:
       tags: [PromoCodes]
       summary: Pause or resume a promo code (owning organizer, or admin)
       description: |
-        PAUSED: the code can't be applied to a cart (422, like an unknown code) and a cart that already holds it can't
-        check out (422, nothing charged). ACTIVE: usable again. Orders that already used it are untouched. Allowed
+        PAUSED: the code can't be applied to a cart (422, like an unknown code) and a cart that already holds it shows it with status PAUSED and no discount, and can't
+        check out (422 "Promo code X is paused. Remove it from your cart to check out.", nothing charged). ACTIVE: usable again. Orders that already used it are untouched. Allowed
         whatever the event's status until the event has ended (then 409); asking for the state it is already in is
         not an error.
       requestBody:
@@ -2673,6 +2730,14 @@ paths:
             Nothing to check out, a payment for this key is already in progress, the idempotency key was used with
             another itemIds, or the event has ended (`Event has ended`; nothing is charged - and a payment that
             completes after the end is refunded instead of issuing tickets)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: >
+            The applied promo code can't be used, and nothing is charged: "Promo code X is paused. Remove it from your cart
+            to check out.", "Promo code X is not valid right now. Remove it from your cart to check out." (outside its
+            validity window), or its usage limit is reached.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3492,6 +3557,15 @@ components:
           type: array
           items: { type: string, enum: [owner, organizer, check_in_staff] }
         assigned_at: { type: string, format: date-time }
+        name:
+          type: [string, "null"]
+          description: The member's name, from their own account (BR-ORG-007).
+        email:
+          type: [string, "null"]
+          description: Their email - null for a caller who is only check-in staff.
+        phone_number:
+          type: [string, "null"]
+          description: Their phone number, null when unset or for a caller who is only check-in staff.
 
     OrganizationMemberAssign:
       type: object
@@ -4090,9 +4164,17 @@ components:
           items: { $ref: "#/components/schemas/CartItem" }
         applied_promo_code:
           type: [object, "null"]
+          description: >
+            The code applied to the cart. A code paused or outside its validity window since it was applied still shows
+            here, with a discount of 0 and that status, so the buyer can see it and remove it (DELETE
+            /carts/{cartId}/promo-code): checkout refuses it with 422 until then. A deleted code is removed from carts.
           properties:
             code: { type: string }
             discount_amount: { $ref: "#/components/schemas/Money" }
+            status:
+              type: string
+              enum: [ACTIVE, PAUSED, EXPIRED]
+              description: ACTIVE gives the discount; PAUSED (by the organizer) and EXPIRED (outside its validity window) give none.
         platform_fee:
           allOf:
             - $ref: "#/components/schemas/Money"

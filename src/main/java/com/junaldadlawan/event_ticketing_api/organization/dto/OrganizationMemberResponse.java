@@ -2,6 +2,7 @@ package com.junaldadlawan.event_ticketing_api.organization.dto;
 
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
+import com.junaldadlawan.event_ticketing_api.user.entity.User;
 
 import java.io.Serializable;
 import java.time.Instant;
@@ -9,19 +10,31 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * DTO for {@link OrganizationMember}
+ * DTO for {@link OrganizationMember}. {@code name}, {@code email} and {@code phoneNumber} come from the member's own
+ * account (BR-ORG-007): read-only here, and email/phone are shown only to the owner, organizers and admins.
  */
 public record OrganizationMemberResponse(
         UUID userId,
         UUID organizationId,
         Set<OrganizationRole> roles,
-        Instant assignedAt) implements Serializable {
+        Instant assignedAt,
+        String name,
+        String email,
+        String phoneNumber) implements Serializable {
 
     public static OrganizationMemberResponse from(OrganizationMember member) {
+        return from(member, null, false);
+    }
+
+    /** {@code user} may be null (an account that no longer exists); contact details only when {@code withContact}. */
+    public static OrganizationMemberResponse from(OrganizationMember member, User user, boolean withContact) {
         return new OrganizationMemberResponse(
                 member.getUserId(),
                 member.getOrganizationId(),
                 member.getRoles(),
-                member.getAssignedAt());
+                member.getAssignedAt(),
+                user == null ? null : user.fullName(),
+                user == null || !withContact ? null : user.getEmail(),
+                user == null || !withContact ? null : user.getPhoneNumber());
     }
 }

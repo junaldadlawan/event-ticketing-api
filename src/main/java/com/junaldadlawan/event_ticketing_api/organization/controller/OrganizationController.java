@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.organization.controller;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberResponse;
+import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberRolesRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationRejectRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationResponse;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
@@ -62,7 +63,21 @@ public class OrganizationController {
 
     @GetMapping("/{orgId}/members")
     public List<OrganizationMemberResponse> listMembers(@PathVariable UUID orgId) {
-        return organizationService.listMembers(orgId).stream().map(OrganizationMemberResponse::from).toList();
+        return organizationService.listMembersWithDetails(orgId);
+    }
+
+    /** BR-ORG-007: set a member's roles to exactly this set (owner only). */
+    @PutMapping("/{orgId}/members/{userId}/roles")
+    public OrganizationMemberResponse setMemberRoles(@PathVariable UUID orgId, @PathVariable UUID userId,
+                                                     @Valid @RequestBody OrganizationMemberRolesRequest request) {
+        return organizationService.setMemberRoles(orgId, userId, request.roles());
+    }
+
+    /** BR-ORG-007: remove a member and all their roles (owner only). */
+    @DeleteMapping("/{orgId}/members/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeMember(@PathVariable UUID orgId, @PathVariable UUID userId) {
+        organizationService.removeMember(orgId, userId);
     }
 
     @PostMapping("/{orgId}/members")

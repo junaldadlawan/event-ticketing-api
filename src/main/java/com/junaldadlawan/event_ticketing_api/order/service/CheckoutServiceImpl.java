@@ -276,10 +276,18 @@ public class CheckoutServiceImpl implements CheckoutService {
         // (priced for a selection, the cart's code counts only when it fits those items: cartView then shows it, otherwise it stays on the cart)
         if (selection == null ? lockedCart.getPromoCodeId() != null : cartView.appliedPromoCode() != null) {
             PromoCode appliedPromoCode = promoCodeRepository.findById(lockedCart.getPromoCodeId()).orElse(null);
-            // Paused or deleted since it was applied: refuse before charging (the buyer can remove the code, or retry
-            // once it is resumed). Same message as an unknown code - nothing is revealed about why.
-            if (appliedPromoCode == null || !appliedPromoCode.isRedeemable()) {
+            // Paused or out of its window since it was applied: refuse before charging. The cart still shows the code
+            // (discount 0), so the message names it and says why - the buyer removes it, or retries once it is resumed.
+            if (appliedPromoCode == null || appliedPromoCode.getDeletedAt() != null) {
                 throw new UnprocessableEntityException("Promo code is invalid or inapplicable to this cart");
+            }
+            if (appliedPromoCode.isPaused()) {
+                throw new UnprocessableEntityException("Promo code " + appliedPromoCode.getCode()
+                        + " is paused. Remove it from your cart to check out.");
+            }
+            if (!appliedPromoCode.isValidAt(Instant.now())) {
+                throw new UnprocessableEntityException("Promo code " + appliedPromoCode.getCode()
+                        + " is not valid right now. Remove it from your cart to check out.");
             }
             promoCodeUsageLimitGuard.checkUsageLimits(appliedPromoCode, buyerId);
         }

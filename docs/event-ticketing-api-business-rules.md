@@ -42,6 +42,7 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-ORG-004 | Only on admin approval does the applicant become that organization's owner. (§4.2) |
 | BR-ORG-005 | A rejected or still-pending organization application grants no organization privileges (cannot publish events, receive payouts, or assign roles). (§4.2) |
 | BR-ORG-006 | A signed-in user may list their own organizations - those they are a member of in any role, or applied for - of every status, oldest first. They never see an organization they have no relation to (an admin included; the admin review queue is separate). |
+| BR-ORG-007 | **Team management.** The member list names every member (from their own account); the owner, organizers and admins also see each member's email and phone, while a caller who is only check-in staff sees names only. Nobody edits these here: a member's account stays theirs to change. Only the owner sets a member's roles, to exactly a given set of ORGANIZER and/or CHECK_IN_STAFF (an empty set, OWNER or an unknown role is refused; use removal instead of an empty set), and only the owner removes a member with all their roles; organizers and admins are refused (403). The owner's own membership can never be changed or removed (409), and the OWNER role is never given this way. Role changes are logged with the member's name and the roles before and after, removals with the name and the roles they had; their past actions stay in the logs. Adding a member (`POST /members`) is unchanged. |
 
 ## 3. Event Management
 

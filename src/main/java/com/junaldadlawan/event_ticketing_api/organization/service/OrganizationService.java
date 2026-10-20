@@ -2,12 +2,15 @@ package com.junaldadlawan.event_ticketing_api.organization.service;
 
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
+import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberResponse;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationRejectRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public interface OrganizationService {
@@ -28,5 +31,17 @@ public interface OrganizationService {
 
     List<OrganizationMember> listMembers(UUID orgId);
 
+    /**
+     * BR-ORG-007: the members with who they are - name for every member who may list them; email and phone only for
+     * the owner, organizers and admins (check-in-only staff see names).
+     */
+    List<OrganizationMemberResponse> listMembersWithDetails(UUID orgId);
+
     OrganizationMember assignMember(UUID orgId, OrganizationMemberAssignRequest request);
+
+    /** BR-ORG-007: the member's roles become exactly {@code roles}. Owner only; never the owner's own membership. */
+    OrganizationMemberResponse setMemberRoles(UUID orgId, UUID userId, Set<OrganizationRole> roles);
+
+    /** BR-ORG-007: removes the member and all their roles. Owner only; never the owner. */
+    void removeMember(UUID orgId, UUID userId);
 }
