@@ -55,7 +55,7 @@ class AuditLogControllerTest {
 
     @Test
     void list_noFilter_returns200_withPageResponseShape() throws Exception {
-        Page<AuditLogEntry> page = new PageImpl<>(List.of(entry(UUID.randomUUID())));
+        var page = new PageImpl<>(List.of(com.junaldadlawan.event_ticketing_api.auditlog.dto.AuditLogEntryResponse.from(entry(UUID.randomUUID()))));
         when(auditLogService.list(isNull(), any())).thenReturn(page);
 
         mockMvc.perform(get("/api/v1/audit-log"))
@@ -67,7 +67,7 @@ class AuditLogControllerTest {
     @Test
     void list_withActorIdFilter_passesItThrough() throws Exception {
         UUID actorId = UUID.randomUUID();
-        Page<AuditLogEntry> page = new PageImpl<>(List.of(entry(actorId)));
+        var page = new PageImpl<>(List.of(com.junaldadlawan.event_ticketing_api.auditlog.dto.AuditLogEntryResponse.from(entry(actorId))));
         when(auditLogService.list(eq(actorId), any())).thenReturn(page);
 
         mockMvc.perform(get("/api/v1/audit-log").param("actorId", actorId.toString()))

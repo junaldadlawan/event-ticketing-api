@@ -2174,6 +2174,67 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/EventEnded" }
 
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [Audit]
+      summary: The activity log behind a management tab - an organization's, or the platform's (BR-ADMIN-007)
+      description: |
+        Newest first; each entry has actorName (and eventTitle for an event's entries) filled in.
+
+        **Organization scope** (`organizationId` given) - only entries about that organization or its events:
+
+        | area | shows | readable by |
+        |---|---|---|
+        | EVENTS | every entry tagged with one of its events (event.*, ticket_type.*, promo_code.*, ticket_template.*, refund_policy.*, resale_policy.*, check_in_config.*, scanner_device.*, refund.issued, moderation.* of its events) | owner or organizer, admin |
+        | TEAM | organization_member.*, organization.* | owner or organizer, admin |
+        | FINANCE | payout.*, refund.issued | owner, admin |
+        | SETTINGS | payout_card.*, payout_account.* | owner or organizer, admin |
+
+        **Platform scope** (no `organizationId`) - admins only:
+
+        | area | shows |
+        |---|---|
+        | EVENTS | the event entries above, across all organizations |
+        | POSTS | post.* |
+        | ORGANIZATIONS | organization.*, organization_member.*, moderation.* of organizations |
+        | USERS | user.*, moderation.* of users |
+        | FINANCE | payout.*, platform_fee.*, gateway_fee.* |
+        | DISPUTES | dispute.* |
+        | SETTINGS | category.*, platform_fee.*, gateway_fee.* |
+
+        An area with no tab in the requested scope, or an unknown area, is 400. `details` follows BR-EVENT-006: updates
+        list only the changed fields; created/deleted items keep their name; never secrets, card or account numbers
+        (a payout card or account shows brand/bank and last 4 only), passwords, tokens or buyers' personal data.
+      parameters:
+        - name: area
+          in: query
+          required: true
+          schema: { type: string, enum: [EVENTS, TEAM, FINANCE, SETTINGS, POSTS, ORGANIZATIONS, USERS, DISPUTES] }
+        - { name: organizationId, in: query, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, default: 20 } }
+      responses:
+        "200":
+          description: A page of activity entries, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditLogEntry" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "400": { description: "Unknown area, or an area with no tab in this scope (e.g. POSTS with organizationId, TEAM without)" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /events/{eventId}/activity:
     parameters:
       - $ref: "#/components/parameters/EventId"
@@ -4357,6 +4418,9 @@ components:
           type: [string, "null"]
           format: uuid
           description: The event the entry belongs to (BR-EVENT-006), when it is about an event or something of it.
+        eventTitle:
+          type: [string, "null"]
+          description: The title of eventId's event (looked up when listed), so a log can name it.
         details:
           type: [object, "null"]
           description: >

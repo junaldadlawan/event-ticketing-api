@@ -2,7 +2,8 @@ package com.junaldadlawan.event_ticketing_api.post.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -45,6 +46,7 @@ public class PostServiceImpl implements PostService {
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
     private final UploadedFileUrls uploadedFileUrls;
+    private final AuditLogService auditLogService;
 
     @Override
     public PostResponse create(PostCreateRequest request) {
@@ -77,12 +79,10 @@ public class PostServiceImpl implements PostService {
                 .expiresAt(request.expiresAt())
                 .hidden(Boolean.TRUE.equals(request.hidden()))
                 .build());
-        BusinessAuditLogger.record("post.created", "Post", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "kind=" + saved.getKind() + (saved.getEventId() == null ? " siteWide" : " event=" + saved.getEventId())
-                        + (saved.getPublishAt() == null ? "" : " publishAt=" + saved.getPublishAt())
-                        + (saved.getExpiresAt() == null ? "" : " expiresAt=" + saved.getExpiresAt())
-                        + (saved.isHidden() ? " hidden" : "")
-                        + (saved.getImageUrl() == null ? "" : " image"));
+        Map<String, Object> details = AuditDetails.named(saved.getTitle());
+        details.put("kind", saved.getKind().name());
+        details.put("eventTitle", eventTitle);
+        auditLogService.recordByCurrentUser("post.created", "Post", saved.getId(), null, null, details);
         return PostResponse.from(saved, eventTitle, now);
     }
 
@@ -133,6 +133,7 @@ public class PostServiceImpl implements PostService {
     public PostResponse update(UUID postId, PostUpdateRequest request) {
         accessGuard.requireAdmin();
         Post post = getOrThrow(postId);
+        Map<String, Object> before = AuditDetails.snapshot(post, PostUpdateRequest.class);
         if (Boolean.TRUE.equals(request.clearPublishAt()) && request.publishAt() != null) {
             throw new BadRequestException("publishAt and clearPublishAt cannot be combined");
         }
@@ -140,10 +141,8 @@ public class PostServiceImpl implements PostService {
             throw new BadRequestException("expiresAt and clearExpiresAt cannot be combined");
         }
 
-        List<String> changed = new ArrayList<>();
         if (request.kind() != null) {
             post.setKind(request.kind());
-            changed.add("kind");
         }
         if (request.title() != null) {
             String title = request.title().trim();
@@ -151,38 +150,34 @@ public class PostServiceImpl implements PostService {
                 throw new BadRequestException("Post title must not be blank");
             }
             post.setTitle(title);
-            changed.add("title");
         }
         if (request.body() != null) {
             post.setBody(request.body().trim());
-            changed.add("body");
         }
         String previousImage = post.getImageUrl();
         if (request.imageUrl() != null) {
             post.setImageUrl(request.imageUrl().isBlank() ? null : requireOwnImage(request.imageUrl()));
             if (!Objects.equals(previousImage, post.getImageUrl())) {
-                changed.add("imageUrl");
             }
         }
         if (request.publishAt() != null || Boolean.TRUE.equals(request.clearPublishAt())) {
             post.setPublishAt(Boolean.TRUE.equals(request.clearPublishAt()) ? null : request.publishAt());
-            changed.add("publishAt");
         }
         if (request.expiresAt() != null || Boolean.TRUE.equals(request.clearExpiresAt())) {
             post.setExpiresAt(Boolean.TRUE.equals(request.clearExpiresAt()) ? null : request.expiresAt());
-            changed.add("expiresAt");
         }
         // The window is judged on the result, so moving only one end is checked against the other. An expiry that
         // is already in the past is allowed here: it is how an admin ends a post right now.
         requireValidWindow(post.getPublishAt(), post.getExpiresAt());
         if (request.hidden() != null) {
             post.setHidden(request.hidden());
-            changed.add("hidden");
         }
 
         Post saved = postRepository.save(post);
-        BusinessAuditLogger.record("post.updated", "Post", postId, BusinessAuditLogger.Outcome.SUCCESS,
-                "fields=" + String.join(",", changed));
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(post, PostUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("post.updated", "Post", postId, null, null, changes);
+        }
         // The replaced or removed picture goes away unless something else still uses it (never the one just kept).
         if (previousImage != null && !previousImage.equals(saved.getImageUrl())) {
             uploadedFileUrls.deleteIfUnreferenced(previousImage);
@@ -198,7 +193,7 @@ public class PostServiceImpl implements PostService {
         Post post = getOrThrow(postId);
         post.markDeleted();
         postRepository.save(post);
-        BusinessAuditLogger.record("post.deleted", "Post", postId, BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("post.deleted", "Post", postId, null, null, AuditDetails.named(post.getTitle()));
         // Soft-deleted posts are not restorable through the API, so their picture is released like any other unused file.
         if (post.getImageUrl() != null) {
             uploadedFileUrls.deleteIfUnreferenced(post.getImageUrl());

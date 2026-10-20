@@ -65,7 +65,8 @@ class OrganizationServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        organizationService = new OrganizationServiceImpl(organizationRepository, organizationMemberRepository, accessGuard, auditLogService);
+        organizationService = new OrganizationServiceImpl(organizationRepository, organizationMemberRepository, accessGuard, auditLogService,
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.user.repository.UserRepository.class));
         orgId = UUID.randomUUID();
         applicantId = UUID.randomUUID();
     }

@@ -33,6 +33,6 @@ public class AuditLogController {
     @GetMapping
     public PageResponse<AuditLogEntryResponse> list(@RequestParam(required = false) UUID actorId,
                                                       @PageableDefault(size = 20) Pageable pageable) {
-        return PageResponse.from(auditLogService.list(actorId, pageable).map(AuditLogEntryResponse::from));
+        return PageResponse.from(auditLogService.list(actorId, pageable));
     }
 }

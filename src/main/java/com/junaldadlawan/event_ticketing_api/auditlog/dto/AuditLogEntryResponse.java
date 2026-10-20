@@ -19,6 +19,7 @@ public record AuditLogEntryResponse(
         String targetType,
         UUID targetId,
         UUID eventId,
+        String eventTitle,
         // already JSON (an object, or null) - written into the response as-is
         @JsonRawValue String details,
         Instant createdAt) implements Serializable {
@@ -28,6 +29,10 @@ public record AuditLogEntryResponse(
     }
 
     public static AuditLogEntryResponse from(AuditLogEntry entry, String actorName) {
+        return from(entry, actorName, null);
+    }
+
+    public static AuditLogEntryResponse from(AuditLogEntry entry, String actorName, String eventTitle) {
         return new AuditLogEntryResponse(
                 entry.getId(),
                 entry.getActorId(),
@@ -36,6 +41,7 @@ public record AuditLogEntryResponse(
                 entry.getTargetType(),
                 entry.getTargetId(),
                 entry.getEventId(),
+                eventTitle,
                 entry.getDetails(),
                 entry.getCreatedAt());
     }

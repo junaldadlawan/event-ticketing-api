@@ -8,7 +8,7 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
@@ -53,6 +53,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 @Service
@@ -254,9 +255,9 @@ public class PayoutServiceImpl implements PayoutService {
         }
         orderRepository.saveAll(orders);
 
-        BusinessAuditLogger.record("payout.generated", "Payout", payout.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + organizationId + (eventId == null ? "" : " event=" + eventId) + " orders=" + orders.size() + " gross=" + gross
-                        + " fees=" + fees + " net=" + (gross - fees) + " " + currency);
+        Map<String, Object> generated = payoutDetails(payout);
+        generated.put("orders", orders.size());
+        auditLogService.recordByCurrentUser("payout.generated", "Payout", payout.getId(), null, payout.getOrganizationId(), generated);
         return payout;
     }
 
@@ -319,9 +320,9 @@ public class PayoutServiceImpl implements PayoutService {
         }
         int released = orderRepository.releaseFromPayout(payoutId);
         Payout payout = payoutRepository.findById(payoutId).orElseThrow();
-        auditLogService.record(accessGuard.currentUserId(), "payout.cancelled", "Payout", payoutId);
-        BusinessAuditLogger.record("payout.cancelled", "Payout", payoutId, BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + payout.getOrganizationId() + " orders=" + released + " net=" + payout.getNet().getAmount() + " " + payout.getNet().getCurrency());
+        Map<String, Object> cancelled = payoutDetails(payout);
+        cancelled.put("orders", released);
+        auditLogService.recordByCurrentUser("payout.cancelled", "Payout", payoutId, null, payout.getOrganizationId(), cancelled);
         return PayoutResponse.from(payout);
     }
 
@@ -379,11 +380,22 @@ public class PayoutServiceImpl implements PayoutService {
             case PENDING -> { }
         }
         payoutRepository.save(payout);
-        BusinessAuditLogger.record("payout." + result.status().name().toLowerCase(), "Payout", payout.getId(),
-                result.status() == PayoutTransferClient.Status.FAILED ? BusinessAuditLogger.Outcome.FAILURE : BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + payout.getOrganizationId() + " transfer=" + payout.getTransferId() + " attempt=" + payout.getTransferAttempts()
-                        + " net=" + payout.getNet().getAmount() + " " + payout.getNet().getCurrency()
-                        + (payout.getFailureReason() == null ? "" : " reason=" + payout.getFailureReason()));
+        // by the admin who sent or refreshed it, or the system when the result came by webhook
+        Map<String, Object> details = payoutDetails(payout);
+        if (payout.getFailureReason() != null) {
+            details.putAll(AuditDetails.reason(payout.getFailureReason()));
+        }
+        auditLogService.recordByCurrentUser("payout." + result.status().name().toLowerCase(), "Payout", payout.getId(), null,
+                payout.getOrganizationId(), details);
+    }
+
+    /** BR-ADMIN-007: the payout's net amount and, for a per-event payout, the event's title. */
+    private Map<String, Object> payoutDetails(Payout payout) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("amount", Map.of("amount", payout.getNet().getAmount(), "currency", payout.getNet().getCurrency()));
+        details.put("eventTitle", payout.getEventId() == null ? null
+                : eventRepository.findById(payout.getEventId()).map(Event::getTitle).orElse(null));
+        return details;
     }
 
     private TransactionTemplate inTransaction() {

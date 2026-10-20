@@ -39,7 +39,7 @@ class CategoryServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new CategoryServiceImpl(categoryRepository, accessGuard);
+        service = new CategoryServiceImpl(categoryRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
     }
 
     private Category category(String name, boolean active) {

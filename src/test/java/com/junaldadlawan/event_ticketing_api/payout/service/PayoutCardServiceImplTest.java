@@ -52,7 +52,7 @@ class PayoutCardServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, "paymongo", true);
+        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class), "paymongo", true);
         orgId = UUID.randomUUID();
         callerId = UUID.randomUUID();
         organization = Organization.builder().id(orgId).name("Org").status(OrganizationStatus.APPROVED).build();
@@ -96,7 +96,7 @@ class PayoutCardServiceImplTest {
 
     @Test
     void add_withTheMockPayoutGateway_alwaysSavesTheSameDemoCard_whateverWasSent() {
-        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, "mock", true);
+        service = new PayoutCardServiceImpl(payoutCardRepository, organizationRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class), "mock", true);
         caller(false, true, false);
         when(payoutCardRepository.countByOrganizationIdAndDeletedAtIsNull(orgId)).thenReturn(0L);
         PayoutCardRequest other = new PayoutCardRequest("Demo Events Co.", "Mastercard", "1111", 1, 2001, "tok_other_12345678", null);

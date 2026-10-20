@@ -22,14 +22,30 @@ public interface AuditLogService {
     /** With {@code details} (built by {@link AuditDetails}; null = none) - what changed, or the item's name. */
     void record(UUID actorId, String action, String targetType, UUID targetId, UUID eventId, Map<String, Object> details);
 
+    /**
+     * The full form: {@code organizationId} is the organization the entry is about, for its per-tab activity logs
+     * (BR-ADMIN-007). Null = taken from {@code eventId}'s event, or none (a platform-level action).
+     */
+    void record(UUID actorId, String action, String targetType, UUID targetId, UUID eventId, UUID organizationId,
+                Map<String, Object> details);
+
     /** Same, by the signed-in caller (resolved here, so callers' own access checks stay untouched). */
     void recordByCurrentUser(String action, String targetType, UUID targetId, UUID eventId);
 
     void recordByCurrentUser(String action, String targetType, UUID targetId, UUID eventId, Map<String, Object> details);
 
+    void recordByCurrentUser(String action, String targetType, UUID targetId, UUID eventId, UUID organizationId,
+                             Map<String, Object> details);
+
     /** {@code GET /events/{eventId}/activity}, newest first - the event's owner/organizer, or an admin. */
     Page<AuditLogEntryResponse> listForEvent(UUID eventId, Pageable pageable);
 
     /** {@code GET /audit-log} - admin only. */
-    Page<AuditLogEntry> list(UUID actorIdFilter, Pageable pageable);
+    Page<AuditLogEntryResponse> list(UUID actorIdFilter, Pageable pageable);
+
+    /**
+     * {@code GET /activity} - one management tab's log, newest first: an organization's (with {@code organizationId})
+     * or the platform's (admin only). See {@link ActivityArea} for what each area shows and who may read it.
+     */
+    Page<AuditLogEntryResponse> listActivity(ActivityArea area, UUID organizationId, Pageable pageable);
 }

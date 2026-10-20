@@ -59,7 +59,8 @@ class AuditLogServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new AuditLogServiceImpl(auditLogEntryRepository, accessGuard, eventRepository, userRepository);
+        service = new AuditLogServiceImpl(auditLogEntryRepository, accessGuard, eventRepository, userRepository,
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository.class));
     }
 
     @Test
@@ -93,7 +94,7 @@ class AuditLogServiceImplTest {
         Page<AuditLogEntry> page = new PageImpl<>(List.of(AuditLogEntry.builder().id(UUID.randomUUID()).build()));
         when(auditLogEntryRepository.findAll(pageable)).thenReturn(page);
 
-        Page<AuditLogEntry> result = service.list(null, pageable);
+        var result = service.list(null, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         verify(auditLogEntryRepository, never()).findByActorId(any(), any());
@@ -106,7 +107,7 @@ class AuditLogServiceImplTest {
         Page<AuditLogEntry> page = new PageImpl<>(List.of(AuditLogEntry.builder().id(UUID.randomUUID()).actorId(actorId).build()));
         when(auditLogEntryRepository.findByActorId(actorId, pageable)).thenReturn(page);
 
-        Page<AuditLogEntry> result = service.list(actorId, pageable);
+        var result = service.list(actorId, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         verify(auditLogEntryRepository, never()).findAll(pageable);

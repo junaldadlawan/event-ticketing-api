@@ -1,10 +1,12 @@
 package com.junaldadlawan.event_ticketing_api.organization.service;
 
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
+import com.junaldadlawan.event_ticketing_api.user.entity.User;
+import com.junaldadlawan.event_ticketing_api.user.repository.UserRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
 import com.junaldadlawan.event_ticketing_api.organization.dto.DocumentDto;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
@@ -36,6 +38,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final OrganizationMemberRepository organizationMemberRepository;
     private final OrganizationAccessGuard accessGuard;
     private final AuditLogService auditLogService;
+    private final UserRepository userRepository;
 
     @Override
     public Organization apply(OrganizationCreateRequest request) {
@@ -45,7 +48,8 @@ public class OrganizationServiceImpl implements OrganizationService {
                 .documents(request.documents().stream().map(DocumentDto::toEntity).toList())
                 .build();
         Organization saved = organizationRepository.save(organization);
-        BusinessAuditLogger.record("organization.applied", "Organization", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS);
+        auditLogService.recordByCurrentUser("organization.applied", "Organization", saved.getId(), null, saved.getId(),
+                AuditDetails.named(organization.getName()));
         return saved;
     }
 
@@ -97,8 +101,15 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (organization.getStatus() != OrganizationStatus.APPROVED) {
             throw new ForbiddenException("Only an approved organization may be updated");
         }
+        Map<String, Object> before = AuditDetails.snapshot(organization, OrganizationUpdateRequest.class);
         organization.setName(request.name());
-        return organizationRepository.save(organization);
+        Organization saved = organizationRepository.save(organization);
+        // BR-ADMIN-007: only the fields that actually changed; an update that changed nothing is not logged
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(organization, OrganizationUpdateRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("organization.updated", "Organization", orgId, null, orgId, changes);
+        }
+        return saved;
     }
 
     @Override
@@ -114,8 +125,8 @@ public class OrganizationServiceImpl implements OrganizationService {
         organizationRepository.save(organization);
 
         grantRole(applicantId, orgId, OrganizationRole.OWNER);
-        BusinessAuditLogger.record("organization.approved", "Organization", orgId,
-                BusinessAuditLogger.Outcome.SUCCESS, "owner=" + applicantId);
+        auditLogService.recordByCurrentUser("organization.approved", "Organization", orgId, null, orgId,
+                AuditDetails.named(organization.getName()));
 
         return organization;
     }
@@ -130,7 +141,12 @@ public class OrganizationServiceImpl implements OrganizationService {
         organization.setStatus(OrganizationStatus.REJECTED);
         organization.setRejectionReason(request != null ? request.reason() : null);
         Organization saved = organizationRepository.save(organization);
-        BusinessAuditLogger.record("organization.rejected", "Organization", orgId, BusinessAuditLogger.Outcome.SUCCESS);
+        Map<String, Object> details = AuditDetails.named(organization.getName());
+        Map<String, Object> reason = AuditDetails.reason(organization.getRejectionReason());
+        if (reason != null) {
+            details.putAll(reason);
+        }
+        auditLogService.recordByCurrentUser("organization.rejected", "Organization", orgId, null, orgId, details);
         return saved;
     }
 
@@ -169,7 +185,9 @@ public class OrganizationServiceImpl implements OrganizationService {
         // BR-NFR-005 (Phase 13): sensitive-action audit trail. targetId is
         // the organization whose membership changed - OrganizationMember has
         // no standalone id of its own callers would find useful to look up.
-        auditLogService.record(callerId, "organization_member.assigned", "OrganizationMember", orgId);
+        Map<String, Object> details = AuditDetails.named(userRepository.findById(targetUserId).map(User::fullName).orElse(null));
+        details.put("role", request.role().name());
+        auditLogService.record(callerId, "organization_member.assigned", "OrganizationMember", orgId, null, orgId, details);
         return member;
     }
 

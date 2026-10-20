@@ -54,6 +54,10 @@ public class AuditLogEntry {
     @Column(name = "event_id")
     private UUID eventId;
 
+    /** The organization this entry is about (its event's, or the target's), for the per-tab activity logs. */
+    @Column(name = "organization_id")
+    private UUID organizationId;
+
     /** BR-EVENT-006: what changed, as a JSON object (see {@code AuditDetails}); null when there is nothing to add. */
     @ColumnTransformer(write = "?::jsonb")
     @Column(name = "details", columnDefinition = "jsonb")

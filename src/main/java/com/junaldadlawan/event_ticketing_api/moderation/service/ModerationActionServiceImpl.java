@@ -77,10 +77,12 @@ public class ModerationActionServiceImpl implements ModerationActionService {
         // BR-NFR-005 (Phase 13): sensitive-action audit trail, for every
         // action (SUSPEND/REINSTATE/REMOVE are all "admin interventions" per
         // BR-NFR-005's framing, not just suspend). Never throws.
+        // tagged with the event or organization it is about, so it shows in that one's activity log too
         boolean aboutAnEvent = saved.getTargetType() == ModerationTargetType.EVENT;
+        boolean aboutAnOrganization = saved.getTargetType() == ModerationTargetType.ORGANIZATION;
         auditLogService.record(adminId, "moderation." + saved.getAction().name().toLowerCase(),
                 saved.getTargetType().name(), saved.getTargetId(), aboutAnEvent ? saved.getTargetId() : null,
-                aboutAnEvent ? AuditDetails.reason(request.reason()) : null);
+                aboutAnOrganization ? saved.getTargetId() : null, AuditDetails.reason(request.reason()));
         return ModerationActionResponse.from(saved);
     }
 

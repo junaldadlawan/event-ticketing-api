@@ -1,7 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.gatewayfee.service;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.dto.GatewayFeeSettingRequest;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.dto.GatewayFeeSettingResponse;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.entity.GatewayFeeSetting;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -21,6 +23,7 @@ public class GatewayFeeServiceImpl implements GatewayFeeService {
 
     private final GatewayFeeSettingRepository settingRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -87,6 +90,7 @@ public class GatewayFeeServiceImpl implements GatewayFeeService {
             throw new BadRequestException("payer must be CUSTOMER or ORGANIZATION: the platform cannot be the payer of the gateway fee");
         }
         GatewayFeeSetting setting = settingRepository.findById(GatewayFeeSetting.ROW_ID).orElseGet(GatewayFeeSetting::new);
+        Map<String, Object> before = AuditDetails.snapshot(GatewayFeeSettingResponse.from(setting), GatewayFeeSettingRequest.class);
         setting.setPercentage(request.percentage());
         setting.setFlatAmount(request.flatAmount() == null ? 0 : request.flatAmount().amount());
         if (request.flatAmount() != null) {
@@ -95,10 +99,11 @@ public class GatewayFeeServiceImpl implements GatewayFeeService {
         setting.setPayer(request.payer());
         setForeignRate(setting, request);
         GatewayFeeSetting saved = settingRepository.save(setting);
-        BusinessAuditLogger.record("gateway_fee.set", "GatewayFeeSetting", GatewayFeeSetting.ROW_ID, BusinessAuditLogger.Outcome.SUCCESS,
-                "percentage=" + saved.getPercentage() + " flat=" + saved.getFlatAmount() + " " + saved.getFlatCurrency()
-                        + " foreignPercentage=" + saved.getForeignPercentage() + " foreignFlat=" + saved.getForeignFlatAmount()
-                        + " payer=" + saved.getPayer());
-        return GatewayFeeSettingResponse.from(saved);
+        GatewayFeeSettingResponse response = GatewayFeeSettingResponse.from(saved);
+        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(response, GatewayFeeSettingRequest.class));
+        if (changes != null) {
+            auditLogService.recordByCurrentUser("gateway_fee.set", "GatewayFeeSetting", null, null, null, changes);   // a single settings row: no target id
+        }
+        return response;
     }
 }

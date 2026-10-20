@@ -4,7 +4,8 @@ import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestExceptio
 import com.junaldadlawan.event_ticketing_api.common.exception.ConflictException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
-import com.junaldadlawan.event_ticketing_api.common.logging.BusinessAuditLogger;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
+import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -35,16 +37,19 @@ public class PayoutCardServiceImpl implements PayoutCardService {
     private final PayoutCardRepository payoutCardRepository;
     private final OrganizationRepository organizationRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final AuditLogService auditLogService;
     /** Mock payout gateway with the demo card on: every added card is saved as the same fixed demo card. */
     private final boolean demoCard;
 
     public PayoutCardServiceImpl(PayoutCardRepository payoutCardRepository, OrganizationRepository organizationRepository,
                                  OrganizationAccessGuard accessGuard,
+                                 AuditLogService auditLogService,
                                  @Value("${payments.payout-gateway:mock}") String payoutGateway,
                                  @Value("${payments.demo-payout-card:true}") boolean demoPayoutCard) {
         this.payoutCardRepository = payoutCardRepository;
         this.organizationRepository = organizationRepository;
         this.accessGuard = accessGuard;
+        this.auditLogService = auditLogService;
         this.demoCard = demoPayoutCard && !"paymongo".equals(payoutGateway);
     }
 
@@ -91,8 +96,7 @@ public class PayoutCardServiceImpl implements PayoutCardService {
                 .primary(primary)
                 .build());
         // Only the last 4 are logged, never the token.
-        BusinessAuditLogger.record("payout_card.added", "PayoutCard", saved.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + organizationId + " brand=" + saved.getBrand() + " last4=" + saved.getLast4() + " primary=" + primary);
+        auditLogService.recordByCurrentUser("payout_card.added", "PayoutCard", saved.getId(), null, organizationId, card(saved));
         return PayoutCardResponse.from(saved);
     }
 
@@ -105,8 +109,7 @@ public class PayoutCardServiceImpl implements PayoutCardService {
             demoteCurrentPrimary(card.getOrganizationId());
             card.setPrimary(true);
             card = payoutCardRepository.save(card);
-            BusinessAuditLogger.record("payout_card.primary_set", "PayoutCard", card.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                    "organization=" + card.getOrganizationId() + " last4=" + card.getLast4());
+            auditLogService.recordByCurrentUser("payout_card.primary_set", "PayoutCard", card.getId(), null, card.getOrganizationId(), card(card));
         }
         return PayoutCardResponse.from(card);
     }
@@ -122,8 +125,14 @@ public class PayoutCardServiceImpl implements PayoutCardService {
         card.setPrimary(false);
         card.markDeleted();
         payoutCardRepository.save(card);
-        BusinessAuditLogger.record("payout_card.removed", "PayoutCard", card.getId(), BusinessAuditLogger.Outcome.SUCCESS,
-                "organization=" + card.getOrganizationId() + " last4=" + card.getLast4());
+        auditLogService.recordByCurrentUser("payout_card.removed", "PayoutCard", card.getId(), null, card.getOrganizationId(), card(card));
+    }
+
+    /** Brand and last 4 only - never the card number or token. */
+    private static Map<String, Object> card(PayoutCard card) {
+        Map<String, Object> details = AuditDetails.named(card.getBrand() + " ending " + card.getLast4());
+        details.put("last4", card.getLast4());
+        return details;
     }
 
     /** Unsets the old primary and flushes first, so the one-primary unique index never sees two. */

@@ -56,7 +56,7 @@ class PlatformFeeServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PlatformFeeServiceImpl(ruleRepository, eventRepository, organizationRepository, accessGuard);
+        service = new PlatformFeeServiceImpl(ruleRepository, eventRepository, organizationRepository, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
         orgId = UUID.randomUUID();
         eventId = UUID.randomUUID();
         // no rules unless a test says otherwise
