@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.common;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestContext;
 import org.springframework.test.context.TestExecutionListener;
@@ -19,8 +20,13 @@ public class OrphanEventAuditRowsCleanup implements TestExecutionListener {
             return;
         }
         // slice tests (@WebMvcTest) have no database
-        testContext.getApplicationContext().getBeanProvider(JdbcTemplate.class).ifAvailable(jdbc -> jdbc.update(
-                "delete from audit_log_entries a where a.event_id is not null"
-                        + " and not exists (select 1 from events e where e.id = a.event_id)"));
+        testContext.getApplicationContext().getBeanProvider(JdbcTemplate.class).ifAvailable(jdbc -> {
+            try {
+                jdbc.update("delete from audit_log_entries a where a.event_id is not null"
+                        + " and not exists (select 1 from events e where e.id = a.event_id)");
+            } catch (DataAccessException e) {
+                // best effort: a test class may have dropped its own scratch database already (SchemaMatchesEntitiesIntegrationTest)
+            }
+        });
     }
 }

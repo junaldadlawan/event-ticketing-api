@@ -535,6 +535,21 @@ paths:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /organizations/{orgId}/members/me:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: getMyOrganizationMembership
+      tags: [Organizations]
+      summary: The caller's own roles and permissions in this organization (BR-ORG-008), so the web app knows which tabs to show
+      responses:
+        "200":
+          description: The caller's membership
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "404": { description: "The organization, or the caller is not one of its members" }
+
   /organizations/{orgId}/members/{userId}/roles:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -542,7 +557,7 @@ paths:
     put:
       operationId: setOrganizationMemberRoles
       tags: [Organizations]
-      summary: Set a member's roles to exactly this set - change, add or take away in one call (owner only)
+      summary: Set a member's roles (and an organizer's permissions) to exactly this set (owner, or an organizer with TEAM)
       description: >
         BR-ORG-007. Logged as organization_member.roles_changed with the member's name and the roles before and after
         (nothing is logged when the set is unchanged).
@@ -560,16 +575,21 @@ paths:
                   uniqueItems: true
                   items: { type: string, enum: [ORGANIZER, CHECK_IN_STAFF] }
                   example: [ORGANIZER, CHECK_IN_STAFF]
+                permissions:
+                  type: array
+                  uniqueItems: true
+                  items: { $ref: "#/components/schemas/OrganizationPermission" }
+                  description: BR-ORG-008 - only when roles includes ORGANIZER (400 otherwise); left out = keep them, or the default set when ORGANIZER is newly added.
       responses:
         "200":
           description: The updated member, with name, email and phone
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
-        "400": { description: "Empty set (remove the member instead), the OWNER role, or an unknown role" }
-        "403": { description: "Not the organization's owner (organizers and admins included)" }
+        "400": { description: "Empty set (remove the member instead), the OWNER role, an unknown role or permission, or permissions without ORGANIZER" }
+        "403": { description: "Neither the owner nor an organizer with TEAM (admins included), or granting a permission the caller doesn't hold" }
         "404": { description: "The organization, or this user is not one of its members" }
-        "409": { description: "The owner's own membership can't be changed here" }
+        "409": { description: "The owner's membership, or the caller's own, can't be changed here" }
 
   /organizations/{orgId}/members/{userId}:
     parameters:
@@ -578,15 +598,15 @@ paths:
     delete:
       operationId: removeOrganizationMember
       tags: [Organizations]
-      summary: Remove a member and all their roles (owner only)
+      summary: Remove a member and all their roles (owner, or an organizer with TEAM)
       description: >
         BR-ORG-007. Their past actions stay in the logs. Logged as organization_member.removed with the member's name
         and the roles they had.
       responses:
         "204": { description: Removed }
-        "403": { description: "Not the organization's owner (organizers and admins included)" }
+        "403": { description: "Neither the owner nor an organizer with TEAM (admins included)" }
         "404": { description: "The organization, or this user is not one of its members" }
-        "409": { description: "The owner can't be removed" }
+        "409": { description: "The owner can't be removed, and neither can the caller themselves" }
 
   /analytics/platform/finance:
     get:
@@ -3566,6 +3586,20 @@ components:
         phone_number:
           type: [string, "null"]
           description: Their phone number, null when unset or for a caller who is only check-in staff.
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/OrganizationPermission" }
+          description: BR-ORG-008 - what the member may do. Every permission for the owner, an organizer's chosen set, empty for anyone else (check-in staff keep their check-in access as before).
+
+    OrganizationPermission:
+      type: string
+      enum: [EVENTS, PROMO_CODES, CHECK_IN, ORDERS_REFUNDS, FINANCE, ANALYTICS, TEAM]
+      description: |
+        BR-ORG-008 - what an ORGANIZER may do in their organization:
+        EVENTS (events, ticket types, seat maps, venues, ticket designs), PROMO_CODES, CHECK_IN (check-in config and
+        scanner devices), ORDERS_REFUNDS (orders, refunds, refund and resale policies), FINANCE (payout accounts, cards
+        and payouts), ANALYTICS (sales/audience analytics and activity logs), TEAM (add, change and remove members).
+        A missing permission is 403. The owner holds all of them; organizers get everything but TEAM by default.
 
     OrganizationMemberAssign:
       type: object
@@ -3579,6 +3613,11 @@ components:
           type: string
           enum: [organizer, check_in_staff]
           description: owner cannot be granted here — it's only ever set by organization-application approval.
+        permissions:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/OrganizationPermission" }
+          description: BR-ORG-008 - only with role organizer (400 otherwise); left out = the default set (everything but TEAM) for a new organizer. A TEAM organizer can't grant one they don't hold (403).
 
     UploadedImage:
       type: object

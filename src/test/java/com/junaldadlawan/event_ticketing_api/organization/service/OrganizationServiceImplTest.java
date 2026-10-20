@@ -11,6 +11,7 @@ import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationReject
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
+import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
@@ -381,6 +382,8 @@ class OrganizationServiceImplTest {
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization));
         when(accessGuard.currentUserId()).thenReturn(applicantId);
         when(accessGuard.hasRole(applicantId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        // the owner holds every permission, so becoming an organizer (with the defaults) grants nothing new to them
+        when(accessGuard.permissionsOf(applicantId, orgId)).thenReturn(java.util.EnumSet.allOf(OrganizationPermission.class));
         when(organizationMemberRepository.findByUserIdAndOrganizationId(applicantId, orgId)).thenReturn(Optional.empty());
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -429,7 +432,7 @@ class OrganizationServiceImplTest {
         UUID targetUserId = UUID.randomUUID();
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization));
         when(accessGuard.currentUserId()).thenReturn(applicantId);
-        when(accessGuard.hasRole(applicantId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(accessGuard.hasPermission(applicantId, orgId, OrganizationPermission.TEAM)).thenReturn(true);
         when(organizationMemberRepository.findByUserIdAndOrganizationId(targetUserId, orgId)).thenReturn(Optional.empty());
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -451,7 +454,8 @@ class OrganizationServiceImplTest {
         UUID targetUserId = UUID.randomUUID();
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization));
         when(accessGuard.currentUserId()).thenReturn(organizerId);
-        when(accessGuard.hasRole(organizerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
+        // an organizer without TEAM (BR-ORG-008) - like every organizer before permissions existed
+        when(accessGuard.hasPermission(organizerId, orgId, OrganizationPermission.TEAM)).thenReturn(false);
 
         OrganizationMemberAssignRequest request = new OrganizationMemberAssignRequest(targetUserId, OrganizationRole.CHECK_IN_STAFF, null);
 
@@ -471,7 +475,7 @@ class OrganizationServiceImplTest {
         existingMember.getRoles().add(OrganizationRole.ORGANIZER);
         when(organizationRepository.findById(orgId)).thenReturn(Optional.of(organization));
         when(accessGuard.currentUserId()).thenReturn(applicantId);
-        when(accessGuard.hasRole(applicantId, orgId, OrganizationRole.OWNER)).thenReturn(true);
+        when(accessGuard.hasPermission(applicantId, orgId, OrganizationPermission.TEAM)).thenReturn(true);
         when(organizationMemberRepository.findByUserIdAndOrganizationId(targetUserId, orgId)).thenReturn(Optional.of(existingMember));
         when(organizationMemberRepository.save(any(OrganizationMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 

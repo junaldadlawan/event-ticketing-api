@@ -349,13 +349,13 @@ class EventCompletionIntegrationTest {
         return saved.getId();
     }
 
-    /** On sale now, and still on sale days after the event's end. */
+    /** On sale now, and until 20h from now: before the 1h-before-start cut-off, yet past the event's end once the test moves it. */
     private static String ticketTypeBody() {
         return """
                 {"name":"General Admission","kind":"GENERAL_ADMISSION",
                 "price":{"amount":1000,"currency":"USD"},"quantityTotal":100,
                 "saleStartAt":"%s","saleEndAt":"%s"}
-                """.formatted(Instant.now().minus(1, ChronoUnit.HOURS), Instant.now().plus(5, ChronoUnit.DAYS));
+                """.formatted(Instant.now().minus(1, ChronoUnit.HOURS), Instant.now().plus(20, ChronoUnit.HOURS));
     }
 
     private static String promoCodeBody(String code) {

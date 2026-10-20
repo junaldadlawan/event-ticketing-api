@@ -78,8 +78,12 @@ class OrganizationPermissionIntegrationTest {
 
     @Test
     void organizers_getEveryPermissionButTeam_byDefault_andTheOwnerHoldsAll() throws Exception {
-        // every organizer that existed before V62 was given the defaults
-        assertThat(jdbc.queryForObject("select count(*) from organization_member_roles r where r.role = 'ORGANIZER'"
+        // every organizer that existed when V62 ran was given the defaults (later rows belong to other tests and
+        // other code paths, so they are not this migration's to check)
+        assertThat(jdbc.queryForObject("select count(*) from organization_member_roles r"
+                + " join organization_members m on m.user_id = r.user_id and m.organization_id = r.organization_id"
+                + " where r.role = 'ORGANIZER'"
+                + " and m.assigned_at < (select installed_on from flyway_schema_history where version = '62')"
                 + " and not exists (select 1 from organization_member_permissions p where p.user_id = r.user_id"
                 + " and p.organization_id = r.organization_id)", Integer.class)).isZero();
 
