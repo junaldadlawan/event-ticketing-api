@@ -28,6 +28,8 @@ tags:
   - name: Categories
   - name: Posts
   - name: PlatformFees
+  - name: PlatformSettings
+    description: Platform-wide settings admins manage (BR-ADMIN-SETTINGS-002).
   - name: Uploads
   - name: Events
   - name: TicketTypes
@@ -1333,6 +1335,46 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform-settings/ticket-sales:
+    get:
+      operationId: getTicketSaleSettings
+      tags: [PlatformSettings]
+      summary: The ticket-sale timing rules (BR-ADMIN-SETTINGS-002), for any signed-in user
+      description: Lets the organizer's ticket type form show the current rules before submitting.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketSaleSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      operationId: updateTicketSaleSettings
+      tags: [PlatformSettings]
+      summary: Change the ticket-sale timing rules (admins only)
+      description: >
+        Applies to ticket types created from now on and to sale windows edited from now on; existing ticket types
+        are not changed. Logged in the platform SETTINGS activity as ticket_sale_settings.updated with before/after.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [salesCloseMinutesBeforeEvent, minSaleDurationMinutes]
+              properties:
+                salesCloseMinutesBeforeEvent: { type: integer, minimum: 0, maximum: 10080 }
+                minSaleDurationMinutes: { type: integer, minimum: 1, maximum: 10080 }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketSaleSettings" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /payment-gateway-fee:
     get:
@@ -2867,6 +2909,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: >
+            BR-TICKET-LIMIT-001: "You can buy at most N <type> tickets; you already have M." - the tickets of this type
+            the buyer bought (paid orders, not refunded or cancelled, given away or not) plus this cart's would pass its
+            max_per_user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /carts/{cartId}/items/{itemId}:
     parameters:
@@ -2907,6 +2957,11 @@ paths:
               schema: { $ref: "#/components/schemas/Cart" }
         "400":
           description: quantity below 1
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: Raising the quantity would pass the ticket type's per-buyer limit (BR-TICKET-LIMIT-001)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3053,7 +3108,9 @@ paths:
           description: >
             The applied promo code can't be used, and nothing is charged: "Promo code X is paused. Remove it from your cart
             to check out.", "Promo code X is not valid right now. Remove it from your cart to check out." (outside its
-            validity window), or its usage limit is reached.
+            validity window), or its usage limit is reached. Also BR-TICKET-LIMIT-001, checked again before charging: "You
+            can buy at most N <type> tickets; you already have M." when tickets bought since they were added to the cart
+            put the buyer over a ticket type's per-buyer limit.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3835,6 +3892,14 @@ components:
         authorName: { type: [string, "null"] }
         organizationName: { type: [string, "null"] }
 
+    TicketSaleSettings:
+      type: object
+      properties:
+        salesCloseMinutesBeforeEvent: { type: integer, minimum: 0, maximum: 10080, description: "Ticket sales must end at least this many minutes before the event starts. Default 60." }
+        minSaleDurationMinutes: { type: integer, minimum: 1, maximum: 10080, description: "A sale window must run for at least this many minutes. Default 60." }
+        updatedBy: { type: [string, "null"] }
+        updatedAt: { type: [string, "null"], format: date-time }
+
     Error:
       type: object
       properties:
@@ -4244,6 +4309,8 @@ components:
         max_per_order: { type: integer }
         sales_paused: { type: boolean, description: "While true the type can not be added to a cart and a cart holding it can not check out. Set with PUT /ticket-types/{id}/sales-status." }
         color: { type: [string, "null"], pattern: "^#[0-9A-F]{6}$", description: "Display colour set by the organizer, uppercase #RRGGBB (e.g. #1A2B3C); buyers' tickets are tinted with it. Null = none (the app's default grey)." }
+        max_per_user: { type: [integer, "null"], minimum: 1, description: "BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total, across all their orders. Null = unlimited." }
+        gate_opens_minutes_before: { type: [integer, "null"], minimum: 0, maximum: 1440, description: "BR-TICKET-GATE-001: gates open this many minutes before the event starts (display only). Null = not set." }
         position: { type: integer, minimum: 0, description: "Where it sits in the event's list (0 = first), as arranged by the organizer. The list endpoint returns ticket types in this order; new ones go to the end. Set with PUT /events/{id}/ticket-types/order." }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid }
@@ -4262,6 +4329,8 @@ components:
         sale_end_at: { type: string, format: date-time, description: "Must be at least 1 hour after sale_start_at and at least 1 hour before the event starts." }
         max_per_order: { type: integer, default: 10 }
         color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit or null for none. Anything else is a 400." }
+        max_per_user: { type: [integer, "null"], minimum: 1, description: "Per-buyer limit (null = unlimited). max_per_order must not be more (400 'Max per order can't be more than the per-buyer limit'); when max_per_order is omitted it defaults to the lower of 10 and this." }
+        gate_opens_minutes_before: { type: [integer, "null"], minimum: 0, maximum: 1440 }
 
     TicketTypeSalesStatus:
       type: object
@@ -4290,6 +4359,8 @@ components:
         max_per_order: { type: integer }
         sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged." }
         color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit to leave unchanged; null clears it; anything else is a 400 with a field error. Logged as ticket_type.updated with before/after." }
+        max_per_user: { type: [integer, "null"], minimum: 1, description: "Omit to leave unchanged; null = unlimited. The resulting max_per_order must not be more (400)." }
+        gate_opens_minutes_before: { type: [integer, "null"], minimum: 0, maximum: 1440, description: "Omit to leave unchanged; null = not set." }
 
     PromoCode:
       type: object

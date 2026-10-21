@@ -3,6 +3,8 @@ package com.junaldadlawan.event_ticketing_api.tickettype.dto;
 import com.junaldadlawan.event_ticketing_api.common.validation.NoHtml;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -53,11 +55,26 @@ public record TicketTypeCreateRequest(
 
         /** Display colour "#RRGGBB" (either case); null = none. */
         @Pattern(regexp = TicketTypeUpdateRequest.COLOR, message = "must be a #RRGGBB colour")
-        String color) implements Serializable {
+        String color,
 
-    /** A create without a colour. */
+        /** BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total; null = unlimited. */
+        @Min(1)
+        Integer maxPerUser,
+
+        /** BR-TICKET-GATE-001: gates open this many minutes before the event starts; null = not set. */
+        @Min(0)
+        @Max(1440)
+        Integer gateOpensMinutesBefore) implements Serializable {
+
+    /** A create without a per-buyer limit or gate time. */
+    public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
+                                   Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder, String color) {
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, color, null, null);
+    }
+
+    /** A create without a colour, per-buyer limit or gate time. */
     public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
                                    Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder) {
-        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null);
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null, null, null);
     }
 }

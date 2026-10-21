@@ -150,7 +150,8 @@ class CheckoutServiceImplTest {
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
                 notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
-                pendingCheckoutRepository, org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class), gatewayFeeService, null, null, null, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder.class));
+                pendingCheckoutRepository, org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class), gatewayFeeService, null, null, null,
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.tickettype.service.TicketTypeBuyerLimit.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder.class));
         lenient().when(platformFeeService.quote(any(), any(), anyLong(), any(), anyInt())).thenReturn(PlatformFeeQuote.NONE);
         lenient().when(gatewayFeeService.quote(anyLong(), any())).thenReturn(com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote.NONE);
         buyerId = UUID.randomUUID();

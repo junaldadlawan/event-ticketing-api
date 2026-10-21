@@ -16,6 +16,8 @@ import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.platformsetting.entity.TicketSaleSettings;
+import com.junaldadlawan.event_ticketing_api.platformsetting.service.TicketSaleSettingsService;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeCreateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
@@ -42,12 +44,10 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
     // openapi.yaml TicketTypeCreate: max_per_order default: 10.
     private static final int DEFAULT_MAX_PER_ORDER = 10;
-    // BR-EVENT-003: ticket sales close at least this long before the event starts.
-    private static final Duration SALES_CLOSE_BEFORE_START = Duration.ofHours(1);
-    // BR-EVENT-003: a sale window runs for at least this long.
-    private static final Duration MIN_SALE_WINDOW = Duration.ofHours(1);
 
     private final TicketTypeRepository ticketTypeRepository;
+    // BR-EVENT-003 / BR-ADMIN-SETTINGS-002: how long a sale window must run and how early it must close
+    private final TicketSaleSettingsService ticketSaleSettingsService;
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
     private final TicketRepository ticketRepository;
@@ -64,8 +64,11 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
         // omitted = start now, on the server's clock rather than the buyer's
         Instant saleStartAt = request.saleStartAt() != null ? request.saleStartAt() : Instant.now();
-        requireMinimumSaleWindow(saleStartAt, request.saleEndAt());
-        requireSalesEndBeforeEventStart(event, request.saleEndAt());
+        requireSaleWindowRules(event, saleStartAt, request.saleEndAt());
+        // with a per-buyer limit below the usual default, the default per-order limit follows it down
+        int maxPerOrder = request.maxPerOrder() != null ? request.maxPerOrder()
+                : request.maxPerUser() != null ? Math.min(DEFAULT_MAX_PER_ORDER, request.maxPerUser()) : DEFAULT_MAX_PER_ORDER;
+        requireMaxPerOrderWithinPerUser(maxPerOrder, request.maxPerUser());
 
         TicketType ticketType = TicketType.builder()
                 .eventId(event.getId())
@@ -79,7 +82,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                 .quantityAvailable(request.quantityTotal())
                 .saleStartAt(saleStartAt)
                 .saleEndAt(request.saleEndAt())
-                .maxPerOrder(request.maxPerOrder() != null ? request.maxPerOrder() : DEFAULT_MAX_PER_ORDER)
+                .maxPerOrder(maxPerOrder)
+                .maxPerUser(request.maxPerUser())
+                .gateOpensMinutesBefore(request.gateOpensMinutesBefore())
                 .color(upper(request.color()))
                 // New ticket types go to the end of the organizer's arrangement.
                 .position(ticketTypeRepository.findMaxPositionByEventId(event.getId()) + 1)
@@ -164,9 +169,18 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         if (request.salesPaused() != null) {
             ticketType.setSalesPaused(request.salesPaused());
         }
+        if (request.maxPerUser() != null) {
+            ticketType.setMaxPerUser(request.maxPerUser().orElse(null));
+        }
+        if (request.gateOpensMinutesBefore() != null) {
+            ticketType.setGateOpensMinutesBefore(request.gateOpensMinutesBefore().orElse(null));
+        }
 
-        requireMinimumSaleWindow(ticketType.getSaleStartAt(), ticketType.getSaleEndAt());
-        requireSalesEndBeforeEventStart(event, ticketType.getSaleEndAt());
+        // BR-ADMIN-SETTINGS-002: the current rules apply to a sale window being edited; an untouched one is left as it was
+        if (request.saleStartAt() != null || request.saleEndAt() != null) {
+            requireSaleWindowRules(event, ticketType.getSaleStartAt(), ticketType.getSaleEndAt());
+        }
+        requireMaxPerOrderWithinPerUser(ticketType.getMaxPerOrder(), ticketType.getMaxPerUser());
 
         TicketType updated = ticketTypeRepository.save(ticketType);
         // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
@@ -181,19 +195,36 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         return color == null ? null : color.toUpperCase(Locale.ROOT);
     }
 
-    // also covers end > start
-    private static void requireMinimumSaleWindow(Instant saleStartAt, Instant saleEndAt) {
-        if (saleEndAt.isBefore(saleStartAt.plus(MIN_SALE_WINDOW))) {
-            throw new BadRequestException("Ticket sales must run for at least 1 hour");
+    /**
+     * BR-EVENT-003 with BR-ADMIN-SETTINGS-002's current values: the window runs for at least the minimum duration (which
+     * also covers end > start) and closes at least the set time before the event starts.
+     */
+    // shortcut: checked only on ticket-type create/update because an event's startAt can't change today; if EventUpdateRequest ever takes startAt, clamp or reject this event's ticket types in EventServiceImpl.update.
+    private void requireSaleWindowRules(Event event, Instant saleStartAt, Instant saleEndAt) {
+        TicketSaleSettings settings = ticketSaleSettingsService.current();
+        if (saleEndAt.isBefore(saleStartAt.plus(Duration.ofMinutes(settings.getMinSaleDurationMinutes())))) {
+            throw new BadRequestException("Ticket sales must run for at least " + describe(settings.getMinSaleDurationMinutes()));
+        }
+        Instant latestEnd = event.getStartAt().minus(Duration.ofMinutes(settings.getSalesCloseMinutesBeforeEvent()));
+        if (saleEndAt.isAfter(latestEnd)) {
+            throw new BadRequestException("Ticket sales must end at least " + describe(settings.getSalesCloseMinutesBeforeEvent())
+                    + " before the event starts (by " + latestEnd + ")");
         }
     }
 
-    // shortcut: checked only on ticket-type create/update because an event's startAt can't change today; if EventUpdateRequest ever takes startAt, clamp or reject this event's ticket types in EventServiceImpl.update.
-    private static void requireSalesEndBeforeEventStart(Event event, Instant saleEndAt) {
-        Instant latestEnd = event.getStartAt().minus(SALES_CLOSE_BEFORE_START);
-        if (saleEndAt.isAfter(latestEnd)) {
-            throw new BadRequestException("Ticket sales must end at least 1 hour before the event starts (by " + latestEnd + ")");
+    private static void requireMaxPerOrderWithinPerUser(int maxPerOrder, Integer maxPerUser) {
+        if (maxPerUser != null && maxPerOrder > maxPerUser) {
+            throw new BadRequestException("Max per order can't be more than the per-buyer limit");
         }
+    }
+
+    /** "1 hour", "2 hours", "90 minutes", "1 minute". */
+    static String describe(int minutes) {
+        if (minutes > 0 && minutes % 60 == 0) {
+            int hours = minutes / 60;
+            return hours + (hours == 1 ? " hour" : " hours");
+        }
+        return minutes + (minutes == 1 ? " minute" : " minutes");
     }
 
     @Override

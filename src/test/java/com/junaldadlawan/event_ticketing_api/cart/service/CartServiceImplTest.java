@@ -117,7 +117,8 @@ class CartServiceImplTest {
     void setUp() {
         service = new CartServiceImpl(
                 cartRepository, cartItemRepository, ticketTypeRepository, seatRepository,
-                seatMapRepository, eventRepository, promoCodeRepository, promoCodeUsageLimitGuard, accessGuard, entityManager, platformFeeService, gatewayFeeService, cartActivityRecorder);
+                seatMapRepository, eventRepository, promoCodeRepository, promoCodeUsageLimitGuard, accessGuard, entityManager, platformFeeService, gatewayFeeService, cartActivityRecorder,
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.tickettype.service.TicketTypeBuyerLimit.class));
         lenient().when(platformFeeService.quote(any(), any(), anyLong(), any(), anyInt())).thenReturn(PlatformFeeQuote.NONE);
         lenient().when(gatewayFeeService.quote(anyLong(), any())).thenReturn(com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote.NONE);
         buyerId = UUID.randomUUID();

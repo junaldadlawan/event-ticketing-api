@@ -83,4 +83,12 @@ public class TicketType extends Auditable {
     /** Display colour "#RRGGBB" (uppercase) buyers' tickets are tinted with; null = none. */
     @Column(name = "color", length = 7)
     private String color;
+
+    /** BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total; null = unlimited. */
+    @Column(name = "max_per_user")
+    private Integer maxPerUser;
+
+    /** BR-TICKET-GATE-001: gates open this many minutes before the event starts; null = not set (display only). */
+    @Column(name = "gate_opens_minutes_before")
+    private Integer gateOpensMinutesBefore;
 }

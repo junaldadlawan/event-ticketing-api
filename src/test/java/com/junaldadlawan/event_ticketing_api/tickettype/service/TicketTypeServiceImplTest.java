@@ -71,7 +71,11 @@ class TicketTypeServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new TicketTypeServiceImpl(ticketTypeRepository, eventRepository, accessGuard, ticketRepository, cartItemRepository,
+        // the real settings service over an empty repository: the seeded defaults (60 / 60 minutes)
+        service = new TicketTypeServiceImpl(ticketTypeRepository,
+                new com.junaldadlawan.event_ticketing_api.platformsetting.service.TicketSaleSettingsServiceImpl(
+                        org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.platformsetting.repository.TicketSaleSettingsRepository.class), null, null),
+                eventRepository, accessGuard, ticketRepository, cartItemRepository,
                 new com.junaldadlawan.event_ticketing_api.event.service.EventCompletionService(eventRepository,
                         org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class)),
                 org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));

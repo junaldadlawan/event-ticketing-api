@@ -36,6 +36,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
+import com.junaldadlawan.event_ticketing_api.tickettype.service.TicketTypeBuyerLimit;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -82,6 +83,7 @@ public class CartServiceImpl implements CartService {
     private final PlatformFeeService platformFeeService;
     private final GatewayFeeService gatewayFeeService;
     private final CartActivityRecorder cartActivityRecorder;
+    private final TicketTypeBuyerLimit ticketTypeBuyerLimit;
 
     @Override
     @Transactional
@@ -268,7 +270,9 @@ public class CartServiceImpl implements CartService {
 
         // read after the release above, so an expired line of this cart is not merged into
         List<CartItem> lines = gaLines(cart.getId(), ticketType.getId());
-        requireWithinMaxPerOrder(ticketType, lines.stream().mapToInt(CartItem::getQuantity).sum() + quantity);
+        int inCart = lines.stream().mapToInt(CartItem::getQuantity).sum();
+        requireWithinMaxPerOrder(ticketType, inCart + quantity);
+        ticketTypeBuyerLimit.require(ticketType, cart.getBuyerId(), inCart + quantity, inCart);
         if (ticketType.getQuantityAvailable() < quantity) {
             throw new ConflictException("Seat or GA quantity no longer available");
         }
@@ -317,6 +321,10 @@ public class CartServiceImpl implements CartService {
         if (!seatMap.getEventId().equals(ticketType.getEventId())) {
             throw new BadRequestException("Seat does not belong to this ticket type's event");
         }
+        // BR-TICKET-LIMIT-001: each seat is one more ticket of this type
+        int seatsInCart = cartItemRepository.findByCartId(cart.getId()).stream()
+                .filter(line -> line.getTicketTypeId().equals(ticketType.getId())).mapToInt(CartItem::getQuantity).sum();
+        ticketTypeBuyerLimit.require(ticketType, cart.getBuyerId(), seatsInCart + 1, seatsInCart);
 
         // Release a stale hold specifically blocking this seat, if any,
         // before evaluating availability.
@@ -395,6 +403,9 @@ public class CartServiceImpl implements CartService {
             int others = gaLines(cartId, ticketType.getId()).stream().filter(other -> !other.getId().equals(itemId))
                     .mapToInt(CartItem::getQuantity).sum();
             requireWithinMaxPerOrder(ticketType, others + quantity);
+            if (difference > 0) {
+                ticketTypeBuyerLimit.require(ticketType, cart.getBuyerId(), others + quantity, others + line.getQuantity());
+            }
             if (difference > 0) {
                 Event event = eventRepository.findByIdAndDeletedAtIsNull(ticketType.getEventId())
                         .orElseThrow(() -> new ResourceNotFoundException("Event " + ticketType.getEventId() + " not found"));

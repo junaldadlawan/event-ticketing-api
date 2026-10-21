@@ -83,6 +83,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
      */
     boolean existsByEventIdAndOwnerId(UUID eventId, UUID ownerId);
 
+    /**
+     * BR-TICKET-LIMIT-001: tickets of a type the buyer bought (their paid orders), minus refunded or cancelled ones.
+     * Counted by the order's buyer, so tickets given away still count and tickets received do not.
+     */
+    @Query("select count(t) from Ticket t join Order o on o.id = t.orderId where o.buyerId = :buyerId and t.ticketTypeId = :ticketTypeId"
+            + " and o.status in (com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus.PAID,"
+            + " com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus.PARTIALLY_REFUNDED)"
+            + " and t.status not in (com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus.REFUNDED,"
+            + " com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus.CANCELLED)")
+    long countBoughtBy(@Param("buyerId") UUID buyerId, @Param("ticketTypeId") UUID ticketTypeId);
+
     /** BR-REVIEW-001: only someone holding a checked-in (USED) ticket for the event may review it. */
     boolean existsByEventIdAndOwnerIdAndStatus(UUID eventId, UUID ownerId, TicketStatus status);
 

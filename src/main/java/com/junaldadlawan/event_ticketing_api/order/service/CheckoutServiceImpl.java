@@ -58,6 +58,7 @@ import com.junaldadlawan.event_ticketing_api.ticket.service.TicketCredentialServ
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.repository.TicketTypeRepository;
+import com.junaldadlawan.event_ticketing_api.tickettype.service.TicketTypeBuyerLimit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -122,6 +123,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final PayMongoCustomerService payMongoCustomerService;
     private final PaymentMethodService paymentMethodService;
     private final CardVaultingStatus cardVaultingStatus;
+    private final TicketTypeBuyerLimit ticketTypeBuyerLimit;
     private final com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder cartActivityRecorder;
     private final SecureRandom random = new SecureRandom();
 
@@ -254,6 +256,10 @@ public class CheckoutServiceImpl implements CheckoutService {
             if (heldType.isSalesPaused()) {
                 throw new ConflictException("Sales for ticket type '" + heldType.getName() + "' are paused");
             }
+            // BR-TICKET-LIMIT-001: checked again here, as other orders may have been paid since these were added to the cart
+            int checkingOut = items.stream().filter(item -> item.getTicketTypeId().equals(heldType.getId()))
+                    .mapToInt(CartItem::getQuantity).sum();
+            ticketTypeBuyerLimit.require(heldType, lockedCart.getBuyerId(), checkingOut, 0);
         }
 
         // Reuse CartService.get()'s already-computed amounts (subtotal minus any applied promo-code discount, plus the
