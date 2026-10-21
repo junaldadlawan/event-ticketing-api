@@ -48,6 +48,8 @@ tags:
   - name: Moderation
   - name: Audit
   - name: Analytics
+  - name: Reviews
+    description: Event reviews by attendees (BR-REVIEW-001) and the organizer recap feed (BR-EVENT-RECAP-001).
 
 paths:
   /auth/register:
@@ -2424,6 +2426,224 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /events/{eventId}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: createEventReview
+      tags: [Reviews]
+      summary: Review an event you attended (BR-REVIEW-001)
+      description: >
+        Only a user holding a USED (checked-in) ticket for the event (403 otherwise), and only once the event
+        has ended (409 before). One review per user per event (409 when you already have one; edit it instead).
+        Logged as review.created in the event activity (the rating only, never the comment).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventReviewRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventReview" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The event has not ended yet, or you have already reviewed it
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      operationId: listEventReviews
+      tags: [Reviews]
+      summary: Every review with its comment and reviewer (owner, organizers with ANALYTICS, or admins)
+      description: The only place comments are shown, other than to their own author. Newest first by default.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, default: 20 } }
+        - { name: sort, in: query, description: "Default createdAt,desc; rating also works.", schema: { type: string } }
+      responses:
+        "200":
+          description: A page of reviews
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        rating: { type: integer, minimum: 1, maximum: 5 }
+                        comment: { type: [string, "null"] }
+                        reviewerName: { type: [string, "null"] }
+                        createdAt: { type: string, format: date-time }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events/{eventId}/reviews/me:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getMyEventReview
+      tags: [Reviews]
+      summary: Your own review of the event
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventReview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: "You have not reviewed this event, or the event does not exist" }
+    put:
+      operationId: updateMyEventReview
+      tags: [Reviews]
+      summary: Replace your review (same rules as creating it); logged as review.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventReviewRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventReview" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: You have not reviewed this event }
+        "409":
+          description: The event has not ended yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteMyEventReview
+      tags: [Reviews]
+      summary: Delete your review (same rules as creating it); you may write a new one afterwards. Logged as review.deleted
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: You have not reviewed this event }
+
+  /events/{eventId}/reviews/summary:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventReviewSummary
+      tags: [Reviews]
+      security: []
+      summary: Public rating summary - no comments, no reviewers
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  averageRating: { type: [number, "null"], description: "Rounded to 2 decimals; null when there are no reviews." }
+                  count: { type: integer, format: int64 }
+                  counts:
+                    type: object
+                    description: Reviews per star; always has the keys "1" to "5".
+                    additionalProperties: { type: integer, format: int64 }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events/{eventId}/recap:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventRecap
+      tags: [Reviews]
+      security: []
+      summary: The event's recap feed, oldest first (BR-EVENT-RECAP-001)
+      description: >
+        Public for a published event that has ended. For a draft or cancelled event only its owner, its
+        EVENTS organizers and admins may read it (404 for everyone else).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RecapMessage" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: postEventRecapMessage
+      tags: [Reviews]
+      summary: Post a message and/or picture to the recap (owner, or an organizer with EVENTS)
+      description: >
+        Only once the event has ended (409 before). Needs a body or an imageUrl (400 otherwise); imageUrl must be
+        a URL returned by POST /uploads. Logged as recap_message.created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecapMessageRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecapMessage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The event has not ended yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /events/{eventId}/recap/{messageId}:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: updateEventRecapMessage
+      tags: [Reviews]
+      summary: Edit a recap message (owner, or an organizer with EVENTS); logged as recap_message.updated
+      description: A null field is left unchanged; body "" empties the text and imageUrl "" removes the picture, as long as the other remains.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecapMessageRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecapMessage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteEventRecapMessage
+      tags: [Reviews]
+      summary: Delete a recap message (owner, an organizer with EVENTS, or an admin); logged as recap_message.deleted
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /events/{eventId}/analytics:
     parameters:
       - $ref: "#/components/parameters/EventId"
@@ -3581,6 +3801,40 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    EventReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: [string, "null"], maxLength: 1000, description: "Optional, no HTML. Only its author, the owner, ANALYTICS organizers and admins ever see it." }
+
+    EventReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    RecapMessageRequest:
+      type: object
+      properties:
+        body: { type: [string, "null"], maxLength: 2000, description: "No HTML; may be empty when there is an image." }
+        imageUrl: { type: [string, "null"], maxLength: 500, description: "A URL returned by POST /uploads." }
+
+    RecapMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        body: { type: string }
+        imageUrl: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        authorName: { type: [string, "null"] }
+        organizationName: { type: [string, "null"] }
+
     Error:
       type: object
       properties:

@@ -96,6 +96,9 @@ public class SecurityConfig {
                         // GET /api/v1/events/** permitAll matcher below. Which events a
                         // given caller sees is enforced in EventServiceImpl.listManagedEvents.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/managed").authenticated()
+                        // BR-REVIEW-001: the review list (organizers) and "my review" need a signed-in caller; the
+                        // summary and the recap feed stay public under the permitAll below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/reviews", "/api/v1/events/*/reviews/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or

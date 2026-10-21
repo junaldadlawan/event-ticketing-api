@@ -83,6 +83,9 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
      */
     boolean existsByEventIdAndOwnerId(UUID eventId, UUID ownerId);
 
+    /** BR-REVIEW-001: only someone holding a checked-in (USED) ticket for the event may review it. */
+    boolean existsByEventIdAndOwnerIdAndStatus(UUID eventId, UUID ownerId, TicketStatus status);
+
     /** Phase 10: {@code GET /scanner-devices/{deviceId}/dataset} - the full pre-fetch for offline validation. */
     List<Ticket> findByEventId(UUID eventId);
 
