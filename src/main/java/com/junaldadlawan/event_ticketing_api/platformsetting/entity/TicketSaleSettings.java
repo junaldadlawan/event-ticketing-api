@@ -28,7 +28,7 @@ public class TicketSaleSettings extends Auditable {
     @Builder.Default
     private Short id = ROW_ID;
 
-    /** Ticket sales must end at least this many minutes before the event starts. */
+    /** Ticket sales must end at least this many minutes before the event ends (0 = they may run to its end). */
     @Column(name = "sales_close_minutes_before_event", nullable = false)
     @Builder.Default
     private int salesCloseMinutesBeforeEvent = 60;

@@ -2049,7 +2049,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
-        "400": { description: "Validation error, a sale window shorter than 1 hour, or one ending less than 1 hour before the event starts" }
+        "400": { description: "Validation error, a sale window shorter than the minimum sale duration (default 1 hour), or one ending less than the sales-close time (default 1 hour) before the event ends (BR-ADMIN-SETTINGS-002)" }
         "409": { $ref: "#/components/responses/EventEnded" }
 
   /events/{eventId}/ticket-types/order:
@@ -2116,7 +2116,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TicketType" }
-        "400": { description: "Validation error, a sale window shorter than 1 hour, or one ending less than 1 hour before the event starts" }
+        "400": { description: "Validation error, a sale window shorter than the minimum sale duration (default 1 hour), or one ending less than the sales-close time (default 1 hour) before the event ends (BR-ADMIN-SETTINGS-002)" }
         "409": { $ref: "#/components/responses/EventEnded" }
     delete:
       operationId: deleteTicketType
@@ -3933,7 +3933,7 @@ components:
     TicketSaleSettings:
       type: object
       properties:
-        salesCloseMinutesBeforeEvent: { type: integer, minimum: 0, maximum: 10080, description: "Ticket sales must end at least this many minutes before the event starts. Default 60." }
+        salesCloseMinutesBeforeEvent: { type: integer, minimum: 0, maximum: 10080, description: "Ticket sales must end at least this many minutes before the event ends; 0 lets them run to its end. Default 60." }
         minSaleDurationMinutes: { type: integer, minimum: 1, maximum: 10080, description: "A sale window must run for at least this many minutes. Default 60." }
         updatedBy: { type: [string, "null"] }
         updatedAt: { type: [string, "null"], format: date-time }
@@ -4382,7 +4382,7 @@ components:
         price: { $ref: "#/components/schemas/Money" }
         quantity_total: { type: integer }
         sale_start_at: { type: string, format: date-time, description: "Optional; omit to start sales now (server time). A past time is accepted." }
-        sale_end_at: { type: string, format: date-time, description: "Must be at least 1 hour after sale_start_at and at least 1 hour before the event starts." }
+        sale_end_at: { type: string, format: date-time, description: "Must be at least the minimum sale duration (default 1 hour) after sale_start_at and at least the sales-close time (default 1 hour) before the event ends - so sales may go on after the event has started. Otherwise 400 \"Ticket sales must end at least <duration> before the event ends (by <time>)\"." }
         max_per_order: { type: integer, default: 10 }
         color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit or null for none. Anything else is a 400." }
         max_per_user: { type: [integer, "null"], minimum: 1, description: "Per-buyer limit (null = unlimited). max_per_order must not be more (400 'Max per order can't be more than the per-buyer limit'); when max_per_order is omitted it defaults to the lower of 10 and this." }

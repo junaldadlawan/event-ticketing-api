@@ -152,12 +152,18 @@ class TicketTypeLimitsAndSaleSettingsIntegrationTest {
         int originalClose = original.getSalesCloseMinutesBeforeEvent();
         int originalMin = original.getMinSaleDurationMinutes();
         try {
-            // a window that ends 90 minutes before the event is fine under today's 60
-            UUID existing = idOf(createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventStart.minus(90, ChronoUnit.MINUTES)))
+            settings(admin, 60, 60).andExpect(status().isOk());   // start from the defaults whatever the dev database holds
+            Instant eventEnd = eventStart.plus(2, ChronoUnit.HOURS);
+            // sales may run on after the event has started: this window ends 30 minutes in, 90 minutes before the end
+            UUID existing = idOf(createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventEnd.minus(90, ChronoUnit.MINUTES)))
                     .andExpect(status().isCreated()));
+            createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventEnd.minus(30, ChronoUnit.MINUTES)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("Ticket sales must end at least 1 hour before the event ends (by "
+                            + eventEnd.minus(60, ChronoUnit.MINUTES) + ")"));
 
             as(get("/api/v1/platform-settings/ticket-sales"), owner).andExpect(status().isOk())
-                    .andExpect(jsonPath("$.salesCloseMinutesBeforeEvent").value(originalClose));
+                    .andExpect(jsonPath("$.salesCloseMinutesBeforeEvent").value(60));
             mockMvc.perform(get("/api/v1/platform-settings/ticket-sales")).andExpect(status().isUnauthorized());
             settings(owner, 120, 30).andExpect(status().isForbidden());
             settings(admin, 120, 30).andExpect(status().isOk())
@@ -167,19 +173,26 @@ class TicketTypeLimitsAndSaleSettingsIntegrationTest {
                     + " order by created_at desc limit 1", String.class);
             assertThat(logged).contains("\"field\": \"salesCloseMinutesBeforeEvent\"").contains("\"to\": 120");
 
-            createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventStart.minus(90, ChronoUnit.MINUTES)))
+            createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventEnd.minus(90, ChronoUnit.MINUTES)))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.detail").value(containsString("Ticket sales must end at least 2 hours before the event starts")));
+                    .andExpect(jsonPath("$.detail").value(containsString("Ticket sales must end at least 2 hours before the event ends")));
             // 45 minutes is now long enough (minimum 30)
-            createType(window(eventStart.minus(5, ChronoUnit.HOURS), eventStart.minus(255, ChronoUnit.MINUTES))).andExpect(status().isCreated());
+            createType(window(eventEnd.minus(5, ChronoUnit.HOURS), eventEnd.minus(255, ChronoUnit.MINUTES))).andExpect(status().isCreated());
 
             // the existing type keeps its window: editing something else is fine, editing the window applies the new rule
             edit(existing, "{\"name\":\"Still fine\"}").andExpect(status().isOk());
-            edit(existing, "{\"saleEndAt\":\"" + eventStart.minus(100, ChronoUnit.MINUTES) + "\"}").andExpect(status().isBadRequest());
+            edit(existing, "{\"saleEndAt\":\"" + eventEnd.minus(100, ChronoUnit.MINUTES) + "\"}").andExpect(status().isBadRequest());
 
             settings(admin, 60, 120).andExpect(status().isOk());
             createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventStart.minus(9, ChronoUnit.HOURS)))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Ticket sales must run for at least 2 hours"));
+
+            // at 0, sales may run right up to the event's end, but not past it
+            settings(admin, 0, 60).andExpect(status().isOk());
+            createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventEnd)).andExpect(status().isCreated());
+            createType(window(eventStart.minus(10, ChronoUnit.HOURS), eventEnd.plus(1, ChronoUnit.MINUTES)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value(containsString("before the event ends (by " + eventEnd + ")")));
         } finally {
             TicketSaleSettings settings = settingsRepository.findById(TicketSaleSettings.ROW_ID).orElseThrow();
             settings.setSalesCloseMinutesBeforeEvent(originalClose);

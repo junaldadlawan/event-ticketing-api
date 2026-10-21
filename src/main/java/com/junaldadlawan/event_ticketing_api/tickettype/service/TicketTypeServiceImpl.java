@@ -193,18 +193,18 @@ public class TicketTypeServiceImpl implements TicketTypeService {
 
     /**
      * BR-EVENT-003 with BR-ADMIN-SETTINGS-002's current values: the window runs for at least the minimum duration (which
-     * also covers end > start) and closes at least the set time before the event starts.
+     * also covers end > start) and closes at least the set time before the event ends (0 = sales may run to its end).
      */
-    // shortcut: checked only on ticket-type create/update because an event's startAt can't change today; if EventUpdateRequest ever takes startAt, clamp or reject this event's ticket types in EventServiceImpl.update.
+    // shortcut: checked only on ticket-type create/update because an event's endAt can't change today; if EventUpdateRequest ever takes endAt, clamp or reject this event's ticket types in EventServiceImpl.update.
     private void requireSaleWindowRules(Event event, Instant saleStartAt, Instant saleEndAt) {
         TicketSaleSettings settings = ticketSaleSettingsService.current();
         if (saleEndAt.isBefore(saleStartAt.plus(Duration.ofMinutes(settings.getMinSaleDurationMinutes())))) {
             throw new BadRequestException("Ticket sales must run for at least " + describe(settings.getMinSaleDurationMinutes()));
         }
-        Instant latestEnd = event.getStartAt().minus(Duration.ofMinutes(settings.getSalesCloseMinutesBeforeEvent()));
+        Instant latestEnd = event.getEndAt().minus(Duration.ofMinutes(settings.getSalesCloseMinutesBeforeEvent()));
         if (saleEndAt.isAfter(latestEnd)) {
             throw new BadRequestException("Ticket sales must end at least " + describe(settings.getSalesCloseMinutesBeforeEvent())
-                    + " before the event starts (by " + latestEnd + ")");
+                    + " before the event ends (by " + latestEnd + ")");
         }
     }
 

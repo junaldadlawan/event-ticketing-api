@@ -24,8 +24,8 @@ import java.time.Instant;
  * maxPerOrder} stays optional — openapi gives it a real server-side default
  * ({@code default: 10}), applied in the service layer when omitted.
  * <p>
- * {@code saleEndAt} must be at least 1 hour after {@code saleStartAt} and at
- * least 1 hour before the event starts; enforced as explicit service-level checks (they
+ * {@code saleEndAt} must be at least the minimum sale duration after {@code saleStartAt} and at
+ * least the sales-close time before the event ends (BR-ADMIN-SETTINGS-002); enforced as explicit service-level checks (they
  * need the event).
  */
 public record TicketTypeCreateRequest(

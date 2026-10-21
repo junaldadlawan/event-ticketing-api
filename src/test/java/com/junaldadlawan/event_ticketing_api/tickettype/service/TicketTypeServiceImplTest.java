@@ -1076,7 +1076,7 @@ class TicketTypeServiceImplTest {
         assertThat(result.getSaleEndAt()).isEqualTo(newSaleEndAt);
     }
 
-    // ---- BR-EVENT-003: sales close at least 1 hour before the event starts ----
+    // ---- BR-EVENT-003: sales close at least 1 hour (the default setting) before the event ends ----
 
     private Event mockOwnerCreateAccess(UUID eventId) {
         UUID ownerId = UUID.randomUUID();
@@ -1090,10 +1090,10 @@ class TicketTypeServiceImplTest {
     }
 
     @Test
-    void create_saleEndAtExactlyOneHourBeforeEventStart_isAccepted() {
+    void create_saleEndAtAfterTheStart_exactlyOneHourBeforeTheEnd_isAccepted() {
         UUID eventId = UUID.randomUUID();
         Event event = mockOwnerCreateAccess(eventId);
-        Instant saleEndAt = event.getStartAt().minus(1, ChronoUnit.HOURS);
+        Instant saleEndAt = event.getEndAt().minus(1, ChronoUnit.HOURS);   // already after the event has started
 
         TicketType result = service.create(eventId, new TicketTypeCreateRequest(
                 "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, Instant.now(), saleEndAt, null));
@@ -1105,13 +1105,13 @@ class TicketTypeServiceImplTest {
     void create_saleEndAtOneMinutePastTheCap_throwsBadRequest() {
         UUID eventId = UUID.randomUUID();
         Event event = mockOwnerCreateAccess(eventId);
-        Instant cap = event.getStartAt().minus(1, ChronoUnit.HOURS);
+        Instant cap = event.getEndAt().minus(1, ChronoUnit.HOURS);
         TicketTypeCreateRequest request = new TicketTypeCreateRequest(
                 "GA", TicketTypeKind.GENERAL_ADMISSION, new MoneyDto(1000L, "USD"), 100, Instant.now(), cap.plus(1, ChronoUnit.MINUTES), null);
 
         assertThatThrownBy(() -> service.create(eventId, request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Ticket sales must end at least 1 hour before the event starts (by " + cap + ")");
+                .hasMessage("Ticket sales must end at least 1 hour before the event ends (by " + cap + ")");
         verify(ticketTypeRepository, never()).save(any());
     }
 
@@ -1187,12 +1187,12 @@ class TicketTypeServiceImplTest {
         UUID eventId = UUID.randomUUID();
         UUID ticketTypeId = UUID.randomUUID();
         mockOwnerAccess(ticketTypeId, eventId, 100, 100);
-        // the event starts in 10 days; an end 30 minutes before it is past the 1-hour cap
-        Instant newSaleEndAt = Instant.now().plus(10, ChronoUnit.DAYS).minus(30, ChronoUnit.MINUTES);
+        // the event starts in 10 days and ends 2 hours later; an end 30 minutes before that is past the 1-hour cap
+        Instant newSaleEndAt = Instant.now().plus(10, ChronoUnit.DAYS).plus(90, ChronoUnit.MINUTES);
 
         assertThatThrownBy(() -> service.update(ticketTypeId, new TicketTypeUpdateRequest(null, null, null, null, newSaleEndAt, null)))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageStartingWith("Ticket sales must end at least 1 hour before the event starts");
+                .hasMessageStartingWith("Ticket sales must end at least 1 hour before the event ends");
         verify(ticketTypeRepository, never()).save(any());
     }
 }
