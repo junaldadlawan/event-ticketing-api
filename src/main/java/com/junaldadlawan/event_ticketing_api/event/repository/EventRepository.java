@@ -21,6 +21,14 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
 
     Optional<Event> findByIdAndDeletedAtIsNull(UUID id);
 
+    /**
+     * BR-NOTIFY-002: live or completed events that may have a lifecycle notification due - starting within
+     * {@code startsBefore} (now + 24h) and not ended before {@code endedAfter} (how long review requests stay due).
+     */
+    @Query("select e from Event e where e.deletedAt is null and e.status in :statuses and e.startAt <= :startsBefore and e.endAt > :endedAfter")
+    List<Event> findLifecycleCandidates(@Param("statuses") Collection<EventStatus> statuses, @Param("startsBefore") Instant startsBefore,
+                                        @Param("endedAfter") Instant endedAfter);
+
     /** Phase 14 (BR-ANALYTICS-002): "event volume" - total events ever created, platform-wide, not just currently-published ones. */
     long countByDeletedAtIsNull();
 

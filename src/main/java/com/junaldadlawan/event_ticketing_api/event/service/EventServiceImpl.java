@@ -16,6 +16,7 @@ import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.specification.EventSpecification;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.EventLifecycleNotifier;
 import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
@@ -61,6 +62,7 @@ public class EventServiceImpl implements EventService {
     private final AuditLogService auditLogService;
     private final CategoryService categoryService;
     private final EventCompletionService eventCompletionService;
+    private final EventLifecycleNotifier eventLifecycleNotifier;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -170,6 +172,11 @@ public class EventServiceImpl implements EventService {
         }
         EventCompletionService.requireNotEnded(event);
         Map<String, Object> before = AuditDetails.snapshot(event, EventUpdateRequest.class);
+        // BR-NOTIFY-002: compared after the save to tell holders when the event moves
+        Instant oldStart = event.getStartAt();
+        Instant oldEnd = event.getEndAt();
+        String oldTimezone = event.getTimezone();
+        UUID oldVenueId = event.getVenueId();
 
         if (request.title() != null) {
             if (request.title().isBlank()) {
@@ -199,6 +206,8 @@ public class EventServiceImpl implements EventService {
         if (changes != null) {
             auditLogService.recordByCurrentUser("event.updated", "Event", eventId, eventId, changes);
         }
+        // shortcut: EventUpdateRequest cannot change start/end/timezone/venue yet, so this never sends today; it does once they become editable
+        eventLifecycleNotifier.eventChanged(saved, oldStart, oldEnd, oldTimezone, oldVenueId);
         return saved;
     }
 
@@ -217,6 +226,8 @@ public class EventServiceImpl implements EventService {
         }
 
         event.setStatus(EventStatus.PUBLISHED);
+        // BR-NOTIFY-002: reminders and the like due before now (already missed) are not sent
+        event.setNotificationsFrom(Instant.now());
         Event published = eventRepository.save(event);
         auditLogService.recordByCurrentUser("event.published", "Event", eventId, eventId);
         return published;

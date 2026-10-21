@@ -94,6 +94,21 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             + " com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus.CANCELLED)")
     long countBoughtBy(@Param("buyerId") UUID buyerId, @Param("ticketTypeId") UUID ticketTypeId);
 
+    /** BR-NOTIFY-002: who holds a ticket for the event now (its current owners, not its buyers). */
+    @Query("select distinct t.ownerId from Ticket t where t.eventId = :eventId and t.status in :statuses")
+    List<UUID> findHolderIds(@Param("eventId") UUID eventId, @Param("statuses") Collection<TicketStatus> statuses);
+
+    /** BR-NOTIFY-002 GATE_OPEN: {@code [ownerId, the largest gate_opens_minutes_before of the types they hold]}. */
+    @Query("select t.ownerId, max(tt.gateOpensMinutesBefore) from Ticket t join TicketType tt on tt.id = t.ticketTypeId"
+            + " where t.eventId = :eventId and t.status in :statuses and tt.gateOpensMinutesBefore is not null group by t.ownerId")
+    List<Object[]> findHolderGateMinutes(@Param("eventId") UUID eventId, @Param("statuses") Collection<TicketStatus> statuses);
+
+    /** BR-NOTIFY-002 REVIEW_REQUEST: owners of a USED ticket for the event who have no review of it. */
+    @Query("select distinct t.ownerId from Ticket t where t.eventId = :eventId"
+            + " and t.status = com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus.USED"
+            + " and not exists (select r.id from EventReview r where r.eventId = :eventId and r.userId = t.ownerId and r.deletedAt is null)")
+    List<UUID> findAttendeesWithoutReview(@Param("eventId") UUID eventId);
+
     /** BR-REVIEW-001: only someone holding a checked-in (USED) ticket for the event may review it. */
     boolean existsByEventIdAndOwnerIdAndStatus(UUID eventId, UUID ownerId, TicketStatus status);
 

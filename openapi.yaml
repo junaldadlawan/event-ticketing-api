@@ -427,6 +427,44 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Notification" }
 
+  /users/me/notification-preferences:
+    get:
+      operationId: getMyNotificationPreferences
+      tags: [Notifications]
+      summary: Your on/off switches for the notification types you may turn off (BR-NOTIFY-002)
+      description: >
+        Every type a user may turn off: EVENT_REMINDER, GATE_OPEN, EVENT_STARTING, REVIEW_REQUEST, EVENT_CHANGE,
+        WAITLIST_AVAILABILITY. All on by default. Order confirmations, payment receipts, refund confirmations, event
+        cancellations, dispute outcomes and account moderation are always sent and are not listed.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      operationId: updateMyNotificationPreferences
+      tags: [Notifications]
+      summary: Turn types on or off; a partial map is fine (the rest stay as they are)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationPreferences" }
+      responses:
+        "200":
+          description: All your preferences after the change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+        "400":
+          description: An unknown type, a type that cannot be turned off, or a value that is not true/false
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /organizations:
     get:
       operationId: listOrganizations
@@ -3900,6 +3938,22 @@ components:
         updatedBy: { type: [string, "null"] }
         updatedAt: { type: [string, "null"], format: date-time }
 
+    NotificationPreferences:
+      type: object
+      required: [preferences]
+      properties:
+        preferences:
+          type: object
+          description: Type name -> on (true) or off (false).
+          properties:
+            EVENT_REMINDER: { type: boolean }
+            GATE_OPEN: { type: boolean }
+            EVENT_STARTING: { type: boolean }
+            REVIEW_REQUEST: { type: boolean }
+            EVENT_CHANGE: { type: boolean }
+            WAITLIST_AVAILABILITY: { type: boolean }
+          additionalProperties: false
+
     Error:
       type: object
       properties:
@@ -4936,10 +4990,13 @@ components:
         id: { type: string, format: uuid }
         type:
           type: string
-          enum: [order_confirmation, payment_receipt, event_reminder, event_change, event_cancellation, waitlist_availability, refund_confirmation]
+          enum: [order_confirmation, payment_receipt, event_reminder, event_change, event_cancellation, waitlist_availability, refund_confirmation,
+            dispute_resolved, account_moderation_action, gate_open, event_starting, review_request]
         channel: { type: string, enum: [email, sms, push] }
         related_object_type: { type: [string, "null"] }
         related_object_id: { type: [string, "null"], format: uuid }
+        message: { type: [string, "null"], description: "BR-NOTIFY-002: server-composed text for the event lifecycle types, e.g. \"Bantayog 2026 is tomorrow at 6:18 PM.\"; null for the older types." }
+        event_id: { type: [string, "null"], format: uuid, description: "The event a lifecycle notification is about, to open it from the bell." }
         sent_at: { type: [string, "null"], format: date-time }
         status: { type: string, enum: [pending, sent, failed] }
         created_at: { type: string, format: date-time, description: When the notification was triggered (distinct from sent_at). }

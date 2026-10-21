@@ -66,6 +66,10 @@ public class Event extends Auditable {
     @Column(name = "status", nullable = false, length = 20)
     private EventStatus status = EventStatus.DRAFT;
 
+    /** BR-NOTIFY-002: scheduled notifications due before this moment are not sent (set on publish and when the event moves). */
+    @Column(name = "notifications_from")
+    private Instant notificationsFrom;
+
     @Column(name = "ticket_prefix", nullable = false, length = 3)
     private String ticketPrefix;
 }

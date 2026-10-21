@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.notification.service;
 import com.junaldadlawan.event_ticketing_api.notification.dto.NotificationResponse;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,6 +18,13 @@ public interface NotificationService {
      * both be null for a notification with no single backing row.
      */
     void notify(UUID userId, NotificationType type, String relatedObjectType, UUID relatedObjectId);
+
+    /**
+     * BR-NOTIFY-002: a notification about an event, with its server-composed {@code message} (also the email body).
+     * {@code sentFor} tells EVENT_CHANGE notifications apart (the save's time); null for the once-per-event types.
+     * Never throws, like {@link #notify}; skipped when the user turned the type off.
+     */
+    void notifyAboutEvent(UUID userId, NotificationType type, UUID eventId, String message, Instant sentFor);
 
     /** {@code GET /users/me/notifications} - the caller's own notifications, most recent first. */
     List<NotificationResponse> listMyNotifications();

@@ -123,6 +123,8 @@ public class SecurityConfig {
                         // (Phase 11) is any authenticated user's own
                         // notification history.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/notifications").authenticated()
+                        // BR-NOTIFY-002: any signed-in user's own notification on/off switches
+                        .requestMatchers("/api/v1/users/me/notification-preferences").authenticated()
                         // GET/PATCH /users/me: any authenticated caller's own
                         // profile - viewing/editing your own name or email is
                         // not an admin-only user-management action, even

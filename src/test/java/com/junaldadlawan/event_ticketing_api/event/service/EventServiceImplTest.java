@@ -95,7 +95,8 @@ class EventServiceImplTest {
     @BeforeEach
     void setUp() {
         eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService, auditLogService, categoryService,
-                new EventCompletionService(eventRepository, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class), auditLogService));
+                new EventCompletionService(eventRepository, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class), auditLogService),
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.notification.service.EventLifecycleNotifier.class));
         orgId = UUID.randomUUID();
         // Default: any category resolves, canonicalised to a capitalised name (music -> Music).
         lenient().when(categoryService.resolveActive(anyString())).thenAnswer(invocation -> {

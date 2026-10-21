@@ -65,6 +65,18 @@ public class Notification {
     @Column(name = "status", nullable = false, length = 10)
     private NotificationStatus status;
 
+    /** BR-NOTIFY-002: the server-composed text (lifecycle types; null for older ones). */
+    @Column(name = "message", length = 500)
+    private String message;
+
+    /** The event it is about, for the lifecycle types. */
+    @Column(name = "event_id")
+    private UUID eventId;
+
+    /** Tells EVENT_CHANGE notifications apart (the save's time); unused by the once-per-event types. */
+    @Column(name = "sent_for")
+    private Instant sentFor;
+
     @Column(name = "sent_at")
     private Instant sentAt;
 
