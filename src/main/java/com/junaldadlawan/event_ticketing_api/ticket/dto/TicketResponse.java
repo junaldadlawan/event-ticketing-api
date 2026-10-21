@@ -23,9 +23,15 @@ public record TicketResponse(
         String ticketNumber,
         TicketStatus status,
         Instant createdAt,
-        Instant updatedAt) implements Serializable {
+        Instant updatedAt,
+        // only on a USED ticket: the valid scan that checked it in
+        TicketCheckInResponse checkIn) implements Serializable {
 
     public static TicketResponse from(Ticket ticket) {
+        return from(ticket, null);
+    }
+
+    public static TicketResponse from(Ticket ticket, TicketCheckInResponse checkIn) {
         return new TicketResponse(
                 ticket.getId(),
                 ticket.getOrderId(),
@@ -36,6 +42,7 @@ public record TicketResponse(
                 ticket.getTicketNumber(),
                 ticket.getStatus(),
                 ticket.getCreatedAt(),
-                ticket.getUpdatedAt());
+                ticket.getUpdatedAt(),
+                checkIn);
     }
 }

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.checkin.controller;
 
+import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceLocationRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceAuthorizeRequest;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.TicketDatasetResponse;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -42,6 +44,12 @@ public class ScannerDeviceController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revoke(@PathVariable UUID deviceId) {
         scannerDeviceService.revoke(deviceId);
+    }
+
+    /** Move the device, e.g. to "Gate B" (null or blank clears it). The device itself, or the owning organizer/owner/admin. */
+    @PatchMapping("/api/v1/scanner-devices/{deviceId}")
+    public ScannerDeviceResponse updateLocation(@PathVariable UUID deviceId, @Valid @RequestBody ScannerDeviceLocationRequest request) {
+        return scannerDeviceService.updateLocation(deviceId, request);
     }
 
     @GetMapping("/api/v1/scanner-devices/{deviceId}/dataset")

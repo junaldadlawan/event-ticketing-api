@@ -110,6 +110,8 @@ public class SecurityConfig {
                         // buyer's own order history, not an admin-only user-management
                         // endpoint, even though its path nests under /users/**.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/orders").authenticated()
+                        // Same reasoning: GET /users/me/tickets (and its /events filter list) is any signed-in user's own tickets.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me/tickets", "/api/v1/users/me/tickets/events").authenticated()
                         // Same reasoning: GET /users/me/waitlist-entries (Phase 9)
                         // is any authenticated user's own waitlist history, not an
                         // admin-only user-management endpoint.
@@ -208,6 +210,8 @@ public class SecurityConfig {
                         // no business touching). ROLE_SCANNER_DEVICE is granted only by
                         // DeviceAuthenticationFilter, never by JwtAuthenticationFilter.
                         .requestMatchers(HttpMethod.GET, "/api/v1/scanner-devices/*/dataset").hasRole("SCANNER_DEVICE")
+                        // moving a device: the device itself (deviceAuth) or a signed-in user; who may is checked in the service
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/scanner-devices/*").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/check-in/validate", "/api/v1/check-in/fallback-scans").hasRole("SCANNER_DEVICE")
                         // /api/v1/orders/** and /api/v1/tickets/** (Phase 6a) need no
                         // explicit matcher of their own - neither prefix is touched by

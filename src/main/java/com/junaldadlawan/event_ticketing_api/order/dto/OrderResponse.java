@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.order.dto;
 import com.junaldadlawan.event_ticketing_api.order.entity.Order;
 import com.junaldadlawan.event_ticketing_api.order.enums.OrderStatus;
 import com.junaldadlawan.event_ticketing_api.order.enums.PayeeType;
+import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketCheckInResponse;
 import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketResponse;
 import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
@@ -10,6 +11,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.dto.MoneyDto;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -37,6 +39,11 @@ public record OrderResponse(
         Instant updatedAt) implements Serializable {
 
     public static OrderResponse from(Order order, List<Ticket> tickets) {
+        return from(order, tickets, Map.of());
+    }
+
+    /** {@code checkIns}: ticket id -> its check-in (see {@code TicketCheckInLookup}); tickets without one get null. */
+    public static OrderResponse from(Order order, List<Ticket> tickets, Map<UUID, TicketCheckInResponse> checkIns) {
         return new OrderResponse(
                 order.getId(),
                 order.getBuyerId(),
@@ -47,7 +54,7 @@ public record OrderResponse(
                 new MoneyDto(order.buyerPlatformFee(), order.getTotal().getCurrency()),
                 new MoneyDto(order.buyerGatewayFee(), order.getTotal().getCurrency()),
                 new MoneyDto(order.getTotal().getAmount(), order.getTotal().getCurrency()),
-                tickets.stream().map(TicketResponse::from).toList(),
+                tickets.stream().map(t -> TicketResponse.from(t, checkIns.get(t.getId()))).toList(),
                 order.getCreatedAt(),
                 order.getCreatedBy(),
                 order.getUpdatedAt());

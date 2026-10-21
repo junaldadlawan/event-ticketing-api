@@ -113,6 +113,7 @@ public class CheckInServiceImpl implements CheckInService {
                     .sourceType(CheckInSourceType.SCANNER_DEVICE)
                     .sourceId(device.getId())
                     .result(outcome.result())
+                    .scannerLocation(device.getLocation())
                     .build());
         }
         BusinessAuditLogger.record("checkin.validated", "Ticket", outcome.ticketId(),
@@ -120,7 +121,8 @@ public class CheckInServiceImpl implements CheckInService {
                         ? BusinessAuditLogger.Outcome.SUCCESS
                         : BusinessAuditLogger.Outcome.FAILURE,
                 "result=" + outcome.result() + " device=" + device.getId());
-        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), scannedAt, buildSummary(outcome.ticket()));
+        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), scannedAt, buildSummary(outcome.ticket()),
+                device.getLocation());
     }
 
     @Override
@@ -140,6 +142,8 @@ public class CheckInServiceImpl implements CheckInService {
     }
 
     private ValidationResultResponse reconcileFallbackScan(UUID eventId, ScannerDevice device, FallbackScanItemDto scan) {
+        // the gate the scan was made at (it may have moved since), else where the device stands now
+        String location = scan.location() == null || scan.location().isBlank() ? device.getLocation() : scan.location().trim();
         ScanOutcome outcome = resolveAndMarkTicket(scan.rawCredential(), eventId);
 
         FallbackScanRecord record = FallbackScanRecord.builder()
@@ -157,6 +161,7 @@ public class CheckInServiceImpl implements CheckInService {
                     .sourceType(CheckInSourceType.RECONCILED_FALLBACK)
                     .sourceId(savedRecord.getId())
                     .result(outcome.result())
+                    .scannerLocation(location)
                     .build());
         }
         BusinessAuditLogger.record("checkin.fallback_scan", "Ticket", outcome.ticketId(),
@@ -164,7 +169,8 @@ public class CheckInServiceImpl implements CheckInService {
                         ? BusinessAuditLogger.Outcome.SUCCESS
                         : BusinessAuditLogger.Outcome.FAILURE,
                 "result=" + outcome.result() + " device=" + device.getId());
-        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), savedRecord.getSyncedAt(), buildSummary(outcome.ticket()));
+        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), savedRecord.getSyncedAt(), buildSummary(outcome.ticket()),
+                location);
     }
 
     @Override

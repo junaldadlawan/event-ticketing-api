@@ -59,6 +59,10 @@ public class CheckInRecord {
     @Column(name = "result", nullable = false, length = 20)
     private CheckInResult result;
 
+    /** Where the scan was made - the device's location at scan time, kept even if the device moves later. */
+    @Column(name = "scanner_location", length = 100)
+    private String scannerLocation;
+
     @CreationTimestamp
     @Column(name = "scanned_at", updatable = false, nullable = false)
     private Instant scannedAt;

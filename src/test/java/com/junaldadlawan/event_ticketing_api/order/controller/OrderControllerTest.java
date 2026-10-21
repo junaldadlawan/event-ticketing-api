@@ -56,7 +56,7 @@ class OrderControllerTest {
 
     private TicketResponse ticketResponse(UUID orderId) {
         return new TicketResponse(UUID.randomUUID(), orderId, UUID.randomUUID(), UUID.randomUUID(), null,
-                UUID.randomUUID(), "ABC-A2B3C4", TicketStatus.VALID, Instant.now(), Instant.now());
+                UUID.randomUUID(), "ABC-A2B3C4", TicketStatus.VALID, Instant.now(), Instant.now(), null);
     }
 
     private OrderResponse orderResponse(UUID orderId) {

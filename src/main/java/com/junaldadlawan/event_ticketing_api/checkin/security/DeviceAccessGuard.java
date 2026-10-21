@@ -21,6 +21,13 @@ import java.util.UUID;
 @Component
 public class DeviceAccessGuard {
 
+    /** Is the caller a scanner device (deviceAuth), rather than a signed-in user? */
+    public boolean isDevice() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.isAuthenticated() && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_SCANNER_DEVICE".equals(authority.getAuthority()));
+    }
+
     public UUID currentDeviceId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

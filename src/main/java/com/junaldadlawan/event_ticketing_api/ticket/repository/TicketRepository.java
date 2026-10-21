@@ -1,12 +1,17 @@
 package com.junaldadlawan.event_ticketing_api.ticket.repository;
 
+import com.junaldadlawan.event_ticketing_api.ticket.dto.MyTicketEventResponse;
 import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +48,23 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     Optional<Ticket> findFirstByOrderId(UUID orderId);
 
     List<Ticket> findByOwnerId(UUID ownerId);
+
+    /**
+     * {@code GET /users/me/tickets}: what the owner holds now, whatever order it came from. Joined to its event
+     * so a page can be sorted by {@code e.startAt}. A null {@code eventId} means every event.
+     */
+    @Query(value = "select t from Ticket t join Event e on e.id = t.eventId where t.ownerId = :ownerId and t.status in :statuses"
+            + " and (:eventId is null or t.eventId = :eventId)",
+            countQuery = "select count(t) from Ticket t where t.ownerId = :ownerId and t.status in :statuses"
+                    + " and (:eventId is null or t.eventId = :eventId)")
+    Page<Ticket> findHeldBy(@Param("ownerId") UUID ownerId, @Param("statuses") Collection<TicketStatus> statuses,
+                            @Param("eventId") UUID eventId, Pageable pageable);
+
+    /** {@code GET /users/me/tickets/events}: the events the owner holds tickets for now, with how many, soonest first. */
+    @Query("select new com.junaldadlawan.event_ticketing_api.ticket.dto.MyTicketEventResponse(e.id, e.title, e.startAt, e.timezone, count(t))"
+            + " from Ticket t join Event e on e.id = t.eventId where t.ownerId = :ownerId"
+            + " group by e.id, e.title, e.startAt, e.timezone order by e.startAt asc")
+    List<MyTicketEventResponse> findHeldEvents(@Param("ownerId") UUID ownerId);
 
     /**
      * Supports {@code GET /events/{eventId}/orders}: Order has no eventId

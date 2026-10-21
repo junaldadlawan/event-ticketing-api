@@ -126,7 +126,7 @@ class ScannerDeviceControllerTest {
         UUID eventId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(scannerDeviceService.authorize(eq(eventId), any())).thenReturn(
-                new ScannerDeviceResponse(deviceId, eventId, "Gate 1", ScannerDeviceStatus.ACTIVE,
+                new ScannerDeviceResponse(deviceId, eventId, "Gate 1", null, ScannerDeviceStatus.ACTIVE,
                         "device-credential-value", null, "caller", null, null));
 
         mockMvc.perform(post("/api/v1/events/{eventId}/scanner-devices", eventId)

@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.ticket.service;
 
+import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
 import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
@@ -39,11 +40,14 @@ class TicketServiceImplTest {
     @Mock
     private TicketAccessGuard ticketAccessGuard;
 
+    @Mock
+    private OrganizationAccessGuard accessGuard;
+
     private TicketServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new TicketServiceImpl(ticketRepository, ticketAccessGuard);
+        service = new TicketServiceImpl(ticketRepository, ticketAccessGuard, accessGuard);
     }
 
     private Ticket ticket(UUID id, UUID ownerId) {

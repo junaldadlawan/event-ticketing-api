@@ -15,7 +15,9 @@ public record CheckInRecordResponse(
         CheckInSourceType sourceType,
         UUID sourceId,
         Instant scannedAt,
-        CheckInResult result) implements Serializable {
+        CheckInResult result,
+        // where the scan was made (the device's location at scan time)
+        String scannerLocation) implements Serializable {
 
     public static CheckInRecordResponse from(CheckInRecord record) {
         return new CheckInRecordResponse(
@@ -24,6 +26,7 @@ public record CheckInRecordResponse(
                 record.getSourceType(),
                 record.getSourceId(),
                 record.getScannedAt(),
-                record.getResult());
+                record.getResult(),
+                record.getScannerLocation());
     }
 }

@@ -223,6 +223,82 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OrderList" }
 
+  /users/me/tickets:
+    get:
+      operationId: listMyTickets
+      tags: [Tickets]
+      summary: Every ticket the caller holds now
+      description: >
+        Tickets whose current owner is the caller, whatever order they came from (bought, transferred
+        to them, or bought on resale). Tickets the caller transferred away are not included. Any
+        signed-in user may call it; someone holding no tickets gets an empty page. Each used ticket
+        carries check_in, as on GET /orders/{orderId}.
+      parameters:
+        - name: status
+          in: query
+          description: Only these statuses; repeat for more than one (status=VALID&status=USED). Left out = all.
+          schema:
+            type: array
+            items: { type: string, enum: [VALID, USED, REFUNDED, CANCELLED] }
+          style: form
+          explode: true
+        - name: eventId
+          in: query
+          description: Only the caller's tickets for this event; combines with status. Paging and totals reflect it.
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, default: 20 }
+        - name: sort
+          in: query
+          description: 'A ticket field, e.g. createdAt,desc. Default: the event''s start time, soonest first (e.startAt,asc).'
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of the caller's tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/Ticket" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/me/tickets/events:
+    get:
+      operationId: listMyTicketEvents
+      tags: [Tickets]
+      summary: The events the caller holds tickets for now (My tickets' event filter)
+      description: >
+        Not paged. Only events where the caller is the current owner of at least one ticket, so tickets
+        they transferred away don't count. Sorted by startAt, soonest first. Empty list if they hold none.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    title: { type: string }
+                    startAt: { type: string, format: date-time }
+                    timezone: { type: string }
+                    ticketCount: { type: integer, format: int64, description: "Tickets the caller holds for it now, any status." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /users/me/waitlist-entries:
     get:
       operationId: listMyWaitlistEntries
@@ -3111,6 +3187,10 @@ paths:
                   type: boolean
                   default: false
                   description: Required to replace the sole device in pure_offline mode (the override flow, requirements 4.11).
+                location:
+                  type: [string, "null"]
+                  maxLength: 100
+                  description: Where the device scans, e.g. "Gate A". Trimmed; blank means none.
       responses:
         "201":
           description: Authorized — credential is shown once, here, and never again
@@ -3132,6 +3212,49 @@ paths:
       summary: Revoke a device's credential immediately (owning organizer)
       responses:
         "204": { description: Revoked }
+    patch:
+      operationId: updateScannerDeviceLocation
+      tags: [CheckIn]
+      security:
+        - bearerAuth: []
+        - deviceAuth: []
+      summary: >
+        Change where a device scans. Allowed for the device itself (its own id
+        only), the owning organization's owner/organizer, or an admin.
+        Audited as scanner_device.location_changed. Existing check-in records
+        keep the location they were made at.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                location:
+                  type: [string, "null"]
+                  maxLength: 100
+                  description: e.g. "Gate B". Null or blank clears it.
+      responses:
+        "200":
+          description: Updated device (the credential is never returned here)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScannerDevice" }
+        "403":
+          description: Another device, or a user who is not the owner/organizer/admin
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Unknown device
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: The device has been revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /scanner-devices/{deviceId}/dataset:
     parameters:
@@ -3202,6 +3325,10 @@ paths:
                     properties:
                       raw_credential: { type: string }
                       captured_at: { type: string, format: date-time }
+                      location:
+                        type: [string, "null"]
+                        maxLength: 100
+                        description: Where this scan was made; left out = the device's current location.
       responses:
         "200":
           description: Per-scan reconciled results; duplicates are flagged, not resolved automatically.
@@ -3862,6 +3989,7 @@ components:
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
         sales_paused: { type: boolean, description: "While true the type can not be added to a cart and a cart holding it can not check out. Set with PUT /ticket-types/{id}/sales-status." }
+        color: { type: [string, "null"], pattern: "^#[0-9A-F]{6}$", description: "Display colour set by the organizer, uppercase #RRGGBB (e.g. #1A2B3C); buyers' tickets are tinted with it. Null = none (the app's default grey)." }
         position: { type: integer, minimum: 0, description: "Where it sits in the event's list (0 = first), as arranged by the organizer. The list endpoint returns ticket types in this order; new ones go to the end. Set with PUT /events/{id}/ticket-types/order." }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid }
@@ -3879,6 +4007,7 @@ components:
         sale_start_at: { type: string, format: date-time, description: "Optional; omit to start sales now (server time). A past time is accepted." }
         sale_end_at: { type: string, format: date-time, description: "Must be at least 1 hour after sale_start_at and at least 1 hour before the event starts." }
         max_per_order: { type: integer, default: 10 }
+        color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit or null for none. Anything else is a 400." }
 
     TicketTypeSalesStatus:
       type: object
@@ -3906,6 +4035,7 @@ components:
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
         sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged." }
+        color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit to leave unchanged; null clears it; anything else is a 400 with a field error. Logged as ticket_type.updated with before/after." }
 
     PromoCode:
       type: object
@@ -4293,6 +4423,17 @@ components:
         status: { type: string, enum: [valid, used, transferred, refunded, cancelled] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time, description: Reflects status transitions. }
+        check_in:
+          type: [object, "null"]
+          description: >
+            Only on a used ticket: the valid scan that checked it in (null for every other status).
+            Duplicate, invalid and wrong_event attempts are never shown here; the full trail is
+            GET /tickets/{ticketId}/check-in-records (organizer/admin only).
+          properties:
+            scanned_at: { type: string, format: date-time }
+            scanner_location: { type: [string, "null"], description: 'Where it was scanned, e.g. "Gate A".' }
+            scanner_id: { type: string, format: uuid, description: "The scanner device, or the fallback scan record for a reconciled fallback scan." }
+            scanner_name: { type: [string, "null"], description: "The scanner device's label; null for a reconciled fallback scan." }
 
     TicketTransfer:
       type: object
@@ -4331,6 +4472,7 @@ components:
             ticket_number: { type: string }
             ticket_type_name: { type: string }
             seat: { type: [string, "null"] }
+        scanner_location: { type: [string, "null"], description: "Where the scan was made (snapshot of the device's location, or the fallback scan's own)." }
 
     CheckInConfig:
       type: object
@@ -4345,12 +4487,26 @@ components:
         updated_at: { type: string, format: date-time }
         updated_by: { type: string, format: uuid, description: Organizer who last changed the mode/config. }
 
+    ScannerDevice:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        device_label: { type: string }
+        location: { type: [string, "null"], maxLength: 100, description: 'Where the device scans, e.g. "Gate A".' }
+        status: { type: string, enum: [active, revoked] }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid, description: "The user, or the device's own id when it moved itself." }
+
     ScannerDeviceWithCredential:
       type: object
       properties:
         id: { type: string, format: uuid }
         event_id: { type: string, format: uuid }
         device_label: { type: string }
+        location: { type: [string, "null"], maxLength: 100, description: 'Where the device scans, e.g. "Gate A".' }
         status: { type: string, enum: [active, revoked] }
         credential:
           type: string
@@ -4369,6 +4525,7 @@ components:
         source_id: { type: string, format: uuid }
         scanned_at: { type: string, format: date-time }
         result: { type: string, enum: [valid, duplicate, invalid, wrong_event] }
+        scanner_location: { type: [string, "null"], maxLength: 100, description: "Where the scan was made; kept as it was at scan time even if the device moves later." }
 
     GatewayFeeSettingRequest:
       type: object

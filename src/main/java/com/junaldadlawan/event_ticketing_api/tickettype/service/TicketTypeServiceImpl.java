@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -79,6 +80,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                 .saleStartAt(saleStartAt)
                 .saleEndAt(request.saleEndAt())
                 .maxPerOrder(request.maxPerOrder() != null ? request.maxPerOrder() : DEFAULT_MAX_PER_ORDER)
+                .color(upper(request.color()))
                 // New ticket types go to the end of the organizer's arrangement.
                 .position(ticketTypeRepository.findMaxPositionByEventId(event.getId()) + 1)
                 .build();
@@ -156,6 +158,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         if (request.maxPerOrder() != null) {
             ticketType.setMaxPerOrder(request.maxPerOrder());
         }
+        if (request.color() != null) {
+            ticketType.setColor(upper(request.color().orElse(null)));
+        }
         if (request.salesPaused() != null) {
             ticketType.setSalesPaused(request.salesPaused());
         }
@@ -170,6 +175,10 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             auditLogService.recordByCurrentUser("ticket_type.updated", "TicketType", ticketTypeId, ticketType.getEventId(), changes);
         }
         return updated;
+    }
+
+    private static String upper(String color) {
+        return color == null ? null : color.toUpperCase(Locale.ROOT);
     }
 
     // also covers end > start

@@ -173,6 +173,7 @@ Each rule cites its source section in `requirements.md` in parentheses.
 | BR-CHECKIN-009 | In pure offline mode, a fallback device (brought in if the sole real device fails) was never issued the pre-fetched dataset, so it may only record scans locally — it cannot validate in real time. (§4.11) |
 | BR-CHECKIN-010 | Recorded fallback scans (pure offline mode) must be checked against the server once the device is back online, and any duplicates found must still be surfaced to the organizer for after-the-fact review, even though they couldn't be prevented in real time. (§4.11) |
 | BR-CHECKIN-011 | A scanning client must be able to query its event's current check-in mode, its own authorization status, and — in standard mode — the configured offline-fallback expiry window. (§4.11) |
+| BR-CHECKIN-012 | A scanner device may have an optional location (max 100 chars); each check-in record keeps the location the scan was made at. |
 
 ## 13. Notifications
 

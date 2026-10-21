@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.order.service;
 
+import com.junaldadlawan.event_ticketing_api.checkin.service.TicketCheckInLookup;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
 import com.junaldadlawan.event_ticketing_api.common.exception.ResourceNotFoundException;
@@ -10,6 +11,7 @@ import com.junaldadlawan.event_ticketing_api.order.entity.Order;
 import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketCheckInResponse;
 import com.junaldadlawan.event_ticketing_api.ticket.dto.TicketResponse;
 import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
@@ -19,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,6 +33,7 @@ public class OrderServiceImpl implements OrderService {
     private final TicketRepository ticketRepository;
     private final EventRepository eventRepository;
     private final OrganizationAccessGuard accessGuard;
+    private final TicketCheckInLookup ticketCheckInLookup;
 
     @Override
     public OrderResponse getOrder(UUID orderId) {
@@ -42,7 +46,9 @@ public class OrderServiceImpl implements OrderService {
     public List<TicketResponse> getOrderTickets(UUID orderId) {
         Order order = getOrThrow(orderId);
         requireVisibility(order);
-        return ticketRepository.findByOrderId(orderId).stream().map(TicketResponse::from).toList();
+        List<Ticket> tickets = ticketRepository.findByOrderId(orderId);
+        Map<UUID, TicketCheckInResponse> checkIns = ticketCheckInLookup.forTickets(tickets);
+        return tickets.stream().map(t -> TicketResponse.from(t, checkIns.get(t.getId()))).toList();
     }
 
     @Override
@@ -65,7 +71,7 @@ public class OrderServiceImpl implements OrderService {
 
     private OrderResponse toResponse(Order order) {
         List<Ticket> tickets = ticketRepository.findByOrderId(order.getId());
-        return OrderResponse.from(order, tickets);
+        return OrderResponse.from(order, tickets, ticketCheckInLookup.forTickets(tickets));
     }
 
     private Order getOrThrow(UUID orderId) {

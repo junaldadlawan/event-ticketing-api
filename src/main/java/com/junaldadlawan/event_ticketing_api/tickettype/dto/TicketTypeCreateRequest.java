@@ -5,6 +5,7 @@ import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -48,5 +49,15 @@ public record TicketTypeCreateRequest(
         @NotNull
         Instant saleEndAt,
 
-        Integer maxPerOrder) implements Serializable {
+        Integer maxPerOrder,
+
+        /** Display colour "#RRGGBB" (either case); null = none. */
+        @Pattern(regexp = TicketTypeUpdateRequest.COLOR, message = "must be a #RRGGBB colour")
+        String color) implements Serializable {
+
+    /** A create without a colour. */
+    public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
+                                   Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder) {
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null);
+    }
 }
