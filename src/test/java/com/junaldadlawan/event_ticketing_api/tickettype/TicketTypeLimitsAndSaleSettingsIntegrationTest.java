@@ -141,14 +141,9 @@ class TicketTypeLimitsAndSaleSettingsIntegrationTest {
     }
 
     @Test
-    void gateOpeningTime_roundTrips() throws Exception {
-        createType(",\"gateOpensMinutesBefore\":1441").andExpect(status().isBadRequest());
-        UUID id = idOf(createType(",\"gateOpensMinutesBefore\":45").andExpect(status().isCreated())
-                .andExpect(jsonPath("$.gateOpensMinutesBefore").value(45)));
-        as(get("/api/v1/ticket-types/{id}", id), buyer).andExpect(jsonPath("$.gateOpensMinutesBefore").value(45));
-        edit(id, "{\"gateOpensMinutesBefore\":90}").andExpect(status().isOk()).andExpect(jsonPath("$.gateOpensMinutesBefore").value(90));
-        edit(id, "{\"name\":\"Renamed\"}").andExpect(jsonPath("$.gateOpensMinutesBefore").value(90));
-        edit(id, "{\"gateOpensMinutesBefore\":null}").andExpect(jsonPath("$.gateOpensMinutesBefore").doesNotExist());
+    void ticketTypesNoLongerHaveAGateTime() throws Exception {
+        UUID id = idOf(createType(",\"gateOpensMinutesBefore\":45").andExpect(status().isCreated()));   // ignored: it lives on the event now
+        as(get("/api/v1/ticket-types/{id}", id), buyer).andExpect(jsonPath("$.gateOpensMinutesBefore").doesNotExist());
     }
 
     @Test

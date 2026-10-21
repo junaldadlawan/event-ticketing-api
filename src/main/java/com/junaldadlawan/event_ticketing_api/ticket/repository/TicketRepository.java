@@ -98,11 +98,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     @Query("select distinct t.ownerId from Ticket t where t.eventId = :eventId and t.status in :statuses")
     List<UUID> findHolderIds(@Param("eventId") UUID eventId, @Param("statuses") Collection<TicketStatus> statuses);
 
-    /** BR-NOTIFY-002 GATE_OPEN: {@code [ownerId, the largest gate_opens_minutes_before of the types they hold]}. */
-    @Query("select t.ownerId, max(tt.gateOpensMinutesBefore) from Ticket t join TicketType tt on tt.id = t.ticketTypeId"
-            + " where t.eventId = :eventId and t.status in :statuses and tt.gateOpensMinutesBefore is not null group by t.ownerId")
-    List<Object[]> findHolderGateMinutes(@Param("eventId") UUID eventId, @Param("statuses") Collection<TicketStatus> statuses);
-
     /** BR-NOTIFY-002 REVIEW_REQUEST: owners of a USED ticket for the event who have no review of it. */
     @Query("select distinct t.ownerId from Ticket t where t.eventId = :eventId"
             + " and t.status = com.junaldadlawan.event_ticketing_api.ticket.enums.TicketStatus.USED"

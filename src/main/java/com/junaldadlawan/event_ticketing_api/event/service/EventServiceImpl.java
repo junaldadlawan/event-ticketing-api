@@ -99,6 +99,7 @@ public class EventServiceImpl implements EventService {
                 .startAt(request.startAt())
                 .endAt(request.endAt())
                 .timezone(request.timezone())
+                .gateOpensMinutesBefore(request.gateOpensMinutesBefore())
                 .images(request.images() == null ? new ArrayList<>() : new ArrayList<>(request.images()))
                 .status(EventStatus.DRAFT)
                 .ticketPrefix(generateUniqueTicketPrefix())
@@ -195,6 +196,9 @@ public class EventServiceImpl implements EventService {
                 throw new BadRequestException("Event category must not be blank");
             }
             event.setCategory(categoryService.resolveActive(request.category()).getName());
+        }
+        if (request.gateOpensMinutesBefore() != null) {
+            event.setGateOpensMinutesBefore(request.gateOpensMinutesBefore().orElse(null));
         }
         if (request.images() != null) {
             event.setImages(new ArrayList<>(request.images()));

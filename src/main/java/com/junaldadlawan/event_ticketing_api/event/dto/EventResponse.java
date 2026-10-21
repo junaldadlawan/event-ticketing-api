@@ -22,6 +22,7 @@ public record EventResponse(
         Instant startAt,
         Instant endAt,
         String timezone,
+        Integer gateOpensMinutesBefore,
         List<String> images,
         EventStatus status,
         String ticketPrefix,
@@ -46,6 +47,7 @@ public record EventResponse(
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getTimezone(),
+                event.getGateOpensMinutesBefore(),
                 // Copied (forcing the lazy collection to load now) so a response that is
                 // cached and served later never touches a closed persistence session.
                 event.getImages() == null ? null : new java.util.ArrayList<>(event.getImages()),

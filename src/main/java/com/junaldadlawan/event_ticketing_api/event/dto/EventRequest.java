@@ -4,6 +4,8 @@ import com.junaldadlawan.event_ticketing_api.common.validation.NoHtml;
 import com.junaldadlawan.event_ticketing_api.common.validation.ValidEndTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -60,6 +62,17 @@ public record EventRequest(
         String timezone,
 
         @Valid
-        List<@NotBlank @URL String> images)
+        List<@NotBlank @URL String> images,
+
+        /** BR-TICKET-GATE-001: gates open this many minutes before the start; null = not set. Display only. */
+        @Min(0)
+        @Max(1440)
+        Integer gateOpensMinutesBefore)
         implements Serializable {
+
+    /** A create without a gate time. */
+    public EventRequest(UUID organizationId, String title, String description, String category, UUID venueId,
+                        Instant startAt, Instant endAt, String timezone, List<String> images) {
+        this(organizationId, title, description, category, venueId, startAt, endAt, timezone, images, null);
+    }
 }

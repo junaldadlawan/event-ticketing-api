@@ -84,7 +84,6 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                 .saleEndAt(request.saleEndAt())
                 .maxPerOrder(maxPerOrder)
                 .maxPerUser(request.maxPerUser())
-                .gateOpensMinutesBefore(request.gateOpensMinutesBefore())
                 .color(upper(request.color()))
                 // New ticket types go to the end of the organizer's arrangement.
                 .position(ticketTypeRepository.findMaxPositionByEventId(event.getId()) + 1)
@@ -171,9 +170,6 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         }
         if (request.maxPerUser() != null) {
             ticketType.setMaxPerUser(request.maxPerUser().orElse(null));
-        }
-        if (request.gateOpensMinutesBefore() != null) {
-            ticketType.setGateOpensMinutesBefore(request.gateOpensMinutesBefore().orElse(null));
         }
 
         // BR-ADMIN-SETTINGS-002: the current rules apply to a sale window being edited; an untouched one is left as it was

@@ -98,20 +98,19 @@ class EventLifecycleNotificationIntegrationTest {
 
     @Test
     void eachScheduledNotificationFiresOnceAtItsTime_toCurrentHoldersOnly() throws Exception {
-        UUID event = event(EventStatus.PUBLISHED, null);
-        UUID gate60 = type(event, 60);
-        UUID gate30 = type(event, 30);
-        UUID noGate = type(event, null);
+        UUID event = event(EventStatus.PUBLISHED, null, 60);
+        UUID general = type(event);
+        UUID vip = type(event);
         UUID both = user(), early = user(), late = user(), none = user(), attended = user(), reviewed = user(), refunded = user(), optedOut = user();
-        ticket(event, gate60, both, TicketStatus.VALID);
-        ticket(event, gate30, both, TicketStatus.VALID);          // two types: the earliest gate (60) counts
-        ticket(event, gate60, early, TicketStatus.VALID);
-        ticket(event, gate30, late, TicketStatus.VALID);
-        ticket(event, noGate, none, TicketStatus.VALID);
-        ticket(event, noGate, attended, TicketStatus.USED);
-        ticket(event, noGate, reviewed, TicketStatus.USED);
-        ticket(event, noGate, refunded, TicketStatus.REFUNDED);   // not a holder any more
-        ticket(event, gate60, optedOut, TicketStatus.VALID);
+        ticket(event, general, both, TicketStatus.VALID);
+        ticket(event, vip, both, TicketStatus.VALID);              // two tickets: still one notification of each kind
+        ticket(event, general, early, TicketStatus.VALID);
+        ticket(event, vip, late, TicketStatus.VALID);
+        ticket(event, general, none, TicketStatus.VALID);
+        ticket(event, general, attended, TicketStatus.USED);
+        ticket(event, general, reviewed, TicketStatus.USED);
+        ticket(event, general, refunded, TicketStatus.REFUNDED);   // not a holder any more
+        ticket(event, vip, optedOut, TicketStatus.VALID);
         eventReviewRepository.save(EventReview.builder().eventId(event).userId(reviewed).rating(5).build());
         preferences(optedOut, "{\"EVENT_REMINDER\":false}").andExpect(status().isOk());
         Set<UUID> holders = Set.of(both, early, late, none, attended, reviewed, optedOut);
@@ -125,11 +124,13 @@ class EventLifecycleNotificationIntegrationTest {
         run(start.minus(23, ChronoUnit.HOURS), event);   // a second run: nothing new
         assertThat(count(event, NotificationType.EVENT_REMINDER)).isEqualTo(6);
 
+        // the event's gates open 60 minutes before it starts
+        run(start.minus(61, ChronoUnit.MINUTES), event);
+        assertThat(sent(event, NotificationType.GATE_OPEN)).isEmpty();
         run(start.minus(60, ChronoUnit.MINUTES), event);
-        assertThat(sent(event, NotificationType.GATE_OPEN)).containsOnlyKeys(both, early, optedOut)
+        assertThat(sent(event, NotificationType.GATE_OPEN)).containsOnlyKeys(holders)
                 .containsValue("Gates are open for " + title + ".");
         run(start.minus(30, ChronoUnit.MINUTES), event);
-        assertThat(sent(event, NotificationType.GATE_OPEN)).containsOnlyKeys(both, early, optedOut, late);
 
         run(start, event);
         assertThat(sent(event, NotificationType.EVENT_STARTING)).containsOnlyKeys(holders)
@@ -141,18 +142,25 @@ class EventLifecycleNotificationIntegrationTest {
                 .containsValue("How was " + title + "? Rate it.");
 
         assertThat(count(event, NotificationType.EVENT_STARTING)).isEqualTo(7);
-        assertThat(count(event, NotificationType.GATE_OPEN)).isEqualTo(4);
+        assertThat(count(event, NotificationType.GATE_OPEN)).isEqualTo(7);
+
+        // an event without a gate time sends no gates-open notification
+        UUID noGate = event(EventStatus.PUBLISHED, null, null);
+        ticket(noGate, type(noGate), early, TicketStatus.VALID);
+        run(start, noGate);
+        assertThat(sent(noGate, NotificationType.GATE_OPEN)).isEmpty();
+        assertThat(sent(noGate, NotificationType.EVENT_STARTING)).containsOnlyKeys(early);
     }
 
     @Test
     void nothingForDraftOrCancelledEvents_norForTimesBeforeItWasPublished() {
         UUID holder = user();
-        UUID draft = event(EventStatus.DRAFT, null);
-        UUID cancelled = event(EventStatus.CANCELLED, null);
+        UUID draft = event(EventStatus.DRAFT, null, 30);
+        UUID cancelled = event(EventStatus.CANCELLED, null, 30);
         // published 2 hours before it starts: the reminder's time had already passed
-        UUID lastMinute = event(EventStatus.PUBLISHED, start.minus(2, ChronoUnit.HOURS));
+        UUID lastMinute = event(EventStatus.PUBLISHED, start.minus(2, ChronoUnit.HOURS), 30);
         for (UUID e : List.of(draft, cancelled, lastMinute)) {
-            ticket(e, type(e, 30), holder, TicketStatus.VALID);
+            ticket(e, type(e), holder, TicketStatus.VALID);
         }
         Set<UUID> all = Set.of(draft, cancelled, lastMinute);
 
@@ -167,9 +175,9 @@ class EventLifecycleNotificationIntegrationTest {
 
     @Test
     void eventChange_onlyForTimeOrVenueChanges_withBeforeAndAfter_inTheEventsTimezone() throws Exception {
-        UUID event = event(EventStatus.PUBLISHED, null);
+        UUID event = event(EventStatus.PUBLISHED, null, null);
         UUID holder = user(), optedOut = user();
-        UUID type = type(event, null);
+        UUID type = type(event);
         ticket(event, type, holder, TicketStatus.VALID);
         ticket(event, type, optedOut, TicketStatus.VALID);
         preferences(optedOut, "{\"EVENT_CHANGE\":false}").andExpect(status().isOk());
@@ -256,19 +264,19 @@ class EventLifecycleNotificationIntegrationTest {
         return id;
     }
 
-    private UUID event(EventStatus status, Instant notificationsFrom) {
+    private UUID event(EventStatus status, Instant notificationsFrom, Integer gateMinutes) {
         UUID id = eventRepository.save(Event.builder().organizationId(orgId).title(title).description("desc").category("music")
                 .status(status).ticketPrefix("N" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
-                .startAt(start).endAt(end).timezone("Asia/Manila").notificationsFrom(notificationsFrom).build()).getId();
+                .startAt(start).endAt(end).timezone("Asia/Manila").notificationsFrom(notificationsFrom).gateOpensMinutesBefore(gateMinutes).build()).getId();
         eventIds.add(id);
         return id;
     }
 
-    private UUID type(UUID eventId, Integer gateMinutes) {
+    private UUID type(UUID eventId) {
         return ticketTypeRepository.save(TicketType.builder().eventId(eventId).name("T" + UUID.randomUUID().toString().substring(0, 4))
                 .kind(TicketTypeKind.GENERAL_ADMISSION).price(Money.builder().amount(1000L).currency("PHP").build())
                 .quantityTotal(10).quantityAvailable(10).saleStartAt(Instant.now()).saleEndAt(start.minus(2, ChronoUnit.HOURS))
-                .maxPerOrder(10).position(0).gateOpensMinutesBefore(gateMinutes).build()).getId();
+                .maxPerOrder(10).position(0).build()).getId();
     }
 
     private void ticket(UUID eventId, UUID typeId, UUID ownerId, TicketStatus status) {

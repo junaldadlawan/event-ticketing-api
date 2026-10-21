@@ -30,7 +30,7 @@ import java.util.UUID;
 
 /**
  * BR-NOTIFY-002: event lifecycle notifications to the event's current ticket holders (VALID or USED tickets; owners,
- * not buyers). The scheduled ones - reminder (24h before), gates open, starting, review request (at the end) - come
+ * not buyers). The scheduled ones - reminder (24h before), gates open (the event's gate time), starting, review request (at the end) - come
  * from {@link #sweep}, once per user per event (the unique index on notifications backs this up), never for a draft,
  * cancelled or deleted event, and never when their time is before the event's {@code notificationsFrom} (set on
  * publish and when it moves), so a time already passed is not sent late. EVENT_CHANGE comes from {@link #eventChanged}.
@@ -90,13 +90,11 @@ public class EventLifecycleNotifier {
                         event.getTitle() + " is tomorrow at " + TIME.format(start.atZone(zone(event))) + ".");
             }
             if (now.isBefore(end)) {
-                List<UUID> gateOpen = new ArrayList<>();
-                for (Object[] row : ticketRepository.findHolderGateMinutes(event.getId(), HELD)) {
-                    if (due(event, start.minus(Duration.ofMinutes(((Number) row[1]).longValue())), now)) {
-                        gateOpen.add((UUID) row[0]);
-                    }
+                Integer gateMinutes = event.getGateOpensMinutesBefore();
+                if (gateMinutes != null && due(event, start.minus(Duration.ofMinutes(gateMinutes)), now)) {
+                    sent += send(event, NotificationType.GATE_OPEN, ticketRepository.findHolderIds(event.getId(), HELD),
+                            "Gates are open for " + event.getTitle() + ".");
                 }
-                sent += send(event, NotificationType.GATE_OPEN, gateOpen, "Gates are open for " + event.getTitle() + ".");
                 if (due(event, start, now)) {
                     sent += send(event, NotificationType.EVENT_STARTING, ticketRepository.findHolderIds(event.getId(), HELD),
                             event.getTitle() + " is starting now.");
@@ -170,7 +168,7 @@ public class EventLifecycleNotifier {
     }
 
     private String venueName(UUID venueId) {
-        return venueId == null ? "none" : venueRepository.findById(venueId).map(Venue::getName).orElse("an unknown venue");
+        return venueId == null ? "online" : venueRepository.findById(venueId).map(Venue::getName).orElse("an unknown venue");
     }
 
     private static ZoneId zone(Event event) {
