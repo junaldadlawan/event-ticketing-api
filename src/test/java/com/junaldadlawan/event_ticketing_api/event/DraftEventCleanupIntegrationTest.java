@@ -123,10 +123,22 @@ class DraftEventCleanupIntegrationTest {
     private UUID event(EventStatus status, Duration startsIn, String title) {
         Instant start = Instant.now().plus(startsIn);
         UUID id = eventRepository.save(Event.builder().organizationId(org).title(title).description("d").category("music").status(status)
-                .ticketPrefix("D" + UUID.randomUUID().toString().substring(0, 2).toUpperCase()).startAt(start).endAt(start.plus(2, ChronoUnit.HOURS))
+                .ticketPrefix(freePrefix()).startAt(start).endAt(start.plus(2, ChronoUnit.HOURS))
                 .timezone("UTC").build()).getId();
         eventIds.add(id);
         return id;
+    }
+
+    /** A 3-letter ticket prefix no event has yet (the column is unique and the shared database holds other tests' and demo events). */
+    private String freePrefix() {
+        String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        java.util.Random random = new java.util.Random();
+        while (true) {
+            String candidate = "" + letters.charAt(random.nextInt(26)) + letters.charAt(random.nextInt(26)) + letters.charAt(random.nextInt(26));
+            if (jdbc.queryForObject("select count(*) from events where ticket_prefix = ?", Integer.class, candidate) == 0) {
+                return candidate;
+            }
+        }
     }
 
     private int notifications(UUID eventId, String type) {
