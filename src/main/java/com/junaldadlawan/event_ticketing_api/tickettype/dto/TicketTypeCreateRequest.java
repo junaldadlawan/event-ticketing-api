@@ -3,8 +3,10 @@ package com.junaldadlawan.event_ticketing_api.tickettype.dto;
 import com.junaldadlawan.event_ticketing_api.common.validation.NoHtml;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -22,8 +24,8 @@ import java.time.Instant;
  * maxPerOrder} stays optional — openapi gives it a real server-side default
  * ({@code default: 10}), applied in the service layer when omitted.
  * <p>
- * {@code saleEndAt} must be at least 1 hour after {@code saleStartAt} and at
- * least 1 hour before the event starts; enforced as explicit service-level checks (they
+ * {@code saleEndAt} must be at least the minimum sale duration after {@code saleStartAt} and at
+ * least the sales-close time before the event ends (BR-ADMIN-SETTINGS-002); enforced as explicit service-level checks (they
  * need the event).
  */
 public record TicketTypeCreateRequest(
@@ -48,5 +50,25 @@ public record TicketTypeCreateRequest(
         @NotNull
         Instant saleEndAt,
 
-        Integer maxPerOrder) implements Serializable {
+        Integer maxPerOrder,
+
+        /** Display colour "#RRGGBB" (either case); null = none. */
+        @Pattern(regexp = TicketTypeUpdateRequest.COLOR, message = "must be a #RRGGBB colour")
+        String color,
+
+        /** BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total; null = unlimited. */
+        @Min(1)
+        Integer maxPerUser) implements Serializable {
+
+    /** A create without a per-buyer limit. */
+    public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
+                                   Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder, String color) {
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, color, null);
+    }
+
+    /** A create without a colour or per-buyer limit. */
+    public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
+                                   Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder) {
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null, null);
+    }
 }

@@ -83,6 +83,8 @@ public class SecurityConfig {
                         // ROLE_SCANNER_DEVICE principal (UC-SCAN-04: a scanning client
                         // needs to query its own event's mode/expiry), not just users.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/check-in-config").authenticated()
+                        // read-only scan history of an event (owner, organizer, check-in staff, admin: checked in CheckInHistoryService)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/check-in-records", "/api/v1/events/*/check-in-summary", "/api/v1/events/*/scanner-devices").authenticated()
                         // Same reasoning again: GET /events/{eventId}/analytics (Phase 14)
                         // is owning-organizer/admin-only per BR-ANALYTICS-001, not public -
                         // must precede the broader GET /api/v1/events/** permitAll matcher
@@ -96,6 +98,9 @@ public class SecurityConfig {
                         // GET /api/v1/events/** permitAll matcher below. Which events a
                         // given caller sees is enforced in EventServiceImpl.listManagedEvents.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/managed").authenticated()
+                        // BR-REVIEW-001: the review list (organizers) and "my review" need a signed-in caller; the
+                        // summary and the recap feed stay public under the permitAll below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/reviews", "/api/v1/events/*/reviews/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events", "/api/v1/events/**").permitAll()
                         // Precise per-event, per-organization authorization now lives in
                         // EventServiceImpl (owner/organizer of the event's own org, or
@@ -110,6 +115,8 @@ public class SecurityConfig {
                         // buyer's own order history, not an admin-only user-management
                         // endpoint, even though its path nests under /users/**.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/orders").authenticated()
+                        // Same reasoning: GET /users/me/tickets (and its /events filter list) is any signed-in user's own tickets.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me/tickets", "/api/v1/users/me/tickets/events").authenticated()
                         // Same reasoning: GET /users/me/waitlist-entries (Phase 9)
                         // is any authenticated user's own waitlist history, not an
                         // admin-only user-management endpoint.
@@ -118,6 +125,8 @@ public class SecurityConfig {
                         // (Phase 11) is any authenticated user's own
                         // notification history.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/notifications").authenticated()
+                        // BR-NOTIFY-002: any signed-in user's own notification on/off switches
+                        .requestMatchers("/api/v1/users/me/notification-preferences").authenticated()
                         // GET/PATCH /users/me: any authenticated caller's own
                         // profile - viewing/editing your own name or email is
                         // not an admin-only user-management action, even
@@ -189,6 +198,8 @@ public class SecurityConfig {
                         // this prefix is unconditionally admin-only, with no
                         // raiser/owner visibility branch to justify pushing the
                         // check down into the service layer alone.
+                        // the scanner app's old upload address stays open to members with SCANNER_APP (checked in ScannerAppServiceImpl)
+                        .requestMatchers("/api/v1/admin/scanner-app", "/api/v1/admin/scanner-app/*").authenticated()
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         // Phase 13 (BR-NFR-005): admin-only audit log, same
                         // unconditional hasRole restriction as the moderation
@@ -208,6 +219,8 @@ public class SecurityConfig {
                         // no business touching). ROLE_SCANNER_DEVICE is granted only by
                         // DeviceAuthenticationFilter, never by JwtAuthenticationFilter.
                         .requestMatchers(HttpMethod.GET, "/api/v1/scanner-devices/*/dataset").hasRole("SCANNER_DEVICE")
+                        // moving a device: the device itself (deviceAuth) or a signed-in user; who may is checked in the service
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/scanner-devices/*").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/check-in/validate", "/api/v1/check-in/fallback-scans").hasRole("SCANNER_DEVICE")
                         // /api/v1/orders/** and /api/v1/tickets/** (Phase 6a) need no
                         // explicit matcher of their own - neither prefix is touched by

@@ -177,7 +177,7 @@ class AuditLoggingIntegrationTest {
         userRepository.findByEmail(email).ifPresent(created -> extraUserIds.add(created.getId()));
 
         ILoggingEvent line = onlyAuditLine("user.registered");
-        assertThat(line.getFormattedMessage()).contains("role=CUSTOMER").doesNotContain(PASSWORD);
+        assertThat(line.getFormattedMessage()).contains("\"role\":\"CUSTOMER\"").doesNotContain(PASSWORD);
         assertThat(line.getMDCPropertyMap())
                 .containsEntry("requestId", result.getResponse().getHeader(RequestIdFilter.HEADER));
     }

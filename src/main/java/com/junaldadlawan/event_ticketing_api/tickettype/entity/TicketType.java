@@ -79,4 +79,12 @@ public class TicketType extends Auditable {
     /** While true the ticket type can not be added to a cart (the organizer paused sales). */
     @Column(name = "sales_paused", nullable = false)
     private boolean salesPaused;
+
+    /** Display colour "#RRGGBB" (uppercase) buyers' tickets are tinted with; null = none. */
+    @Column(name = "color", length = 7)
+    private String color;
+
+    /** BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total; null = unlimited. */
+    @Column(name = "max_per_user")
+    private Integer maxPerUser;
 }

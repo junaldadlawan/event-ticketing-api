@@ -55,7 +55,7 @@ class CheckInControllerTest {
         UUID deviceId = UUID.randomUUID();
         UUID ticketId = UUID.randomUUID();
         when(checkInService.validate(any())).thenReturn(new ValidationResultResponse(ticketId, CheckInResult.VALID,
-                Instant.now(), new TicketSummaryDto("ABC-000001", "GA", null)));
+                Instant.now(), new TicketSummaryDto("ABC-000001", "GA", null), null));
 
         mockMvc.perform(post("/api/v1/check-in/validate")
                         .contentType("application/json")
@@ -98,8 +98,8 @@ class CheckInControllerTest {
     void submitFallbackScans_validBatch_returns200_withPerScanResults() throws Exception {
         UUID ticketId = UUID.randomUUID();
         when(checkInService.submitFallbackScans(any())).thenReturn(List.of(
-                new ValidationResultResponse(ticketId, CheckInResult.VALID, Instant.now(), null),
-                new ValidationResultResponse(null, CheckInResult.INVALID, Instant.now(), null)));
+                new ValidationResultResponse(ticketId, CheckInResult.VALID, Instant.now(), null, null),
+                new ValidationResultResponse(null, CheckInResult.INVALID, Instant.now(), null, null)));
 
         mockMvc.perform(post("/api/v1/check-in/fallback-scans")
                         .contentType("application/json")

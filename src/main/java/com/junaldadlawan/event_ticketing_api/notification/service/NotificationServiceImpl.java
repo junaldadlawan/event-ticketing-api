@@ -53,19 +53,37 @@ public class NotificationServiceImpl implements NotificationService {
     private final UserRepository userRepository;
     private final EmailSender emailSender;
     private final OrganizationAccessGuard accessGuard;
+    private final NotificationPreferenceService preferenceService;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notify(UUID userId, NotificationType type, String relatedObjectType, UUID relatedObjectId) {
+        send(Notification.builder().userId(userId).type(type).relatedObjectType(relatedObjectType).relatedObjectId(relatedObjectId).build());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyWithMessage(UUID userId, NotificationType type, String relatedObjectType, UUID relatedObjectId, String message) {
+        send(Notification.builder().userId(userId).type(type).relatedObjectType(relatedObjectType).relatedObjectId(relatedObjectId).message(message).build());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyAboutEvent(UUID userId, NotificationType type, UUID eventId, String message, Instant sentFor) {
+        send(Notification.builder().userId(userId).type(type).relatedObjectType("Event").relatedObjectId(eventId)
+                .eventId(eventId).message(message).sentFor(sentFor).build());
+    }
+
+    private void send(Notification notification) {
+        UUID userId = notification.getUserId();
+        NotificationType type = notification.getType();
         try {
-            Notification notification = Notification.builder()
-                    .userId(userId)
-                    .type(type)
-                    .channel(NotificationChannel.EMAIL)
-                    .relatedObjectType(relatedObjectType)
-                    .relatedObjectId(relatedObjectId)
-                    .status(NotificationStatus.PENDING)
-                    .build();
+            // BR-NOTIFY-002: a type the user turned off is not sent (nor kept)
+            if (!preferenceService.wants(userId, type)) {
+                return;
+            }
+            notification.setChannel(NotificationChannel.EMAIL);
+            notification.setStatus(NotificationStatus.PENDING);
             Notification saved = notificationRepository.saveAndFlush(notification);
 
             User user = userRepository.findById(userId).orElse(null);
@@ -75,7 +93,8 @@ public class NotificationServiceImpl implements NotificationService {
                 return;
             }
 
-            boolean delivered = emailSender.send(user.getEmail(), subjectFor(type), bodyFor(type));
+            String body = saved.getMessage() != null ? saved.getMessage() : bodyFor(type);
+            boolean delivered = emailSender.send(user.getEmail(), subjectFor(type), body);
             saved.setStatus(delivered ? NotificationStatus.SENT : NotificationStatus.FAILED);
             if (delivered) {
                 saved.setSentAt(Instant.now());
@@ -83,7 +102,7 @@ public class NotificationServiceImpl implements NotificationService {
             notificationRepository.saveAndFlush(saved);
         } catch (Exception e) {
             log.error("Failed to dispatch notification (userId={}, type={}, relatedObjectType={}, relatedObjectId={})",
-                    userId, type, relatedObjectType, relatedObjectId, e);
+                    userId, type, notification.getRelatedObjectType(), notification.getRelatedObjectId(), e);
         }
     }
 
@@ -106,6 +125,15 @@ public class NotificationServiceImpl implements NotificationService {
             case REFUND_CONFIRMATION -> "Your refund has been issued";
             case DISPUTE_RESOLVED -> "Your dispute has been resolved";
             case ACCOUNT_MODERATION_ACTION -> "An action has been taken on your account";
+            case GATE_OPEN -> "Gates are open";
+            case EVENT_STARTING -> "Your event is starting";
+            case REVIEW_REQUEST -> "How was the event?";
+            case EVENT_DRAFT_WARNING -> "Your draft event will be deleted soon";
+            case EVENT_DRAFT_DELETED -> "Your draft event was deleted";
+            case ORGANIZATION_CHANGE_REQUESTED -> "An organization asked to change its details";
+            case ORGANIZATION_CHANGE_DECIDED -> "Your organization change request was decided";
+            case ORGANIZATION_REVISION_REQUESTED -> "Please revise your organization application";
+            case ORGANIZATION_APPLICATION_REVISED -> "An organization application was revised";
         };
     }
 
@@ -121,6 +149,15 @@ public class NotificationServiceImpl implements NotificationService {
             case REFUND_CONFIRMATION -> "Your refund has been issued and should reflect in your original payment method soon.";
             case DISPUTE_RESOLVED -> "The dispute you raised has been resolved. Please review the outcome.";
             case ACCOUNT_MODERATION_ACTION -> "An administrator has taken a moderation action on your account. Please review your account status.";
+            case GATE_OPEN -> "The gates are open for your event.";
+            case EVENT_STARTING -> "Your event is starting now.";
+            case REVIEW_REQUEST -> "Tell us how the event went: rate it.";
+            case EVENT_DRAFT_WARNING -> "Your event is still a draft and will be deleted unless you publish it.";
+            case EVENT_DRAFT_DELETED -> "Your draft event was deleted because it was not published in time.";
+            case ORGANIZATION_CHANGE_REQUESTED -> "An organization asked to change its details. Review it in the change requests.";
+            case ORGANIZATION_CHANGE_DECIDED -> "Your organization change request was decided.";
+            case ORGANIZATION_REVISION_REQUESTED -> "An admin asked you to revise your organization application.";
+            case ORGANIZATION_APPLICATION_REVISED -> "An applicant revised their organization application. Review it again.";
         };
     }
 }

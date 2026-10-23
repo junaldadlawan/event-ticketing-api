@@ -17,6 +17,8 @@ public record NotificationResponse(
         String relatedObjectType,
         UUID relatedObjectId,
         NotificationStatus status,
+        String message,
+        UUID eventId,
         Instant sentAt,
         Instant createdAt) implements Serializable {
 
@@ -28,6 +30,8 @@ public record NotificationResponse(
                 notification.getRelatedObjectType(),
                 notification.getRelatedObjectId(),
                 notification.getStatus(),
+                notification.getMessage(),
+                notification.getEventId(),
                 notification.getSentAt(),
                 notification.getCreatedAt());
     }

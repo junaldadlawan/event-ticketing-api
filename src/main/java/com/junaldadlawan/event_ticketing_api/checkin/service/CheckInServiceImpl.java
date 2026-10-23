@@ -113,6 +113,7 @@ public class CheckInServiceImpl implements CheckInService {
                     .sourceType(CheckInSourceType.SCANNER_DEVICE)
                     .sourceId(device.getId())
                     .result(outcome.result())
+                    .scannerLocation(device.getLocation())
                     .build());
         }
         BusinessAuditLogger.record("checkin.validated", "Ticket", outcome.ticketId(),
@@ -120,7 +121,8 @@ public class CheckInServiceImpl implements CheckInService {
                         ? BusinessAuditLogger.Outcome.SUCCESS
                         : BusinessAuditLogger.Outcome.FAILURE,
                 "result=" + outcome.result() + " device=" + device.getId());
-        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), scannedAt, buildSummary(outcome.ticket()));
+        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), scannedAt, buildSummary(outcome.ticket()),
+                device.getLocation());
     }
 
     @Override
@@ -140,6 +142,8 @@ public class CheckInServiceImpl implements CheckInService {
     }
 
     private ValidationResultResponse reconcileFallbackScan(UUID eventId, ScannerDevice device, FallbackScanItemDto scan) {
+        // the gate the scan was made at (it may have moved since), else where the device stands now
+        String location = scan.location() == null || scan.location().isBlank() ? device.getLocation() : scan.location().trim();
         ScanOutcome outcome = resolveAndMarkTicket(scan.rawCredential(), eventId);
 
         FallbackScanRecord record = FallbackScanRecord.builder()
@@ -157,6 +161,7 @@ public class CheckInServiceImpl implements CheckInService {
                     .sourceType(CheckInSourceType.RECONCILED_FALLBACK)
                     .sourceId(savedRecord.getId())
                     .result(outcome.result())
+                    .scannerLocation(location)
                     .build());
         }
         BusinessAuditLogger.record("checkin.fallback_scan", "Ticket", outcome.ticketId(),
@@ -164,7 +169,8 @@ public class CheckInServiceImpl implements CheckInService {
                         ? BusinessAuditLogger.Outcome.SUCCESS
                         : BusinessAuditLogger.Outcome.FAILURE,
                 "result=" + outcome.result() + " device=" + device.getId());
-        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), savedRecord.getSyncedAt(), buildSummary(outcome.ticket()));
+        return new ValidationResultResponse(outcome.ticketId(), outcome.result(), savedRecord.getSyncedAt(), buildSummary(outcome.ticket()),
+                location);
     }
 
     @Override
@@ -173,7 +179,7 @@ public class CheckInServiceImpl implements CheckInService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket " + ticketId + " not found"));
         Event event = eventRepository.findByIdAndDeletedAtIsNull(ticket.getEventId())
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + ticket.getEventId() + " not found"));
-        requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        requireMayViewRecords(event.getOrganizationId());
         return checkInRecordRepository.findByTicketIdOrderByScannedAtAsc(ticketId).stream()
                 .map(CheckInRecordResponse::from)
                 .toList();
@@ -243,6 +249,14 @@ public class CheckInServiceImpl implements CheckInService {
                 .orElseThrow(() -> new ResourceNotFoundException("Scanner device " + deviceId + " not found"));
     }
 
+    /** The scan-attempt trail is read-only for the organization's check-in staff too (they work the gate), as well as owner/organizer/admin. */
+    private void requireMayViewRecords(UUID organizationId) {
+        if (!accessGuard.isAdmin() && accessGuard.isCheckInStaff(accessGuard.currentUserId(), organizationId)) {
+            return;
+        }
+        requireOwnerOrOrganizerOrAdmin(organizationId);
+    }
+
     private void requireOwnerOrOrganizerOrAdmin(UUID organizationId) {
         if (accessGuard.isAdmin()) {
             return;
@@ -251,7 +265,7 @@ public class CheckInServiceImpl implements CheckInService {
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
                 || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.CHECK_IN);
         if (!isOwnerOrOrganizer) {
-            throw new ForbiddenException("Only the event's organizer/owner or an admin may view this ticket's check-in records");
+            throw new ForbiddenException("Only the event's organizer/owner, its check-in staff or an admin may view this ticket's check-in records");
         }
     }
 

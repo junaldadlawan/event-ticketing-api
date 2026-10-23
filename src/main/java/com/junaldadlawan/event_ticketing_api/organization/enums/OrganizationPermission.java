@@ -22,10 +22,15 @@ public enum OrganizationPermission {
     /** sales/audience analytics and activity logs */
     ANALYTICS,
     /** add members, change member roles/permissions, remove members */
-    TEAM;
+    TEAM,
+    /**
+     * publish the scanner app (upload and remove versions). The app is shared by every organization: whoever holds this in ANY organization can
+     * publish the version all check-in staff download. Grantable to an ORGANIZER or to CHECK_IN_STAFF; the owner always holds it.
+     */
+    SCANNER_APP;
 
-    /** An organizer's permissions when none are chosen: everything but TEAM, i.e. what an organizer could always do. */
+    /** An organizer's permissions when none are chosen: everything but TEAM and SCANNER_APP, i.e. what an organizer could always do. */
     public static Set<OrganizationPermission> organizerDefaults() {
-        return EnumSet.complementOf(EnumSet.of(TEAM));
+        return EnumSet.complementOf(EnumSet.of(TEAM, SCANNER_APP));
     }
 }

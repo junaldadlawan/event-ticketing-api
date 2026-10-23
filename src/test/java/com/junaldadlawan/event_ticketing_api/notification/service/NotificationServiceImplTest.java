@@ -64,7 +64,9 @@ class NotificationServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new NotificationServiceImpl(notificationRepository, userRepository, emailSender, accessGuard);
+        // the real preference service over an empty repository: every type is wanted
+        service = new NotificationServiceImpl(notificationRepository, userRepository, emailSender, accessGuard,
+                new NotificationPreferenceService(org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.notification.repository.NotificationPreferenceRepository.class), accessGuard));
         userId = UUID.randomUUID();
         relatedObjectId = UUID.randomUUID();
     }

@@ -127,7 +127,8 @@ class CheckoutServiceImplPendingTest {
                 eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
                 notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
-                pendingCheckoutRepository, transactionManager, gatewayFeeService, null, null, null, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder.class));
+                pendingCheckoutRepository, transactionManager, gatewayFeeService, null, null, null,
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.tickettype.service.TicketTypeBuyerLimit.class), org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder.class));
         buyerId = UUID.randomUUID();
         cartId = UUID.randomUUID();
         idempotencyKey = UUID.randomUUID();

@@ -21,6 +21,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
     List<User> findByDeletedAtIsNull();
 
+    /** Ids of the live users with one of these account roles (who to tell about something for the admins). */
+    @Query("select u.id from User u where u.role in :roles and u.deletedAt is null")
+    List<UUID> findIdsByRoleIn(@Param("roles") java.util.Collection<com.junaldadlawan.event_ticketing_api.user.enums.Role> roles);
+
     /** Locks the row so two requests for the same user create one Stripe Customer, not two. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")

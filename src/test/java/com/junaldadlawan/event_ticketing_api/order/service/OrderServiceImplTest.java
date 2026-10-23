@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.order.service;
 
+import com.junaldadlawan.event_ticketing_api.checkin.service.TicketCheckInLookup;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.common.exception.ForbiddenException;
@@ -60,6 +61,8 @@ class OrderServiceImplTest {
     private EventRepository eventRepository;
     @Mock
     private OrganizationAccessGuard accessGuard;
+    @Mock
+    private TicketCheckInLookup ticketCheckInLookup;   // default answer: no check-ins
 
     private OrderServiceImpl service;
 
@@ -68,7 +71,7 @@ class OrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new OrderServiceImpl(orderRepository, ticketRepository, eventRepository, accessGuard);
+        service = new OrderServiceImpl(orderRepository, ticketRepository, eventRepository, accessGuard, ticketCheckInLookup);
         orgId = UUID.randomUUID();
         eventId = UUID.randomUUID();
     }

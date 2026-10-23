@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.ticket.controller;
 
+import com.junaldadlawan.event_ticketing_api.checkin.service.TicketCheckInLookup;
 import com.junaldadlawan.event_ticketing_api.auth.security.JwtAuthenticationFilter;
 import com.junaldadlawan.event_ticketing_api.checkin.dto.CheckInRecordResponse;
 import com.junaldadlawan.event_ticketing_api.checkin.enums.CheckInResult;
@@ -67,6 +68,9 @@ class TicketControllerTest {
 
     @MockitoBean
     private CheckInService checkInService;
+
+    @MockitoBean
+    private TicketCheckInLookup ticketCheckInLookup;
 
     private Ticket ticket(UUID id) {
         return Ticket.builder()
@@ -266,7 +270,7 @@ class TicketControllerTest {
     void listCheckInRecords_existingTicket_returns200_withHistory() throws Exception {
         UUID ticketId = UUID.randomUUID();
         CheckInRecordResponse record = new CheckInRecordResponse(UUID.randomUUID(), ticketId,
-                CheckInSourceType.SCANNER_DEVICE, UUID.randomUUID(), Instant.now(), CheckInResult.VALID);
+                CheckInSourceType.SCANNER_DEVICE, UUID.randomUUID(), Instant.now(), CheckInResult.VALID, "Gate A");
         when(checkInService.listTicketCheckInRecords(ticketId)).thenReturn(List.of(record));
 
         mockMvc.perform(get("/api/v1/tickets/{ticketId}/check-in-records", ticketId))

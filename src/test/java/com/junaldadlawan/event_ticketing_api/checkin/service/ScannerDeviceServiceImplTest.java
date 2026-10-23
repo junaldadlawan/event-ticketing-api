@@ -58,11 +58,15 @@ class ScannerDeviceServiceImplTest {
     @Mock
     private OrganizationAccessGuard accessGuard;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAccessGuard deviceAccessGuard;
+
     private ScannerDeviceServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new ScannerDeviceServiceImpl(scannerDeviceRepository, checkInConfigRepository, eventRepository, credentialService, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class));
+        service = new ScannerDeviceServiceImpl(scannerDeviceRepository, checkInConfigRepository, eventRepository, credentialService, accessGuard, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService.class),
+                deviceAccessGuard);
     }
 
     private Event event(UUID id, UUID orgId) {
@@ -82,7 +86,7 @@ class ScannerDeviceServiceImplTest {
         UUID eventId = UUID.randomUUID();
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null)))
+        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -97,7 +101,7 @@ class ScannerDeviceServiceImplTest {
         when(accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)).thenReturn(false);
         when(accessGuard.hasPermission(callerId, orgId, OrganizationPermission.CHECK_IN)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null)))
+        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null, null)))
                 .isInstanceOf(ForbiddenException.class);
         verify(scannerDeviceRepository, never()).save(any());
     }
@@ -115,7 +119,7 @@ class ScannerDeviceServiceImplTest {
         when(credentialService.generate(any())).thenReturn("generated-credential");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null));
+        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null, null));
 
         assertThat(response.eventId()).isEqualTo(eventId);
         assertThat(response.deviceLabel()).isEqualTo("Gate 1");
@@ -137,7 +141,7 @@ class ScannerDeviceServiceImplTest {
         when(credentialService.generate(any())).thenReturn("cred");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", null));
+        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", null, null));
 
         assertThat(response.status()).isEqualTo(ScannerDeviceStatus.ACTIVE);
         verify(scannerDeviceRepository, never()).findByEventIdAndStatus(any(), any());
@@ -158,7 +162,7 @@ class ScannerDeviceServiceImplTest {
         when(credentialService.generate(any())).thenReturn("cred");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null));
+        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 1", null, null));
 
         assertThat(response.status()).isEqualTo(ScannerDeviceStatus.ACTIVE);
     }
@@ -176,7 +180,7 @@ class ScannerDeviceServiceImplTest {
                 .deviceLabel("Existing").status(ScannerDeviceStatus.ACTIVE).build();
         when(scannerDeviceRepository.findByEventIdAndStatus(eventId, ScannerDeviceStatus.ACTIVE)).thenReturn(List.of(existing));
 
-        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", null)))
+        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", null, null)))
                 .isInstanceOf(ConflictException.class);
         verify(scannerDeviceRepository, never()).save(any());
     }
@@ -194,7 +198,7 @@ class ScannerDeviceServiceImplTest {
                 .deviceLabel("Existing").status(ScannerDeviceStatus.ACTIVE).build();
         when(scannerDeviceRepository.findByEventIdAndStatus(eventId, ScannerDeviceStatus.ACTIVE)).thenReturn(List.of(existing));
 
-        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", false)))
+        assertThatThrownBy(() -> service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", false, null)))
                 .isInstanceOf(ConflictException.class);
     }
 
@@ -213,7 +217,7 @@ class ScannerDeviceServiceImplTest {
         when(credentialService.generate(any())).thenReturn("cred");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", true));
+        ScannerDeviceResponse response = service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 2", true, null));
 
         assertThat(response.status()).isEqualTo(ScannerDeviceStatus.ACTIVE);
         assertThat(response.deviceLabel()).isEqualTo("Gate 2");
@@ -245,7 +249,7 @@ class ScannerDeviceServiceImplTest {
         when(credentialService.generate(any())).thenReturn("cred");
         when(scannerDeviceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 3", true));
+        service.authorize(eventId, new ScannerDeviceAuthorizeRequest("Gate 3", true, null));
 
         assertThat(existing1.getStatus()).isEqualTo(ScannerDeviceStatus.REVOKED);
         assertThat(existing2.getStatus()).isEqualTo(ScannerDeviceStatus.REVOKED);

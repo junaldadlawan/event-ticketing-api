@@ -1,5 +1,10 @@
 package com.junaldadlawan.event_ticketing_api.checkin.service;
 
+import java.util.Objects;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import com.junaldadlawan.event_ticketing_api.checkin.security.DeviceAccessGuard;
+import com.junaldadlawan.event_ticketing_api.checkin.dto.ScannerDeviceLocationRequest;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditDetails;
 import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
@@ -36,6 +41,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
     private final ScannerDeviceCredentialService credentialService;
     private final OrganizationAccessGuard accessGuard;
     private final AuditLogService auditLogService;
+    private final DeviceAccessGuard deviceAccessGuard;
 
     @Override
     @Transactional
@@ -75,6 +81,7 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
                 .id(deviceId)
                 .eventId(eventId)
                 .deviceLabel(request.deviceLabel())
+                .location(request.locationOrNull())
                 .status(ScannerDeviceStatus.ACTIVE)
                 .createdBy(accessGuard.currentUserId().toString())
                 .build();
@@ -96,6 +103,45 @@ public class ScannerDeviceServiceImpl implements ScannerDeviceService {
         scannerDeviceRepository.save(device);
         auditLogService.recordByCurrentUser("scanner_device.revoked", "ScannerDevice", deviceId, device.getEventId(),
                 AuditDetails.named(device.getDeviceLabel()));
+    }
+
+    @Override
+    @Transactional
+    public ScannerDeviceResponse updateLocation(UUID deviceId, ScannerDeviceLocationRequest request) {
+        ScannerDevice device = scannerDeviceRepository.findById(deviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Scanner device " + deviceId + " not found"));
+        String actor;
+        if (deviceAccessGuard.isDevice()) {
+            // a device may only move itself - same cross-check as fetching its dataset
+            if (!deviceAccessGuard.currentDeviceId().equals(deviceId)) {
+                throw new ForbiddenException("A scanner device may only change its own location");
+            }
+            actor = deviceId.toString();
+        } else {
+            requireOwnerOrOrganizerOrAdmin(getEventOrThrow(device.getEventId()).getOrganizationId());
+            actor = accessGuard.currentUserId().toString();
+        }
+        if (device.getStatus() == ScannerDeviceStatus.REVOKED) {
+            throw new ConflictException("This scanner device has been revoked");
+        }
+
+        String from = device.getLocation();
+        String to = request.locationOrNull();
+        device.setLocation(to);
+        device.setUpdatedBy(actor);
+        ScannerDevice saved = scannerDeviceRepository.save(device);
+        if (!Objects.equals(from, to)) {
+            Map<String, Object> details = AuditDetails.named(device.getDeviceLabel());
+            Map<String, Object> change = new LinkedHashMap<>();
+            change.put("field", "location");
+            change.put("from", from);
+            change.put("to", to);
+            details.put("changes", List.of(change));
+            // the actor is the signed-in user, or the device itself (its id) when it moved itself
+            auditLogService.recordByCurrentUser("scanner_device.location_changed", "ScannerDevice", deviceId,
+                    device.getEventId(), details);
+        }
+        return ScannerDeviceResponse.from(saved, null);   // the credential is only ever shown when it is issued
     }
 
     private Event getEventOrThrow(UUID eventId) {

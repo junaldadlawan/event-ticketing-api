@@ -378,7 +378,7 @@ class CheckInServiceImplTest {
         when(deviceAccessGuard.currentDeviceId()).thenReturn(deviceId);
         when(scannerDeviceRepository.findById(deviceId)).thenReturn(Optional.of(device(deviceId, deviceEventId)));
         FallbackScanBatchRequest request = new FallbackScanBatchRequest(otherEventId,
-                List.of(new FallbackScanItemDto("cred", Instant.now())));
+                List.of(new FallbackScanItemDto("cred", Instant.now(), null)));
 
         assertThatThrownBy(() -> service.submitFallbackScans(request)).isInstanceOf(BadRequestException.class);
     }
@@ -391,7 +391,7 @@ class CheckInServiceImplTest {
         when(scannerDeviceRepository.findById(deviceId)).thenReturn(Optional.of(device(deviceId, eventId)));
         when(checkInConfigRepository.findByEventId(eventId)).thenReturn(Optional.empty());
         FallbackScanBatchRequest request = new FallbackScanBatchRequest(eventId,
-                List.of(new FallbackScanItemDto("cred", Instant.now())));
+                List.of(new FallbackScanItemDto("cred", Instant.now(), null)));
 
         assertThatThrownBy(() -> service.submitFallbackScans(request)).isInstanceOf(ConflictException.class);
     }
@@ -405,7 +405,7 @@ class CheckInServiceImplTest {
         when(checkInConfigRepository.findByEventId(eventId))
                 .thenReturn(Optional.of(CheckInConfig.builder().eventId(eventId).mode(CheckInMode.STANDARD).build()));
         FallbackScanBatchRequest request = new FallbackScanBatchRequest(eventId,
-                List.of(new FallbackScanItemDto("cred", Instant.now())));
+                List.of(new FallbackScanItemDto("cred", Instant.now(), null)));
 
         assertThatThrownBy(() -> service.submitFallbackScans(request)).isInstanceOf(ConflictException.class);
     }
@@ -431,8 +431,8 @@ class CheckInServiceImplTest {
         Instant capturedAt1 = Instant.now().minusSeconds(120);
         Instant capturedAt2 = Instant.now().minusSeconds(60);
         FallbackScanBatchRequest request = new FallbackScanBatchRequest(eventId, List.of(
-                new FallbackScanItemDto("valid-cred", capturedAt1),
-                new FallbackScanItemDto("garbage-cred", capturedAt2)));
+                new FallbackScanItemDto("valid-cred", capturedAt1, null),
+                new FallbackScanItemDto("garbage-cred", capturedAt2, null)));
 
         when(fallbackScanRecordRepository.save(any())).thenAnswer(invocation -> {
             FallbackScanRecord record = invocation.getArgument(0);

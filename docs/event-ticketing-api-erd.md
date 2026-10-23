@@ -150,6 +150,7 @@ erDiagram
         datetime sale_start_at
         datetime sale_end_at
         int max_per_order
+        string color "nullable, #RRGGBB uppercase, display colour"
         datetime created_at
         uuid created_by FK
         datetime updated_at
@@ -376,6 +377,7 @@ erDiagram
         uuid id PK
         uuid event_id FK
         string device_label
+        string location "nullable, max 100, e.g. Gate A"
         enum status "active / revoked"
         datetime created_at
         uuid created_by FK "organizer who authorized it"
@@ -398,6 +400,7 @@ erDiagram
         enum source_type "scanner_device / reconciled_fallback"
         uuid source_id FK
         enum result "valid/duplicate/invalid/wrong_event"
+        string scanner_location "nullable; where the scan was made, snapshot at scan time"
         datetime scanned_at "creation timestamp"
     }
 

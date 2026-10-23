@@ -16,6 +16,7 @@ import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
 import com.junaldadlawan.event_ticketing_api.event.specification.EventSpecification;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
+import com.junaldadlawan.event_ticketing_api.notification.service.EventLifecycleNotifier;
 import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole;
@@ -61,6 +62,7 @@ public class EventServiceImpl implements EventService {
     private final AuditLogService auditLogService;
     private final CategoryService categoryService;
     private final EventCompletionService eventCompletionService;
+    private final EventLifecycleNotifier eventLifecycleNotifier;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -97,6 +99,7 @@ public class EventServiceImpl implements EventService {
                 .startAt(request.startAt())
                 .endAt(request.endAt())
                 .timezone(request.timezone())
+                .gateOpensMinutesBefore(request.gateOpensMinutesBefore())
                 .images(request.images() == null ? new ArrayList<>() : new ArrayList<>(request.images()))
                 .status(EventStatus.DRAFT)
                 .ticketPrefix(generateUniqueTicketPrefix())
@@ -126,9 +129,10 @@ public class EventServiceImpl implements EventService {
         if (accessGuard.isAdmin()) {
             scope = organizationId == null ? null : Set.of(organizationId);
         } else {
-            Set<UUID> managed = accessGuard.managedOrganizationIds(accessGuard.currentUserId());
+            // read-only for check-in staff: the organizations they manage plus the ones where they are CHECK_IN_STAFF
+            Set<UUID> managed = accessGuard.readableOrganizationIds(accessGuard.currentUserId());
             if (managed.isEmpty()) {
-                throw new ForbiddenException("Only admins and organization owners or organizers may list managed events");
+                throw new ForbiddenException("Only admins and members of an organization (owner, organizer or check-in staff) may list managed events");
             }
             if (organizationId != null && !managed.contains(organizationId)) {
                 throw new ForbiddenException("You do not manage that organization");
@@ -151,7 +155,7 @@ public class EventServiceImpl implements EventService {
     public Event getEvent(UUID eventId) {
         Event event = getOrThrow(eventId);
         if (event.getStatus() == EventStatus.DRAFT) {
-            requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+            requireMayReadDraft(event.getOrganizationId());
         }
         return eventCompletionService.completeIfEnded(event);
     }
@@ -170,6 +174,11 @@ public class EventServiceImpl implements EventService {
         }
         EventCompletionService.requireNotEnded(event);
         Map<String, Object> before = AuditDetails.snapshot(event, EventUpdateRequest.class);
+        // BR-NOTIFY-002: compared after the save to tell holders when the event moves
+        Instant oldStart = event.getStartAt();
+        Instant oldEnd = event.getEndAt();
+        String oldTimezone = event.getTimezone();
+        UUID oldVenueId = event.getVenueId();
 
         if (request.title() != null) {
             if (request.title().isBlank()) {
@@ -189,6 +198,9 @@ public class EventServiceImpl implements EventService {
             }
             event.setCategory(categoryService.resolveActive(request.category()).getName());
         }
+        if (request.gateOpensMinutesBefore() != null) {
+            event.setGateOpensMinutesBefore(request.gateOpensMinutesBefore().orElse(null));
+        }
         if (request.images() != null) {
             event.setImages(new ArrayList<>(request.images()));
         }
@@ -199,6 +211,8 @@ public class EventServiceImpl implements EventService {
         if (changes != null) {
             auditLogService.recordByCurrentUser("event.updated", "Event", eventId, eventId, changes);
         }
+        // shortcut: EventUpdateRequest cannot change start/end/timezone/venue yet, so this never sends today; it does once they become editable
+        eventLifecycleNotifier.eventChanged(saved, oldStart, oldEnd, oldTimezone, oldVenueId);
         return saved;
     }
 
@@ -217,6 +231,8 @@ public class EventServiceImpl implements EventService {
         }
 
         event.setStatus(EventStatus.PUBLISHED);
+        // BR-NOTIFY-002: reminders and the like due before now (already missed) are not sent
+        event.setNotificationsFrom(Instant.now());
         Event published = eventRepository.save(event);
         auditLogService.recordByCurrentUser("event.published", "Event", eventId, eventId);
         return published;
@@ -312,6 +328,14 @@ public class EventServiceImpl implements EventService {
         if (!isOwnerOrOrganizer(callerId, organizationId)) {
             throw new ForbiddenException("Only the organization's owner, organizer, or an admin may manage this event");
         }
+    }
+
+    /** A draft is visible to the organization's team, check-in staff included (read only), and to admins. */
+    private void requireMayReadDraft(UUID organizationId) {
+        if (accessGuard.isAdmin() || accessGuard.isCheckInStaff(accessGuard.currentUserId(), organizationId)) {
+            return;
+        }
+        requireOwnerOrOrganizerOrAdmin(organizationId);
     }
 
     /**

@@ -65,10 +65,15 @@ organization's events only.
 | Set platform fee rules, generate payouts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Set the payment gateway fee and who pays it (customer, organization or platform) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Platform analytics, audit log, handle disputes | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Read the organization's events in any status, their ticket types, check-in config and a ticket's scan records (read only) | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Download the scanner app (APK) | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Upload scanner app versions (needs SCANNER_APP, which the owner can give to an organizer or check-in staff; the owner always has it) | ❌ | ❌ | ⚙️ | ⚙️ | ✅ | ✅ | ✅ | ❌ |
+| Remove a scanner app version (the uploader, or an admin) | ❌ | ❌ | ⚙️ | ⚙️ | ✅ | ✅ | ✅ | ❌ |
 
 Notes
-- **Check-in staff** is a membership today, not a permission set: nothing in the API checks for it beyond letting the
-  person see their organization. Scanning is done by scanner devices, which an owner, organizer or admin sets up.
+- **Scanner app:** it is shared by every organization, so anyone holding SCANNER_APP in any organization (⚙️ = only when granted) can publish the version all check-in staff download. Give it only to people you trust with that.
+- **Check-in staff** can READ their organization's events (any status, `GET /events/managed`, drafts included), the ticket types and
+  check-in config of those events and a ticket's scan records, and download the scanner app. Every write stays refused to them. Scanning is done by scanner devices, which an owner, organizer or admin sets up.
   Give it real rights (for example creating its own scanner device) by adding the checks in the services.
 - **Admin cannot edit or publish an event** (BR-AUTH-004): those stay with the owning organization. The super admin has the
   same limit.

@@ -49,7 +49,7 @@ class NotificationControllerTest {
 
     private NotificationResponse response(NotificationType type, NotificationStatus status) {
         return new NotificationResponse(UUID.randomUUID(), type, NotificationChannel.EMAIL, "Order",
-                UUID.randomUUID(), status, status == NotificationStatus.SENT ? Instant.now() : null, Instant.now());
+                UUID.randomUUID(), status, null, null, status == NotificationStatus.SENT ? Instant.now() : null, Instant.now());
     }
 
     @Test

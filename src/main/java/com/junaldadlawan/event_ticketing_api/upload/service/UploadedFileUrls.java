@@ -78,10 +78,11 @@ public class UploadedFileUrls {
         }
     }
 
-    /** Whether any profile picture, post picture, ticket template, event image or organization document still uses {@code url}. */
+    /** Whether any profile picture, post or recap picture, ticket template, event image or organization document still uses {@code url}. */
     boolean isReferenced(String url) {
         return exists("select count(u) from User u where u.avatarUrl = :url", url)
                 || exists("select count(p) from Post p where p.imageUrl = :url and p.deletedAt is null", url)
+                || exists("select count(m) from EventRecapMessage m where m.imageUrl = :url and m.deletedAt is null", url)
                 || exists("select count(t) from TicketTemplate t where t.backgroundImageUrl = :url or t.logoUrl = :url", url)
                 || exists("select count(e) from Event e join e.images i where i = :url", url)
                 || exists("select count(o) from Organization o join o.documents d where d.url = :url", url);

@@ -27,7 +27,7 @@ public enum ActivityArea {
             (root, cb) -> actions(root, cb, "payout.", "platform_fee.", "gateway_fee.")),
     SETTINGS(Reader.OWNER_OR_ORGANIZER,
             (root, cb) -> actions(root, cb, "payout_card.", "payout_account."),
-            (root, cb) -> actions(root, cb, "category.", "platform_fee.", "gateway_fee.")),
+            (root, cb) -> actions(root, cb, "category.", "platform_fee.", "gateway_fee.", "ticket_sale_settings.")),
     POSTS(null, null,
             (root, cb) -> actions(root, cb, "post.")),
     ORGANIZATIONS(null, null,

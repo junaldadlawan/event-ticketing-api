@@ -66,6 +66,14 @@ public class Event extends Auditable {
     @Column(name = "status", nullable = false, length = 20)
     private EventStatus status = EventStatus.DRAFT;
 
+    /** BR-TICKET-GATE-001: gates open this many minutes before the start (0-1440); null = not set. Display only. */
+    @Column(name = "gate_opens_minutes_before")
+    private Integer gateOpensMinutesBefore;
+
+    /** BR-NOTIFY-002: scheduled notifications due before this moment are not sent (set on publish and when the event moves). */
+    @Column(name = "notifications_from")
+    private Instant notificationsFrom;
+
     @Column(name = "ticket_prefix", nullable = false, length = 3)
     private String ticketPrefix;
 }

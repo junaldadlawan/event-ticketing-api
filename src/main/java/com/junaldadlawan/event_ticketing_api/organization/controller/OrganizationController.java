@@ -1,5 +1,6 @@
 package com.junaldadlawan.event_ticketing_api.organization.controller;
 
+import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationChangeRequestResponse;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberResponse;
@@ -7,6 +8,7 @@ import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMember
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationRejectRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationResponse;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
+import com.junaldadlawan.event_ticketing_api.organization.service.OrganizationChangeRequestService;
 import com.junaldadlawan.event_ticketing_api.organization.service.OrganizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class OrganizationController {
 
     private final OrganizationService organizationService;
+    private final OrganizationChangeRequestService changeRequestService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -45,9 +48,20 @@ public class OrganizationController {
         return OrganizationResponse.from(organizationService.get(orgId));
     }
 
+    /** BR-ORG-009: does not change the organization; stores a change request an admin approves. 202 with the request. */
     @PatchMapping("/{orgId}")
-    public OrganizationResponse update(@PathVariable UUID orgId, @Valid @RequestBody OrganizationUpdateRequest request) {
-        return OrganizationResponse.from(organizationService.update(orgId, request));
+    public org.springframework.http.ResponseEntity<Object> update(@PathVariable UUID orgId, @Valid @RequestBody OrganizationUpdateRequest request) {
+        if (organizationService.get(orgId).getStatus() == com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus.PENDING) {
+            // BR-ORG-010: the applicant edits a pending application directly
+            return org.springframework.http.ResponseEntity.ok(OrganizationResponse.from(changeRequestService.reviseApplication(orgId, request)));
+        }
+        return org.springframework.http.ResponseEntity.accepted().body(changeRequestService.request(orgId, request));
+    }
+
+    /** BR-ORG-010: an admin asks the applicant to revise a pending application; it stays pending, with the flag and the message. */
+    @PostMapping("/{orgId}/request-revision")
+    public OrganizationResponse requestRevision(@PathVariable UUID orgId, @Valid @RequestBody com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationRevisionRequest request) {
+        return OrganizationResponse.from(changeRequestService.requestRevision(orgId, request.message()));
     }
 
     @PostMapping("/{orgId}/approve")

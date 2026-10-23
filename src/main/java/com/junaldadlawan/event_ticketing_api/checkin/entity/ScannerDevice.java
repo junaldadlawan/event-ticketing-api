@@ -60,6 +60,10 @@ public class ScannerDevice implements Persistable<UUID> {
     @Column(name = "device_label", nullable = false, length = 255)
     private String deviceLabel;
 
+    /** Where the device stands, e.g. "Gate A" (optional). */
+    @Column(name = "location", length = 100)
+    private String location;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private ScannerDeviceStatus status;

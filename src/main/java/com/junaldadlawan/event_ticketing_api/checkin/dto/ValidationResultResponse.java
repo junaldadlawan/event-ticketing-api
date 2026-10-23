@@ -11,5 +11,7 @@ public record ValidationResultResponse(
         UUID ticketId,
         CheckInResult result,
         Instant scannedAt,
-        TicketSummaryDto ticketSummary) implements Serializable {
+        TicketSummaryDto ticketSummary,
+        // where the scan was recorded, so the scanner can show it back
+        String scannerLocation) implements Serializable {
 }

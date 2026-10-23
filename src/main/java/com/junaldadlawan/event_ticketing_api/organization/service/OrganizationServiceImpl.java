@@ -13,7 +13,6 @@ import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreate
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberResponse;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationRejectRequest;
-import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
@@ -53,11 +52,19 @@ public class OrganizationServiceImpl implements OrganizationService {
                 .name(request.name())
                 .status(OrganizationStatus.PENDING)
                 .documents(request.documents().stream().map(DocumentDto::toEntity).toList())
+                .contactEmail(blankToNull(request.contactEmail()))
+                .contactPhone(blankToNull(request.contactPhone()))
+                .address(blankToNull(request.address()))
+                .description(blankToNull(request.description()))
                 .build();
         Organization saved = organizationRepository.save(organization);
         auditLogService.recordByCurrentUser("organization.applied", "Organization", saved.getId(), null, saved.getId(),
                 AuditDetails.named(organization.getName()));
         return saved;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Override
@@ -97,29 +104,6 @@ public class OrganizationServiceImpl implements OrganizationService {
     }
 
     @Override
-    public Organization update(UUID orgId, OrganizationUpdateRequest request) {
-        Organization organization = getOrThrow(orgId);
-        UUID callerId = accessGuard.currentUserId();
-        boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, orgId, OrganizationRole.OWNER)
-                || accessGuard.hasRole(callerId, orgId, OrganizationRole.ORGANIZER);
-        if (!isOwnerOrOrganizer) {
-            throw new ForbiddenException("Only the organization's owner or organizer may update it");
-        }
-        if (organization.getStatus() != OrganizationStatus.APPROVED) {
-            throw new ForbiddenException("Only an approved organization may be updated");
-        }
-        Map<String, Object> before = AuditDetails.snapshot(organization, OrganizationUpdateRequest.class);
-        organization.setName(request.name());
-        Organization saved = organizationRepository.save(organization);
-        // BR-ADMIN-007: only the fields that actually changed; an update that changed nothing is not logged
-        Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(organization, OrganizationUpdateRequest.class));
-        if (changes != null) {
-            auditLogService.recordByCurrentUser("organization.updated", "Organization", orgId, null, orgId, changes);
-        }
-        return saved;
-    }
-
-    @Override
     public Organization approve(UUID orgId) {
         accessGuard.requireAdmin();
         Organization organization = getOrThrow(orgId);
@@ -128,6 +112,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         }
         UUID applicantId = UUID.fromString(organization.getCreatedBy());
         organization.setStatus(OrganizationStatus.APPROVED);
+        organization.setRevisionRequested(false);
         organization.setOwnerId(applicantId);
         organizationRepository.save(organization);
 
@@ -146,6 +131,7 @@ public class OrganizationServiceImpl implements OrganizationService {
             throw new ConflictException("Organization application is not pending");
         }
         organization.setStatus(OrganizationStatus.REJECTED);
+        organization.setRevisionRequested(false);
         organization.setRejectionReason(request != null ? request.reason() : null);
         Organization saved = organizationRepository.save(organization);
         Map<String, Object> details = AuditDetails.named(organization.getName());
@@ -173,9 +159,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (request.role() == OrganizationRole.OWNER) {
             throw new ForbiddenException("The owner role cannot be granted through this endpoint");
         }
-        if (request.permissions() != null && request.role() != OrganizationRole.ORGANIZER) {
-            throw new BadRequestException("permissions only apply to the ORGANIZER role");
-        }
+        requirePermissionsFitRole(request.permissions(), request.role() == OrganizationRole.ORGANIZER, request.role() == OrganizationRole.CHECK_IN_STAFF);
         UUID callerId = accessGuard.currentUserId();
         UUID targetUserId = request.userId();
 
@@ -194,7 +178,14 @@ public class OrganizationServiceImpl implements OrganizationService {
         Set<OrganizationPermission> before = OrganizationAccessGuard.permissionsOf(member);
         boolean newOrganizer = request.role() == OrganizationRole.ORGANIZER && !member.getRoles().contains(OrganizationRole.ORGANIZER);
         member.getRoles().add(request.role());
-        if (request.permissions() != null) {
+        if (request.permissions() != null && request.role() == OrganizationRole.CHECK_IN_STAFF && !member.getRoles().contains(OrganizationRole.ORGANIZER)) {
+            member.choosePermissions(request.permissions());   // check-in staff: only SCANNER_APP (checked above)
+        } else if (request.permissions() != null && request.role() == OrganizationRole.CHECK_IN_STAFF) {
+            Set<OrganizationPermission> merged = EnumSet.noneOf(OrganizationPermission.class);
+            merged.addAll(member.getPermissions());
+            merged.addAll(request.permissions());
+            member.choosePermissions(merged);   // already an organizer: keep what they hold and add
+        } else if (request.permissions() != null) {
             member.choosePermissions(request.permissions());
         } else if (newOrganizer) {
             member.choosePermissions(OrganizationPermission.organizerDefaults());
@@ -252,9 +243,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (roles.contains(OrganizationRole.OWNER)) {
             throw new BadRequestException("The OWNER role can't be given to a member");
         }
-        if (permissions != null && !roles.contains(OrganizationRole.ORGANIZER)) {
-            throw new BadRequestException("permissions only apply to the ORGANIZER role");
-        }
+        requirePermissionsFitRole(permissions, roles.contains(OrganizationRole.ORGANIZER), roles.contains(OrganizationRole.CHECK_IN_STAFF));
         OrganizationMember member = memberOfOrThrow(orgId, userId, callerId);
         List<String> from = sortedNames(member.getRoles());
         Set<OrganizationPermission> permissionsBefore = OrganizationAccessGuard.permissionsOf(member);
@@ -263,7 +252,15 @@ public class OrganizationServiceImpl implements OrganizationService {
         member.getRoles().clear();
         member.getRoles().addAll(roles);
         if (!roles.contains(OrganizationRole.ORGANIZER)) {
-            member.choosePermissions(Set.of());   // permissions only mean something for an organizer
+            // permissions only mean something for an organizer; check-in staff can keep or be given SCANNER_APP
+            Set<OrganizationPermission> staffKeeps = EnumSet.noneOf(OrganizationPermission.class);
+            if (roles.contains(OrganizationRole.CHECK_IN_STAFF)) {
+                Set<OrganizationPermission> source = permissions != null ? permissions : member.getPermissions();
+                if (source.contains(OrganizationPermission.SCANNER_APP)) {
+                    staffKeeps.add(OrganizationPermission.SCANNER_APP);
+                }
+            }
+            member.choosePermissions(staffKeeps);
         } else if (permissions != null) {
             member.choosePermissions(permissions);
         } else if (!wasOrganizer) {
@@ -305,6 +302,19 @@ public class OrganizationServiceImpl implements OrganizationService {
             throw new ForbiddenException("Only the organization's owner, or an organizer with the TEAM permission, may change or remove its members");
         }
         return callerId;
+    }
+
+    /**
+     * permissions only apply to an ORGANIZER; a CHECK_IN_STAFF member can only be given SCANNER_APP. Null means none were sent.
+     */
+    private static void requirePermissionsFitRole(Set<OrganizationPermission> permissions, boolean organizer, boolean staff) {
+        if (permissions == null || organizer) {
+            return;
+        }
+        boolean onlyScannerApp = permissions.stream().allMatch(p -> p == OrganizationPermission.SCANNER_APP);
+        if (!staff || !onlyScannerApp) {
+            throw new BadRequestException("permissions only apply to the ORGANIZER role (CHECK_IN_STAFF can only be given SCANNER_APP)");
+        }
     }
 
     /** A TEAM organizer can't hand out a permission they don't hold themselves (the owner holds them all). */

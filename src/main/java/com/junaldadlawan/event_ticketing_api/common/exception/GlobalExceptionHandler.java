@@ -59,7 +59,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ProblemDetail> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
         HttpStatus status = HttpStatus.valueOf(413);
         return ResponseEntity.status(status)
-                .body(ProblemDetail.forStatusAndDetail(status, "The uploaded file is too large (5 MB maximum)"));
+                .body(ProblemDetail.forStatusAndDetail(status, "The uploaded file is too large"));
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

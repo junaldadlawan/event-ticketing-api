@@ -151,10 +151,21 @@ class FunnelIntegrationTest {
         return token(userId, Role.CUSTOMER);
     }
 
+    /** "F" + 2 random letters, one no event uses yet (prefixes are unique, and a shared database keeps others' events). */
+    private String freePrefix() {
+        String prefix;
+        do {
+            prefix = "F" + (char) ('A' + RANDOM.nextInt(26)) + (char) ('A' + RANDOM.nextInt(26));
+        } while (eventRepository.existsByTicketPrefix(prefix));
+        return prefix;
+    }
+
+    private static final java.util.Random RANDOM = new java.util.Random();
+
     private UUID event(EventStatus status) {
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         UUID id = eventRepository.save(Event.builder().organizationId(orgId).title("Funnel Test Event").description("d").category("music").status(status)
-                .ticketPrefix("F" + UUID.randomUUID().toString().substring(0, 2).toUpperCase()).startAt(start).endAt(start.plus(2, ChronoUnit.HOURS))
+                .ticketPrefix(freePrefix()).startAt(start).endAt(start.plus(2, ChronoUnit.HOURS))
                 .timezone("Asia/Manila").build()).getId();
         eventIds.add(id);
         return id;

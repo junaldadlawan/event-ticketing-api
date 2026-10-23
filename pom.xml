@@ -149,6 +149,11 @@
 						<payments.gateway>mock</payments.gateway>
 						<!-- tests share the dev database: the background sweep would complete the developer's own ended events -->
 						<app.events.completion-sweep.enabled>false</app.events.completion-sweep.enabled>
+						<!-- every distinct test configuration keeps its own cached context and connection pool; dropping idle
+						     connections keeps the whole suite under Postgres's 100 connections (CI ran out). The pool stays at the
+						     default 10: concurrency tests run 8 threads, and the lock holder needs one more for its audit write. -->
+						<spring.datasource.hikari.minimum-idle>0</spring.datasource.hikari.minimum-idle>
+						<spring.datasource.hikari.idle-timeout>10000</spring.datasource.hikari.idle-timeout>
 						<!-- the cart log would leave rows behind for every cart test; the funnel tests switch it back on and clean up after themselves -->
 						<app.analytics.cart-activity.enabled>false</app.analytics.cart-activity.enabled>
 					</systemPropertyVariables>
