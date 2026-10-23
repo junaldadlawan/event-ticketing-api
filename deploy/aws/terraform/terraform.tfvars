@@ -7,3 +7,4 @@ cors_allowed_origins = ["https://event-ticketing-staging.netlify.app", "http://l
 # Real card payments through PayMongo (needs the two PayMongo secrets filled in Secrets Manager, see secrets.tf).
 payments_gateway = "paymongo"
 seed_demo_data   = false
+upload_public_base_url = "https://event-ticketing-staging.netlify.app"
