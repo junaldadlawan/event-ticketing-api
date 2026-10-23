@@ -20,7 +20,11 @@ public record DocumentDto(
         @NotBlank
         @Size(max = 500)
         @NoHtml
+        @jakarta.validation.constraints.Pattern(regexp = "(?i)https?://\\S+", message = "must be an http or https address")
         String url) implements Serializable {
+
+    /** The most documents an application or an organization may hold. */
+    public static final int MAX_DOCUMENTS = 10;
 
     public static DocumentDto from(OrganizationDocument document) {
         return new DocumentDto(document.getType(), document.getUrl());

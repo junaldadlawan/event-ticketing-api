@@ -49,6 +49,9 @@ class OrganizationControllerTest {
     private OrganizationService organizationService;
 
     @MockitoBean
+    private com.junaldadlawan.event_ticketing_api.organization.service.OrganizationChangeRequestService changeRequestService;
+
+    @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @MockitoBean
@@ -148,32 +151,7 @@ class OrganizationControllerTest {
                 .andExpect(status().isForbidden());
     }
 
-    @Test
-    void update_validRequest_returns200() throws Exception {
-        Organization updated = organization(OrganizationStatus.APPROVED);
-        updated.setName("New Name");
-        when(organizationService.update(eq(updated.getId()), any())).thenReturn(updated);
 
-        mockMvc.perform(patch("/api/v1/organizations/{orgId}", updated.getId())
-                        .contentType("application/json")
-                        .content("""
-                                {"name":"New Name"}
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("New Name"));
-    }
-
-    @Test
-    void update_blankName_returns400() throws Exception {
-        UUID orgId = UUID.randomUUID();
-
-        mockMvc.perform(patch("/api/v1/organizations/{orgId}", orgId)
-                        .contentType("application/json")
-                        .content("""
-                                {"name":""}
-                                """))
-                .andExpect(status().isBadRequest());
-    }
 
     @Test
     void approve_pendingOrganization_returns200() throws Exception {

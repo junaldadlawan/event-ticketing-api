@@ -161,7 +161,8 @@ class ImageStorageServiceTest {
         ImageStorageService small = new ImageStorageService(new LocalFileStorage(directory.toString()), 10);
 
         assertThatThrownBy(() -> small.store(file("a.png", "image/png", image("png"))))
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(com.junaldadlawan.event_ticketing_api.common.exception.ApiException.class)
+                .hasFieldOrPropertyWithValue("status", org.springframework.http.HttpStatus.valueOf(413))   // too large
                 .hasMessageContaining("smaller");
     }
 

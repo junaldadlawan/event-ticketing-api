@@ -29,7 +29,9 @@ public record EventResponse(
         String createdBy,
         Instant createdAt,
         String updatedBy,
-        Instant updatedAt) implements Serializable {
+        Instant updatedAt,
+        // BR-EVENT-007: for a draft, when it is deleted if nobody publishes it (start minus the cutoff); null otherwise or when the rule is off
+        Instant autoDeleteAt) implements Serializable {
 
     /**
      * Building the venue snapshot requires a repository lookup, so
@@ -56,7 +58,8 @@ public record EventResponse(
                 event.getCreatedBy(),
                 event.getCreatedAt(),
                 event.getUpdatedBy(),
-                event.getUpdatedAt()
+                event.getUpdatedAt(),
+                com.junaldadlawan.event_ticketing_api.event.service.DraftAutoDelete.autoDeleteAt(event)
         );
     }
 

@@ -4,7 +4,6 @@ import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationCreate
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberAssignRequest;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationMemberResponse;
 import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationRejectRequest;
-import com.junaldadlawan.event_ticketing_api.organization.dto.OrganizationUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
 import com.junaldadlawan.event_ticketing_api.organization.entity.OrganizationMember;
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationPermission;
@@ -24,7 +23,6 @@ public interface OrganizationService {
 
     Organization get(UUID orgId);
 
-    Organization update(UUID orgId, OrganizationUpdateRequest request);
 
     Organization approve(UUID orgId);
 

@@ -19,6 +19,9 @@ public interface NotificationService {
      */
     void notify(UUID userId, NotificationType type, String relatedObjectType, UUID relatedObjectId);
 
+    /** A notification with its own text (also the email body), about a record that is not an event. Never throws, like {@link #notify}. */
+    void notifyWithMessage(UUID userId, NotificationType type, String relatedObjectType, UUID relatedObjectId, String message);
+
     /**
      * BR-NOTIFY-002: a notification about an event, with its server-composed {@code message} (also the email body).
      * {@code sentFor} tells EVENT_CHANGE notifications apart (the save's time); null for the once-per-event types.

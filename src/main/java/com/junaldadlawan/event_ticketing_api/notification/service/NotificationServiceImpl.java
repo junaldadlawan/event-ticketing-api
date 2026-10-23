@@ -63,6 +63,12 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyWithMessage(UUID userId, NotificationType type, String relatedObjectType, UUID relatedObjectId, String message) {
+        send(Notification.builder().userId(userId).type(type).relatedObjectType(relatedObjectType).relatedObjectId(relatedObjectId).message(message).build());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notifyAboutEvent(UUID userId, NotificationType type, UUID eventId, String message, Instant sentFor) {
         send(Notification.builder().userId(userId).type(type).relatedObjectType("Event").relatedObjectId(eventId)
                 .eventId(eventId).message(message).sentFor(sentFor).build());
@@ -122,6 +128,12 @@ public class NotificationServiceImpl implements NotificationService {
             case GATE_OPEN -> "Gates are open";
             case EVENT_STARTING -> "Your event is starting";
             case REVIEW_REQUEST -> "How was the event?";
+            case EVENT_DRAFT_WARNING -> "Your draft event will be deleted soon";
+            case EVENT_DRAFT_DELETED -> "Your draft event was deleted";
+            case ORGANIZATION_CHANGE_REQUESTED -> "An organization asked to change its details";
+            case ORGANIZATION_CHANGE_DECIDED -> "Your organization change request was decided";
+            case ORGANIZATION_REVISION_REQUESTED -> "Please revise your organization application";
+            case ORGANIZATION_APPLICATION_REVISED -> "An organization application was revised";
         };
     }
 
@@ -140,6 +152,12 @@ public class NotificationServiceImpl implements NotificationService {
             case GATE_OPEN -> "The gates are open for your event.";
             case EVENT_STARTING -> "Your event is starting now.";
             case REVIEW_REQUEST -> "Tell us how the event went: rate it.";
+            case EVENT_DRAFT_WARNING -> "Your event is still a draft and will be deleted unless you publish it.";
+            case EVENT_DRAFT_DELETED -> "Your draft event was deleted because it was not published in time.";
+            case ORGANIZATION_CHANGE_REQUESTED -> "An organization asked to change its details. Review it in the change requests.";
+            case ORGANIZATION_CHANGE_DECIDED -> "Your organization change request was decided.";
+            case ORGANIZATION_REVISION_REQUESTED -> "An admin asked you to revise your organization application.";
+            case ORGANIZATION_APPLICATION_REVISED -> "An applicant revised their organization application. Review it again.";
         };
     }
 }

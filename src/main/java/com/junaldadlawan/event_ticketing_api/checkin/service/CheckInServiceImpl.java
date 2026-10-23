@@ -179,7 +179,7 @@ public class CheckInServiceImpl implements CheckInService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket " + ticketId + " not found"));
         Event event = eventRepository.findByIdAndDeletedAtIsNull(ticket.getEventId())
                 .orElseThrow(() -> new ResourceNotFoundException("Event " + ticket.getEventId() + " not found"));
-        requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+        requireMayViewRecords(event.getOrganizationId());
         return checkInRecordRepository.findByTicketIdOrderByScannedAtAsc(ticketId).stream()
                 .map(CheckInRecordResponse::from)
                 .toList();
@@ -249,6 +249,14 @@ public class CheckInServiceImpl implements CheckInService {
                 .orElseThrow(() -> new ResourceNotFoundException("Scanner device " + deviceId + " not found"));
     }
 
+    /** The scan-attempt trail is read-only for the organization's check-in staff too (they work the gate), as well as owner/organizer/admin. */
+    private void requireMayViewRecords(UUID organizationId) {
+        if (!accessGuard.isAdmin() && accessGuard.isCheckInStaff(accessGuard.currentUserId(), organizationId)) {
+            return;
+        }
+        requireOwnerOrOrganizerOrAdmin(organizationId);
+    }
+
     private void requireOwnerOrOrganizerOrAdmin(UUID organizationId) {
         if (accessGuard.isAdmin()) {
             return;
@@ -257,7 +265,7 @@ public class CheckInServiceImpl implements CheckInService {
         boolean isOwnerOrOrganizer = accessGuard.hasRole(callerId, organizationId, OrganizationRole.OWNER)
                 || accessGuard.hasPermission(callerId, organizationId, OrganizationPermission.CHECK_IN);
         if (!isOwnerOrOrganizer) {
-            throw new ForbiddenException("Only the event's organizer/owner or an admin may view this ticket's check-in records");
+            throw new ForbiddenException("Only the event's organizer/owner, its check-in staff or an admin may view this ticket's check-in records");
         }
     }
 

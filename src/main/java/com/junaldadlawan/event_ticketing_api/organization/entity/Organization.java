@@ -37,6 +37,30 @@ public class Organization extends Auditable {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    /** An admin asked the applicant to revise this pending application (BR-ORG-010); cleared when the applicant edits it or it is decided. */
+    @Column(name = "revision_requested", nullable = false)
+    @Builder.Default
+    private boolean revisionRequested = false;
+
+    @Column(name = "revision_message", length = 500)
+    private String revisionMessage;
+
+    @Column(name = "revision_requested_at")
+    private java.time.Instant revisionRequestedAt;
+
+    /** Optional details, changed through an admin-approved change request (BR-ORG-009). */
+    @Column(name = "contact_email", length = 255)
+    private String contactEmail;
+
+    @Column(name = "contact_phone", length = 30)
+    private String contactPhone;
+
+    @Column(name = "address", length = 500)
+    private String address;
+
+    @Column(name = "description", length = 2000)
+    private String description;
+
     @ElementCollection
     @CollectionTable(
             name = "organization_documents",

@@ -742,7 +742,7 @@ class EventServiceImplTest {
         eventService.listManagedEvents(null, null, null, null, null, null, FIRST_PAGE);
 
         verifyFindAllCalled(1);
-        verify(accessGuard, never()).managedOrganizationIds(any());
+        verify(accessGuard, never()).readableOrganizationIds(any());
     }
 
     @ParameterizedTest
@@ -761,7 +761,7 @@ class EventServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(callerId);
-        when(accessGuard.managedOrganizationIds(callerId)).thenReturn(java.util.Set.of(orgId));
+        when(accessGuard.readableOrganizationIds(callerId)).thenReturn(java.util.Set.of(orgId));
         stubFindAll();
 
         eventService.listManagedEvents(null, null, EventStatus.DRAFT, null, null, null, FIRST_PAGE);
@@ -775,7 +775,7 @@ class EventServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(callerId);
-        when(accessGuard.managedOrganizationIds(callerId)).thenReturn(java.util.Set.of());
+        when(accessGuard.readableOrganizationIds(callerId)).thenReturn(java.util.Set.of());
 
         assertThatThrownBy(() -> eventService.listManagedEvents(null, null, null, null, null, null, FIRST_PAGE))
                 .isInstanceOf(ForbiddenException.class);
@@ -787,7 +787,7 @@ class EventServiceImplTest {
         UUID callerId = UUID.randomUUID();
         when(accessGuard.isAdmin()).thenReturn(false);
         when(accessGuard.currentUserId()).thenReturn(callerId);
-        when(accessGuard.managedOrganizationIds(callerId)).thenReturn(java.util.Set.of(orgId));
+        when(accessGuard.readableOrganizationIds(callerId)).thenReturn(java.util.Set.of(orgId));
 
         assertThatThrownBy(() -> eventService.listManagedEvents(null, null, null, UUID.randomUUID(), null, null, FIRST_PAGE))
                 .isInstanceOf(ForbiddenException.class);

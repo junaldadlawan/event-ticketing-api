@@ -109,6 +109,8 @@ public class OrganizationAccessGuard {
         Set<OrganizationPermission> held = EnumSet.noneOf(OrganizationPermission.class);
         if (member.getRoles().contains(OrganizationRole.ORGANIZER)) {
             held.addAll(member.getPermissions());
+        } else if (member.getRoles().contains(OrganizationRole.CHECK_IN_STAFF) && member.getPermissions().contains(OrganizationPermission.SCANNER_APP)) {
+            held.add(OrganizationPermission.SCANNER_APP);   // the only permission check-in staff can be given
         }
         return held;
     }
@@ -120,6 +122,37 @@ public class OrganizationAccessGuard {
                 .stream()
                 .map(OrganizationMember::getOrganizationId)
                 .collect(Collectors.toSet());
+    }
+
+    /** Ids of every organization where the user is CHECK_IN_STAFF. */
+    public Set<UUID> checkInStaffOrganizationIds(UUID userId) {
+        return organizationMemberRepository
+                .findDistinctByUserIdAndRolesIn(userId, EnumSet.of(OrganizationRole.CHECK_IN_STAFF))
+                .stream()
+                .map(OrganizationMember::getOrganizationId)
+                .collect(Collectors.toSet());
+    }
+
+    /** Organizations whose events the user may READ: the ones they manage (owner / organizer) plus the ones where they are check-in staff. */
+    public Set<UUID> readableOrganizationIds(UUID userId) {
+        Set<UUID> readable = new java.util.HashSet<>(managedOrganizationIds(userId));
+        readable.addAll(checkInStaffOrganizationIds(userId));
+        return readable;
+    }
+
+    public boolean isCheckInStaff(UUID userId, UUID organizationId) {
+        return hasRole(userId, organizationId, OrganizationRole.CHECK_IN_STAFF);
+    }
+
+    /** True when the user is CHECK_IN_STAFF in at least one organization. */
+    public boolean isCheckInStaffAnywhere(UUID userId) {
+        return !checkInStaffOrganizationIds(userId).isEmpty();
+    }
+
+    /** True when the user holds SCANNER_APP (owner, or granted to an organizer / check-in staff) in at least one organization. */
+    public boolean holdsScannerAppPermissionAnywhere(UUID userId) {
+        return organizationMemberRepository.findByUserId(userId).stream()
+                .anyMatch(member -> permissionsOf(member).contains(OrganizationPermission.SCANNER_APP));
     }
 
     public boolean isMember(UUID userId, UUID organizationId) {

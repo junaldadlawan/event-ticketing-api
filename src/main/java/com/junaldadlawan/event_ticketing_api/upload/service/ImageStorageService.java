@@ -82,7 +82,9 @@ public class ImageStorageService {
             throw new BadRequestException("An image file is required");
         }
         if (file.getSize() > maxBytes) {
-            throw new BadRequestException("Image must be " + (maxBytes >= 1024 * 1024 ? (maxBytes / (1024 * 1024)) + " MB" : maxBytes + " bytes") + " or smaller");
+            // 413 as before the multipart limit was raised for the scanner app (openapi documents it); this is the image limit
+            throw new com.junaldadlawan.event_ticketing_api.common.exception.ApiException(org.springframework.http.HttpStatus.valueOf(413),
+                    "Image must be " + (maxBytes >= 1024 * 1024 ? (maxBytes / (1024 * 1024)) + " MB" : maxBytes + " bytes") + " or smaller");
         }
         byte[] bytes;
         try {

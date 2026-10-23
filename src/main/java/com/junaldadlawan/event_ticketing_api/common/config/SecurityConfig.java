@@ -83,6 +83,8 @@ public class SecurityConfig {
                         // ROLE_SCANNER_DEVICE principal (UC-SCAN-04: a scanning client
                         // needs to query its own event's mode/expiry), not just users.
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/*/check-in-config").authenticated()
+                        // read-only scan history of an event (owner, organizer, check-in staff, admin: checked in CheckInHistoryService)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/*/check-in-records", "/api/v1/events/*/check-in-summary", "/api/v1/events/*/scanner-devices").authenticated()
                         // Same reasoning again: GET /events/{eventId}/analytics (Phase 14)
                         // is owning-organizer/admin-only per BR-ANALYTICS-001, not public -
                         // must precede the broader GET /api/v1/events/** permitAll matcher
@@ -196,6 +198,8 @@ public class SecurityConfig {
                         // this prefix is unconditionally admin-only, with no
                         // raiser/owner visibility branch to justify pushing the
                         // check down into the service layer alone.
+                        // the scanner app's old upload address stays open to members with SCANNER_APP (checked in ScannerAppServiceImpl)
+                        .requestMatchers("/api/v1/admin/scanner-app", "/api/v1/admin/scanner-app/*").authenticated()
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         // Phase 13 (BR-NFR-005): admin-only audit log, same
                         // unconditional hasRole restriction as the moderation

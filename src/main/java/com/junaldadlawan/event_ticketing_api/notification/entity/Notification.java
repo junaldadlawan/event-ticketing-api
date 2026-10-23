@@ -47,7 +47,7 @@ public class Notification {
     private UUID userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 30)
+    @Column(name = "type", nullable = false, length = 50)
     private NotificationType type;
 
     @Enumerated(EnumType.STRING)

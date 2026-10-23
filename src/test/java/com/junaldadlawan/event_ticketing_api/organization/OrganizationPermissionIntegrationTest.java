@@ -91,7 +91,7 @@ class OrganizationPermissionIntegrationTest {
         member(organizer, Set.of(OrganizationRole.ORGANIZER), null);
         me(organizer).andExpect(status().isOk())
                 .andExpect(jsonPath("$.permissions", containsInAnyOrder("EVENTS", "PROMO_CODES", "CHECK_IN", "ORDERS_REFUNDS", "FINANCE", "ANALYTICS")));
-        me(owner).andExpect(jsonPath("$.permissions", hasItem("TEAM"))).andExpect(jsonPath("$.permissions.length()").value(7));
+        me(owner).andExpect(jsonPath("$.permissions", hasItem("TEAM"))).andExpect(jsonPath("$.permissions.length()").value(8));
     }
 
     @Test
@@ -153,6 +153,27 @@ class OrganizationPermissionIntegrationTest {
 
     private ResultActions me(User user) throws Exception {
         return mockMvc.perform(get("/api/v1/organizations/{orgId}/members/me", orgId).header("Authorization", bearer(user)));
+    }
+
+    @Test
+    void theOwnerGrantsScannerAppToCheckInStaffOrAnOrganizer_whichIsNeverADefault_andNothingElseToStaff() throws Exception {
+        User staff = user();
+        member(staff, Set.of(OrganizationRole.CHECK_IN_STAFF), null);
+        me(staff).andExpect(jsonPath("$.permissions.length()").value(0));
+
+        setRoles(owner, staff.getId(), "[\"CHECK_IN_STAFF\"]", "[\"SCANNER_APP\"]").andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions", containsInAnyOrder("SCANNER_APP")));
+        me(staff).andExpect(jsonPath("$.permissions", containsInAnyOrder("SCANNER_APP")));
+        setRoles(owner, staff.getId(), "[\"CHECK_IN_STAFF\"]", "[\"EVENTS\"]").andExpect(status().isBadRequest());   // staff can only get SCANNER_APP
+        setRoles(owner, staff.getId(), "[\"CHECK_IN_STAFF\"]", null).andExpect(status().isOk());   // roles unchanged: it keeps what it has
+        me(staff).andExpect(jsonPath("$.permissions", containsInAnyOrder("SCANNER_APP")));
+
+        User organizer = user();
+        member(organizer, Set.of(OrganizationRole.ORGANIZER), null);
+        me(organizer).andExpect(jsonPath("$.permissions", org.hamcrest.Matchers.not(hasItem("SCANNER_APP"))));
+        setRoles(owner, organizer.getId(), "[\"ORGANIZER\"]", "[\"EVENTS\",\"SCANNER_APP\"]").andExpect(status().isOk());
+        me(organizer).andExpect(jsonPath("$.permissions", containsInAnyOrder("EVENTS", "SCANNER_APP")));
+        me(owner).andExpect(jsonPath("$.permissions", hasItem("SCANNER_APP")));   // the owner always holds it
     }
 
     private ResultActions setRoles(User caller, UUID userId, String roles, String permissions) throws Exception {

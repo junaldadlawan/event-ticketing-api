@@ -97,7 +97,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     public List<TicketType> list(UUID eventId) {
         Event event = getEventOrThrow(eventId);
         if (event.getStatus() == EventStatus.DRAFT) {
-            requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+            requireMayReadDraft(event.getOrganizationId());
         }
         // the page that lists ticket types shows the event as over the moment it ends, not at the next sweep
         eventCompletionService.completeIfEnded(event);
@@ -109,7 +109,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         TicketType ticketType = getOrThrow(ticketTypeId);
         Event event = getEventOrThrow(ticketType.getEventId());
         if (event.getStatus() == EventStatus.DRAFT) {
-            requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
+            requireMayReadDraft(event.getOrganizationId());
         }
         return ticketType;
     }
@@ -320,6 +320,14 @@ public class TicketTypeServiceImpl implements TicketTypeService {
      * exactly (BR-AUTH-004 admin bypass, then OWNER/ORGANIZER on the
      * event's own organization).
      */
+    /** A draft event's ticket types are readable by its team, check-in staff included (read only), and by admins. */
+    private void requireMayReadDraft(UUID organizationId) {
+        if (!accessGuard.isAdmin() && accessGuard.isCheckInStaff(accessGuard.currentUserId(), organizationId)) {
+            return;
+        }
+        requireOwnerOrOrganizerOrAdmin(organizationId);
+    }
+
     private void requireOwnerOrOrganizerOrAdmin(UUID organizationId) {
         if (accessGuard.isAdmin()) {
             return;

@@ -544,7 +544,16 @@ paths:
     patch:
       operationId: updateOrganization
       tags: [Organizations]
-      summary: Update an Organization (owner or organizer only; approved orgs only)
+      summary: Ask to change an approved Organization's details (owner, or an organizer with TEAM) - an admin approves
+      description: |
+        Does NOT change the organization: it stores a change request (only the fields that differ from the current values) for an admin to approve.
+        Send only the fields to change; an empty string clears a contact detail or the description; the name cannot be blank. The documents are not
+        editable here, and a name change does not trigger a new document check. One request can be pending per organization: a new PATCH replaces
+        it (same request id, new values and requester). A body that changes nothing is a 400. `documents` (a list that REPLACES the organization's documents when approved; at
+        least one, at most 10, each {type, https/http url}) is part of the request too; documents equal to the current ones are not a change.
+
+        **A PENDING application is different** (BR-ORG-010): only the applicant (its creator) may PATCH it, and it changes directly (name, details and
+        documents, no change request): 200 with the Organization, the revision flag is cleared and the admins are notified. A REJECTED organization is a 403.
       requestBody:
         required: true
         content:
@@ -552,10 +561,156 @@ paths:
             schema: { $ref: "#/components/schemas/OrganizationUpdate" }
       responses:
         "200":
-          description: Updated
+          description: A pending application was edited by its applicant
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Organization" }
+        "202":
+          description: Accepted - the change request of an approved organization is pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationChangeRequest" }
+        "400": { description: Invalid value, or nothing to change }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /organizations/{orgId}/request-revision:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      operationId: requestOrganizationRevision
+      tags: [Organizations]
+      summary: Ask the applicant to revise a pending application (admin only)
+      description: The organization stays PENDING but gets `revisionRequested`, the `revisionMessage` and `revisionRequestedAt`; the applicant is notified (ORGANIZATION_REVISION_REQUESTED). The flag clears when the applicant edits the application or it is approved or rejected. 409 when the organization is not pending.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { description: Missing message }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Not a pending application }
+
+  /organizations/{orgId}/change-requests:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      operationId: listOrganizationChangeRequests
+      tags: [Organizations]
+      summary: The pending change request and the history, newest first (members and admins)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OrganizationChangeRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /organizations/{orgId}/change-requests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: withdrawOrganizationChangeRequest
+      tags: [Organizations]
+      summary: Withdraw a pending change request (only the person who made it)
+      responses:
+        "204": { description: Withdrawn }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such request }
+        "409": { description: Already decided }
+
+  /admin/organization-change-requests:
+    get:
+      operationId: searchOrganizationChangeRequests
+      tags: [Organizations]
+      summary: Organization change requests, newest first, with the current values next to the requested ones (admin only)
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [PENDING, APPROVED, REJECTED] } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationChangeRequest" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/organization-change-requests/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: approveOrganizationChangeRequest
+      tags: [Organizations]
+      summary: Apply a pending change request to the organization (admin only)
+      description: The requester is notified. 409 when it was already decided, or the organization is no longer approved.
+      responses:
+        "200":
+          description: Approved and applied
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationChangeRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such request }
+        "409": { description: Already decided }
+
+  /admin/organization-change-requests/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: rejectOrganizationChangeRequest
+      tags: [Organizations]
+      summary: Reject a pending change request (admin only, reason required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Rejected; the requester is notified with the reason
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationChangeRequest" }
+        "400": { description: Missing reason }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such request }
+        "409": { description: Already decided }
 
   /organizations/{orgId}/approve:
     parameters:
@@ -1374,6 +1529,42 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /platform-settings/draft-events:
+    get:
+      operationId: getDraftEventSettings
+      tags: [PlatformSettings]
+      summary: When an unpublished draft is deleted (BR-EVENT-007), for any signed-in user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftEventSettings" }
+    put:
+      operationId: updateDraftEventSettings
+      tags: [PlatformSettings]
+      summary: Change the auto-delete cutoff for unpublished drafts (admin only)
+      description: |
+        `autoDeleteMinutesBeforeStart`: a draft whose start is less than this many minutes away (or already past) is deleted by a job that runs every
+        minute (and shortly after startup). 60 by default, 0 switches the rule off, at most 10080. Logged as `draft_event_settings.updated`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [autoDeleteMinutesBeforeStart]
+              properties:
+                autoDeleteMinutesBeforeStart: { type: integer, minimum: 0, maximum: 10080 }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftEventSettings" }
+        "400": { description: Out of range }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /platform-settings/ticket-sales:
     get:
       operationId: getTicketSaleSettings
@@ -1838,11 +2029,12 @@ paths:
     get:
       operationId: listManagedEvents
       tags: [Events]
-      summary: List events in any status (admin, or owner/organizer of the organizations they manage)
+      summary: List events in any status (admin, or a member of the organization: owner, organizer or check-in staff)
       description: >
         Not public (requires a bearer token). An admin sees every organization's
         events and may narrow by organizationId; an owner or organizer sees only
-        events of organizations where they hold that role. Soft-deleted events are
+        events of organizations where they hold that role; a CHECK_IN_STAFF member
+        sees (read only) the events of the organizations where they hold that role. Soft-deleted events are
         excluded. A caller who owns/organizes no organization, or who asks for an
         organization they do not manage, gets 403. The public GET /events always
         returns PUBLISHED events only.
@@ -3440,7 +3632,7 @@ paths:
     get:
       operationId: listTicketCheckInRecords
       tags: [CheckIn]
-      summary: Audit trail of scan attempts against a ticket (owning organizer or admin)
+      summary: Audit trail of scan attempts against a ticket (organizer, check-in staff of the event's organization, or admin)
       responses:
         "200":
           description: OK
@@ -3800,6 +3992,190 @@ paths:
                 items: { $ref: "#/components/schemas/AuditLogEntry" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /events/{eventId}/check-in-records:
+    get:
+      operationId: listEventCheckInRecords
+      tags: [CheckIn]
+      summary: The event's scan history, newest first (owner, organizer, check-in staff of its organization, admin)
+      description: |
+        Read only. Paged (`page`, `size` up to 100). Scan facts only: no buyer or owner details. Records belong to the event of the scanner device
+        that scanned (or of the fallback scan they were reconciled from). A scan whose code matched no ticket is not stored, so `ticketId` is
+        never null today.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { name: result, in: query, required: false, schema: { type: string, enum: [VALID, DUPLICATE, INVALID, WRONG_EVENT] } }
+        - { name: sourceType, in: query, required: false, schema: { type: string, enum: [SCANNER_DEVICE, RECONCILED_FALLBACK] } }
+        - { name: scannerDeviceId, in: query, required: false, schema: { type: string, format: uuid }, description: Only scans made by this scanner device. }
+        - { name: ticketNumber, in: query, required: false, schema: { type: string }, description: Ticket number contains this text (case-insensitive). }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items: { $ref: "#/components/schemas/CheckInHistoryItem" }
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+                  totalPage: { type: integer }
+                  last: { type: boolean }
+        "400": { description: An unknown result or sourceType }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such event }
+
+  /events/{eventId}/check-in-summary:
+    get:
+      operationId: getEventCheckInSummary
+      tags: [CheckIn]
+      summary: Counts of the event's scans for the same filters (same access as the history)
+      description: `ticketsAdmittable` is every ticket of the event that is not refunded or cancelled and is not affected by the filters.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { name: result, in: query, required: false, schema: { type: string, enum: [VALID, DUPLICATE, INVALID, WRONG_EVENT] } }
+        - { name: sourceType, in: query, required: false, schema: { type: string, enum: [SCANNER_DEVICE, RECONCILED_FALLBACK] } }
+        - { name: scannerDeviceId, in: query, required: false, schema: { type: string, format: uuid }, description: Only scans made by this scanner device. }
+        - { name: ticketNumber, in: query, required: false, schema: { type: string }, description: Ticket number contains this text (case-insensitive). }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckInSummary" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such event }
+
+  /events/{eventId}/scanner-devices:
+    get:
+      operationId: listEventScannerDevices
+      tags: [CheckIn]
+      summary: The event's scanner devices, for the scanner filter (same access as the history)
+      description: Never includes a credential. (`POST` on this path creates a device.)
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ScannerDeviceSummary" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such event }
+
+  /scanner-app/uploads:
+    post:
+      operationId: uploadScannerApp
+      tags: [CheckIn]
+      summary: Upload a new version of the scanner app, an Android APK (admin, or a member holding SCANNER_APP)
+      description: |
+        Also available at its old address `/admin/scanner-app` (same behaviour). The app is shared by EVERY organization: whoever holds SCANNER_APP in any organization can publish the version all check-in staff download.
+        The uploader is recorded (`uploadedBy`).
+        Multipart form. The file must be a real APK (a ZIP that contains `AndroidManifest.xml`); anything else is a 400. Larger than the limit
+        (`app.scanner-app.max-bytes`, 100 MB by default) is a 413. `versionCode` is unique among live uploads (409 when already uploaded).
+        The file is stored in the file storage (R2 in production) and every upload is kept in the history.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, versionName, versionCode]
+              properties:
+                file: { type: string, format: binary, description: The .apk file. }
+                versionName: { type: string, maxLength: 50, pattern: "^[A-Za-z0-9][A-Za-z0-9._+-]*$", example: "1.4.2" }
+                versionCode: { type: integer, minimum: 1, description: The Android versionCode; the app compares it to know whether it is outdated. }
+                releaseNotes: { type: string, maxLength: 2000, description: Plain text, no HTML. }
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScannerApp" }
+        "400": { description: Not an APK, or a missing or invalid field }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: That version code was already uploaded }
+        "413": { description: Larger than the limit }
+    get:
+      operationId: listScannerAppUploads
+      tags: [CheckIn]
+      summary: History of scanner app uploads, newest first (admin, or a member holding SCANNER_APP; also at /admin/scanner-app)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ScannerApp" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /scanner-app/uploads/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: deleteScannerAppUpload
+      tags: [CheckIn]
+      summary: Remove an upload (an admin, or the member who uploaded it while they hold SCANNER_APP)
+      description: Also at `/admin/scanner-app/{id}`. Anyone else is a 403. The record stays in the history (soft delete); the stored file is removed, so it can no longer be downloaded.
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such upload }
+
+  /scanner-app/latest:
+    get:
+      operationId: getLatestScannerApp
+      tags: [CheckIn]
+      summary: The newest scanner app version (an admin, a user who is CHECK_IN_STAFF in some organization, or a SCANNER_APP holder)
+      description: The newest is the highest `versionCode`, not the last upload. `downloadUrl` is a path on this API.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScannerApp" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Nothing has been uploaded yet }
+
+  /scanner-app/{id}/download:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: downloadScannerApp
+      tags: [CheckIn]
+      summary: Download the APK (same access as /scanner-app/latest)
+      description: Streams the file as `application/vnd.android.package-archive` with a `Content-Disposition` attachment name and an `X-Content-SHA256` header.
+      responses:
+        "200":
+          description: The APK
+          content:
+            application/vnd.android.package-archive:
+              schema: { type: string, format: binary }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: No such upload, or it was removed }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -4029,6 +4405,13 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
+        revisionRequested: { type: boolean, description: "True while an admin has asked the applicant to revise this pending application (BR-ORG-010)." }
+        revisionMessage: { type: [string, "null"] }
+        revisionRequestedAt: { type: [string, "null"], format: date-time }
+        contactEmail: { type: [string, "null"], description: Optional detail, changed through an admin-approved change request (BR-ORG-009). }
+        contactPhone: { type: [string, "null"] }
+        address: { type: [string, "null"] }
+        description: { type: [string, "null"] }
         status:
           type: string
           enum: [pending, approved, rejected]
@@ -4051,8 +4434,13 @@ components:
     OrganizationCreate:
       type: object
       required: [name, documents]
+      description: The optional details are the organization's initial values (no change request: it is still pending and an admin reviews the whole application). They are returned on the Organization, so the admin sees them in the review.
       properties:
         name: { type: string }
+        contactEmail: { type: string, format: email, maxLength: 255 }
+        contactPhone: { type: string, maxLength: 30, description: "Digits, spaces and + ( ) - ." }
+        address: { type: string, maxLength: 500 }
+        description: { type: string, maxLength: 2000, description: Plain text, no HTML. }
         documents:
           type: array
           minItems: 1
@@ -4065,8 +4453,57 @@ components:
 
     OrganizationUpdate:
       type: object
+      description: Only the fields to change. An empty string clears a contact detail or the description.
       properties:
-        name: { type: string }
+        name: { type: string, maxLength: 255 }
+        contactEmail: { type: string, format: email, maxLength: 255 }
+        contactPhone: { type: string, maxLength: 30, description: "Digits, spaces and + ( ) - ." }
+        address: { type: string, maxLength: 500 }
+        description: { type: string, maxLength: 2000 }
+        documents:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: Replaces the organization's documents (at least one, so a document can be removed down to one). For a PENDING application it takes effect at once; for an approved organization an admin approves it, and the old documents stay readable until then.
+          items:
+            type: object
+            required: [type, url]
+            properties:
+              type: { type: string, maxLength: 100 }
+              url: { type: string, format: uri, maxLength: 500, pattern: "^https?://\\S+$" }
+
+    OrganizationDocument:
+      type: object
+      properties:
+        type: { type: string }
+        url: { type: string, format: uri }
+
+    OrganizationChangeRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        organizationName: { type: string }
+        requestedBy: { type: string, format: uuid }
+        requested:
+          type: object
+          description: "The changed fields only; a text field is a string (null = clear), `documents` is an array of {type, url}."
+          additionalProperties:
+            oneOf:
+              - { type: [string, "null"] }
+              - { type: array, items: { $ref: "#/components/schemas/OrganizationDocument" } }
+        current:
+          type: object
+          description: The organization's values for those same fields now (`documents`: its current files, shown next to the requested ones).
+          additionalProperties:
+            oneOf:
+              - { type: [string, "null"] }
+              - { type: array, items: { $ref: "#/components/schemas/OrganizationDocument" } }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        createdAt: { type: string, format: date-time }
+        decidedBy: { type: [string, "null"], format: uuid }
+        decidedAt: { type: [string, "null"], format: date-time }
+        rejectionReason: { type: [string, "null"] }
 
     OrganizationMember:
       type: object
@@ -4093,13 +4530,15 @@ components:
 
     OrganizationPermission:
       type: string
-      enum: [EVENTS, PROMO_CODES, CHECK_IN, ORDERS_REFUNDS, FINANCE, ANALYTICS, TEAM]
+      enum: [EVENTS, PROMO_CODES, CHECK_IN, ORDERS_REFUNDS, FINANCE, ANALYTICS, TEAM, SCANNER_APP]
       description: |
         BR-ORG-008 - what an ORGANIZER may do in their organization:
         EVENTS (events, ticket types, seat maps, venues, ticket designs), PROMO_CODES, CHECK_IN (check-in config and
         scanner devices), ORDERS_REFUNDS (orders, refunds, refund and resale policies), FINANCE (payout accounts, cards
         and payouts), ANALYTICS (sales/audience analytics and activity logs), TEAM (add, change and remove members).
-        A missing permission is 403. The owner holds all of them; organizers get everything but TEAM by default.
+        SCANNER_APP (upload and remove versions of the scanner app; The app is shared by EVERY organization: whoever holds SCANNER_APP in any organization can publish the version all check-in staff download.).
+        A missing permission is 403. The owner holds all of them; organizers get everything but TEAM and SCANNER_APP by default.
+        SCANNER_APP is the only permission that can also be given to a CHECK_IN_STAFF member (any other permission for staff is a 400).
 
     OrganizationMemberAssign:
       type: object
@@ -4232,6 +4671,10 @@ components:
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid, description: User (organizer) who added this venue. }
         updated_at: { type: string, format: date-time }
+        auto_delete_at:
+          type: [string, "null"]
+          format: date-time
+          description: "For a DRAFT only: when it is deleted if nobody publishes it (start minus the cutoff, BR-EVENT-007); null for any other status or when the rule is off. Shown as `autoDeleteAt` in the JSON."
         updated_by: { type: string, format: uuid }
 
     VenueCreate:
@@ -4250,6 +4693,13 @@ components:
         address: { type: string }
         latitude: { type: number }
         longitude: { type: number }
+
+    DraftEventSettings:
+      type: object
+      properties:
+        autoDeleteMinutesBeforeStart: { type: integer, description: "0 = the rule is off." }
+        updatedBy: { type: [string, "null"] }
+        updatedAt: { type: [string, "null"], format: date-time }
 
     Event:
       type: object
@@ -4701,6 +5151,57 @@ components:
           maxItems: 10
           description: "Event keys and CUSTOM only: ascending unique character positions (> 0) where a new line starts; for CUSTOM each must be less than the text length."
           items: { type: integer, minimum: 1 }
+
+    CheckInHistoryItem:
+      type: object
+      description: One scan attempt. No buyer or owner details.
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: [string, "null"], format: uuid }
+        ticketNumber: { type: [string, "null"] }
+        ticketTypeId: { type: [string, "null"], format: uuid }
+        ticketTypeName: { type: [string, "null"] }
+        sourceType: { type: string, enum: [SCANNER_DEVICE, RECONCILED_FALLBACK] }
+        sourceId: { type: string, format: uuid, description: The scanner device id, or the fallback scan id. }
+        scannerName: { type: [string, "null"], description: The scanner device label (null for a reconciled fallback scan). }
+        scannerLocation: { type: [string, "null"] }
+        scannedAt: { type: string, format: date-time }
+        result: { type: string, enum: [VALID, DUPLICATE, INVALID, WRONG_EVENT] }
+
+    CheckInSummary:
+      type: object
+      properties:
+        total: { type: integer, format: int64 }
+        valid: { type: integer, format: int64 }
+        duplicate: { type: integer, format: int64 }
+        invalid: { type: integer, format: int64 }
+        wrongEvent: { type: integer, format: int64 }
+        online: { type: integer, format: int64, description: Scans by a scanner device. }
+        offline: { type: integer, format: int64, description: Fallback scans reconciled later. }
+        uniqueTicketsAdmitted: { type: integer, format: int64, description: Tickets with at least one VALID scan. }
+        ticketsAdmittable: { type: integer, format: int64, description: Tickets of the event not refunded or cancelled. }
+
+    ScannerDeviceSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        location: { type: [string, "null"] }
+        status: { type: string, enum: [ACTIVE, REVOKED] }
+
+    ScannerApp:
+      type: object
+      description: One uploaded version of the scanner app (Android APK).
+      properties:
+        id: { type: string, format: uuid }
+        versionName: { type: string, example: "1.4.2" }
+        versionCode: { type: integer }
+        size: { type: integer, format: int64, description: Bytes. }
+        sha256: { type: string, description: Hex SHA-256 of the file, to check what was downloaded. }
+        uploadedAt: { type: string, format: date-time }
+        uploadedBy: { type: string, description: Id of the admin who uploaded it. }
+        releaseNotes: { type: [string, "null"] }
+        downloadUrl: { type: string, example: "/api/v1/scanner-app/3f0c.../download", description: A path on this API; prepend the API base URL and send the bearer token. }
 
     Cart:
       type: object
