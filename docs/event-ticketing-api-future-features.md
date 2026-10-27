@@ -94,7 +94,7 @@ These are recorded as "out of scope, documented rather than overlooked" in
 | N-3 | **`EVENT_CHANGE` notifications** | P2 | ⬜ | No trigger exists today because start/end/venue are immutable after creation. Decide whether event rescheduling becomes a feature; if so, this fires from it. |
 | N-4 | **Waitlist offer lifecycle** — redeem endpoint plus expiry cascade to the next person in line | P1 | ⬜ | `notifiedAt`/`offerExpiresAt` are populated but there is no API to redeem an offer and no job to cascade an expired one (BR-WAIT-003). Needs R-10. |
 | P-1 | **Payout generation job** | P1 | ⬜ | `GET /organizations/{id}/payouts` exists but the table is always empty — nothing generates payouts. Needs R-10 and S-5. |
-| P-2 | **Tax / VAT handling and multi-currency** | P1 | ⬜ | Open decision in `requirements.md` §7. Analytics currently assumes one currency per scope and falls back to `"USD"`. |
+| P-2 | **Tax / VAT handling and multi-currency** | P1 | ⚠️ | Setup and display done: admins manage the supported countries and currencies, with daily USD reference rates (`business-rules.md` §14g). Still open: paying in a currency other than PHP (checkout refuses it with 409), tax/VAT, and analytics, which assumes one currency per scope and falls back to `"USD"`. |
 | P-3 | **Settlement reconciliation** between gateway reports, `Payment`, `Refund`, and `Payout` | P1 | ⬜ | Needed before real money moves. |
 | C-1 | **Cart hold-expiry background sweep** | P2 | ⚠️ | Holds expire lazily at query time (roadmap Phase 5 decision); an active sweep would also trigger waitlist notification sooner. |
 
@@ -156,7 +156,7 @@ These are recorded as "out of scope, documented rather than overlooked" in
 These need an answer before the related items can be scheduled (carried
 over from `requirements.md` §7):
 
-1. Target markets, currency, and tax handling → blocks P-2, S-4, G-12.
+1. Tax handling and which non-PHP currencies can be paid in (the markets themselves are now admin-managed countries) → blocks P-2, S-4, G-12.
 2. Expected v1 launch scale (organizers, peak concurrent buyers per on-sale)
    → blocks R-3, R-4, T-2.
 3. Resale default (opt-in vs. opt-out per event).

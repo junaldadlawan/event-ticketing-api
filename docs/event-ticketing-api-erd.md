@@ -64,6 +64,8 @@ erDiagram
         enum status "pending / approved / rejected"
         json documents
         uuid owner_id FK "null until approved"
+        string country "ISO 3166-1 alpha-2, an enabled SupportedCountry"
+        string currency "ISO 4217, the country currency fixed at approval, null before"
         datetime created_at
         uuid created_by FK "the applicant"
         datetime updated_at
@@ -76,6 +78,39 @@ erDiagram
         uuid organization_id FK
         enum roles "owner / organizer / check_in_staff, combinable"
         datetime assigned_at "creation timestamp"
+    }
+
+    %% ── Platform countries & currencies (admin-managed) ────────
+    SupportedCurrency ||--o{ SupportedCountry : "is the currency of"
+    SupportedCountry ||--o{ Organization : "is the country of"
+    SupportedCurrency ||--o{ Organization : "is the currency of"
+
+    SupportedCurrency {
+        string code PK "ISO 4217, USD is the reference"
+        string name
+        string symbol
+        int minor_units
+        boolean enabled "USD always"
+        decimal usd_rate "units per 1 USD, null until fetched"
+        datetime rate_updated_at "nullable"
+        boolean rate_stale "last fetch failed or had no rate"
+        datetime created_at
+        string created_by
+        datetime updated_at
+        string updated_by
+        datetime deleted_at "nullable, unused: disabling keeps the row"
+    }
+
+    SupportedCountry {
+        string code PK "ISO 3166-1 alpha-2"
+        string name
+        string currency_code FK
+        boolean enabled
+        datetime created_at
+        string created_by
+        datetime updated_at
+        string updated_by
+        datetime deleted_at "nullable, unused: disabling keeps the row"
     }
 
     %% ── Event & Catalog ────────────────────────────────────────
@@ -91,6 +126,7 @@ erDiagram
         uuid organization_id FK
         string name
         string address "nullable, virtual venues"
+        string country "nullable, an enabled SupportedCountry"
         float latitude "nullable"
         float longitude "nullable"
         datetime created_at
@@ -453,6 +489,11 @@ erDiagram
 - **`Organization.owner_id` is nullable** — it's only set once an
   application transitions from `pending` to `approved` (`BR-ORG-004`); a
   `pending`/`rejected` org has no owner.
+- **`Organization.currency` is copied, not looked up** — it is the
+  country's currency at approval time (`BR-ORG-011`), so an admin changing
+  a country's currency later does not move existing organizations. The
+  country and currency links are plain codes with no FK constraint, like
+  every other table in this schema.
 - **`Hold` (from `resources.md`) is folded into `CartItem.hold_expires_at`**
   rather than modeled as its own entity — that's how it ended up shaped in
   `openapi.yaml`'s `CartItem` schema, so this diagram matches the actual

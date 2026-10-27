@@ -101,7 +101,7 @@ Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimi
 
 | Method & Path | Who | Description |
 |---|---|---|
-| `POST /v1/organizations` | Authenticated | Creates an `Organization` with the caller as owner. `201` → `Organization` (verification status `pending`). |
+| `POST /v1/organizations` | Authenticated | Creates an `Organization` application (required `country`: an enabled country from `GET /v1/platform/regions`, 400 otherwise). `201` → `Organization` (verification status `pending`, `currency` null until approved). |
 | `GET /v1/organizations/{orgId}` | Members of that org, or admin | Returns `Organization`. |
 | `PATCH /v1/organizations/{orgId}` | Owner/co-organizer of that org | Update name, payout account ref, etc. |
 

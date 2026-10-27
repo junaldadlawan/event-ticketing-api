@@ -189,11 +189,14 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Preconditions:** User is registered and logged in.
 - **Main flow:**
   1. User submits an organization application, including required
-     verification documents (e.g. business permit).
+     verification documents (e.g. business permit) and the organization's
+     country, picked from the enabled countries (`GET /platform/regions`).
   2. Application enters a pending state awaiting admin review.
+- **Exception flow:** A country the platform hasn't enabled → 400.
 - **Postconditions:** Applicant holds no organization privileges until
-  approved.
-- **Related rules:** BR-ORG-001, BR-ORG-002, BR-ORG-005
+  approved. On approval the organization gets its country's currency, and
+  keeps it.
+- **Related rules:** BR-ORG-001, BR-ORG-002, BR-ORG-005, BR-ORG-011
 
 ## Actor: Organization Owner
 
@@ -529,6 +532,24 @@ restated. Use cases are numbered per actor group (`UC-<GROUP>-<N>`).
 - **Exception flow:** Non-admin → 403. A percentage outside 0-100 or with more than three decimals, a negative or lower-case-currency flat
   amount, a foreign flat amount in another currency than the domestic one, or an unknown payer → 400.
 - **Related rules:** BR-GWFEE-001 to BR-GWFEE-009
+
+### UC-ADMIN-12: Manage the Platform's Countries and Currencies
+
+- **Preconditions:** Caller is an admin.
+- **Main flow:**
+  1. Admin enables a currency by its ISO 4217 code (`POST /admin/currencies`); its rate against USD is fetched at once.
+  2. Admin enables a country with the currency its organizations will get (`PUT /admin/countries/{code}`), or changes that
+     currency later (organizations already approved keep theirs).
+  3. The enabled countries and currencies appear in `GET /platform/regions`, which every country and currency picker uses.
+  4. Rates refresh every day; the admin can refresh them at once (`POST /admin/currencies/refresh`). A failed fetch keeps the
+     last rate and marks it stale.
+  5. Admin disables a country or currency no longer offered (`DELETE /admin/countries/{code}`, `DELETE /admin/currencies/{code}`).
+- **Exception flow:** Non-admin → 403. Unknown currency or country code → 400; a country with a currency that isn't enabled → 400;
+  enabling a currency that is already enabled, or one the rate feed has no rate for → 409; feed unreachable → 502. Disabling USD,
+  a currency an enabled country, an organization or an event that hasn't ended still uses, or a country an organization or an
+  upcoming event's venue is in → 409.
+- **Postconditions:** Every change is in the platform's settings activity log. Checkout still takes PHP only.
+- **Related rules:** BR-REGION-001 to BR-REGION-006
 
 ## Not covered (no requirement to derive a use case from)
 

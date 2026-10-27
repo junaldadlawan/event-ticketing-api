@@ -24,7 +24,7 @@ This document identifies the API's core resources (entities) derived from the ap
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
 | **User** | A single login-capable account. Roles are additive, not exclusive — one User can be an attendee on one event and hold organizer access on another. | id, name, email, auth credentials, created_at | — | 4.1 |
-| **Organization** | The business/organizer entity that owns events. Verified before publishing or receiving payouts. | id, name, verification status, payout account ref | Has many Users (via OrganizationMember) | 4.1, 4.2 |
+| **Organization** | The business/organizer entity that owns events. Verified before publishing or receiving payouts. | id, name, verification status, payout account ref, country, currency (fixed at approval) | Has many Users (via OrganizationMember) | 4.1, 4.2 |
 | **OrganizationMember** | Links a User to an Organization with a scoped role (owner, co-organizer, check-in staff). | user_id, organization_id, role, invited_at | Belongs to Organization and User | 4.1 |
 | **AdminAccount** | Platform-staff access, distinct from any Organization. | user_id, admin scope | Belongs to User | 3, 4.13 |
 
@@ -33,7 +33,7 @@ This document identifies the API's core resources (entities) derived from the ap
 | Resource | Description | Key attributes | Owned by / relates to | Source |
 |---|---|---|---|---|
 | **Event** | A single event listing. | id, title, description, category, start/end datetime, timezone, images, status, ticket_number_prefix (random 3 letters, assigned once at creation, reserved unique across all events — used only to seed `Ticket.ticket_number`, not a general-purpose event code) | Belongs to Organization; has a Venue | 4.2, 4.10 |
-| **Venue** | A physical (or virtual) location, owned by an Organization and reusable across that org's events, that a SeatMap is defined against. | id, organization_id, name, address (nullable, virtual venues), latitude (nullable), longitude (nullable) | Belongs to Organization; referenced by Event | 4.3 |
+| **Venue** | A physical (or virtual) location, owned by an Organization and reusable across that org's events, that a SeatMap is defined against. | id, organization_id, name, address (nullable, virtual venues), country (nullable, an enabled SupportedCountry), latitude (nullable), longitude (nullable) | Belongs to Organization; referenced by Event | 4.3 |
 | **SeatMap** | The section/row/seat layout for reserved-seating events. | id, sections[] | Belongs to Venue (reusable) or Event | 4.3 |
 | **Seat** | A single addressable seat within a SeatMap. | id, section, row, seat_number, status (available/held/sold) | Belongs to SeatMap | 4.3 |
 | **TicketType** | A purchasable category for an event: GA or reserved-seating tier. | id, name, price, currency, quantity, sale window, per-order limit, color (optional "#RRGGBB" display colour, stored uppercase; set by the organizer, readable by anyone who can read the type) | Belongs to Event | 4.2, 4.3 |
@@ -84,6 +84,8 @@ This document identifies the API's core resources (entities) derived from the ap
 | **Notification** | A record of a triggered notification and its delivery status. | id, user_id, type, channel, related_object, sent_at, status | Belongs to User | 4.12 |
 | **Dispute** | An admin-tracked dispute (fraud report, chargeback). | id, order_id or ticket_id, raised_by, status, resolution | Relates to Order/Ticket | 4.13 |
 | **AuditLogEntry** | An immutable record of a sensitive action. | id, actor_id, action, target, timestamp | Relates to whatever it logged | 5.3 |
+| **SupportedCurrency** | A currency the platform supports, admin-managed; USD is the reference. | code (ISO 4217), name, symbol, minor_units, enabled, usd_rate (units per 1 USD), rate_updated_at, rate_stale | Used by SupportedCountry, Organization, TicketType prices | BR-REGION-001/002 |
+| **SupportedCountry** | A country the platform supports, admin-managed. | code (ISO 3166-1 alpha-2), name, currency_code, enabled | Has a SupportedCurrency; Organizations and Venues are in one | BR-REGION-003 |
 
 ## 3. Notable Relationships
 
