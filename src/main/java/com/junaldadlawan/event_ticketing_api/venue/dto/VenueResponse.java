@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.venue.dto;
 
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
+import com.junaldadlawan.event_ticketing_api.venue.enums.VenueType;
 
 import java.io.Serializable;
 import java.time.Instant;
@@ -13,9 +14,16 @@ public record VenueResponse(
         UUID id,
         UUID organizationId,
         String name,
+        VenueType venueType,
+        String country,
+        String province,
+        String city,
         String address,
         Double latitude,
         Double longitude,
+        String description,
+        Integer maxCapacity,
+        String coverImageUrl,
         String createdBy,
         Instant createdAt,
         String updatedBy,
@@ -26,9 +34,16 @@ public record VenueResponse(
                 venue.getId(),
                 venue.getOrganizationId(),
                 venue.getName(),
+                venue.getVenueType(),
+                venue.getCountry(),
+                venue.getProvince(),
+                venue.getCity(),
                 venue.getAddress(),
                 venue.getLatitude(),
                 venue.getLongitude(),
+                venue.getDescription(),
+                venue.getMaxCapacity(),
+                venue.getCoverImageUrl(),
                 venue.getCreatedBy(),
                 venue.getCreatedAt(),
                 venue.getUpdatedBy(),

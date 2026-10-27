@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.analytics.controller;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAnalyticsResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAudienceResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventSalesPatternsResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.dto.ShareTimelineResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.service.AnalyticsService;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventFunnelResponse;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,13 @@ public class EventAnalyticsController {
                                       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return analyticsService.getEventFunnel(eventId, from, to);
+    }
+
+    @GetMapping("/share-timeline")
+    public ShareTimelineResponse shareTimeline(@PathVariable UUID eventId,
+                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return analyticsService.getEventShareTimeline(eventId, from, to);
     }
 
     @GetMapping("/sales-patterns")

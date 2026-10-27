@@ -46,12 +46,12 @@ class UploadedFileUrlsTest {
 
     private void referencedBy(int queryNumber, long count) {
         // the four reference checks run in order and stop at the first hit
-        Long[] counts = new Long[5];
+        Long[] counts = new Long[7];
         java.util.Arrays.fill(counts, 0L);
         counts[queryNumber] = count;
         when(entityManager.createQuery(anyString(), eq(Long.class))).thenReturn(query);
         when(query.setParameter(eq("url"), any())).thenReturn(query);
-        when(query.getSingleResult()).thenReturn(counts[0], java.util.Arrays.copyOfRange(counts, 1, 5));
+        when(query.getSingleResult()).thenReturn(counts[0], java.util.Arrays.copyOfRange(counts, 1, 7));
     }
 
     @Test
@@ -108,7 +108,7 @@ class UploadedFileUrlsTest {
 
     @Test
     void deleteIfUnreferenced_keepsTheFileWhenAnyOwnerStillUsesIt() {
-        for (int owner = 0; owner < 5; owner++) {
+        for (int owner = 0; owner < 7; owner++) {
             org.mockito.Mockito.reset(entityManager, query, storage);
             lenient().when(storage.exists(NAME)).thenReturn(true);
             referencedBy(owner, 1);

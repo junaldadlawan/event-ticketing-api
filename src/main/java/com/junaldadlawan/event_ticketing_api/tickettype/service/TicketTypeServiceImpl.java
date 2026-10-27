@@ -27,6 +27,8 @@ import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.junaldadlawan.event_ticketing_api.seatmap.service.LayoutSeatCopier;
+import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -55,8 +57,10 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     private final EventCompletionService eventCompletionService;
     private final EntityManager entityManager;
     private final AuditLogService auditLogService;
+    private final LayoutSeatCopier layoutSeatCopier;
 
     @Override
+    @Transactional
     public TicketType create(UUID eventId, TicketTypeCreateRequest request) {
         Event event = getEventOrThrow(eventId);
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
@@ -70,6 +74,22 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                 : request.maxPerUser() != null ? Math.min(DEFAULT_MAX_PER_ORDER, request.maxPerUser()) : DEFAULT_MAX_PER_ORDER;
         requireMaxPerOrderWithinPerUser(maxPerOrder, request.maxPerUser());
 
+        // reserved seating from a seat layout: the seats copied are the stock
+        LayoutSeatCopier.Plan seatPlan = null;
+        if (request.fromLayout()) {
+            if (request.kind() != TicketTypeKind.RESERVED_SEATING) {
+                throw new BadRequestException("layoutId, sectionId and wholeLayout are only for RESERVED_SEATING ticket types");
+            }
+            if (request.layoutId() == null) {
+                throw new BadRequestException("layoutId is required to copy seats (sectionId or wholeLayout)");
+            }
+            if ((request.sectionId() != null) == Boolean.TRUE.equals(request.wholeLayout())) {
+                throw new BadRequestException("Send exactly one of sectionId or wholeLayout: true with layoutId");
+            }
+            seatPlan = layoutSeatCopier.plan(event, request.layoutId(), request.sectionId(), request.sectionId() == null);
+        }
+        int quantity = seatPlan != null ? seatPlan.seatCount() : request.quantityTotal();
+
         TicketType ticketType = TicketType.builder()
                 .eventId(event.getId())
                 .name(request.name())
@@ -78,8 +98,8 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                         .amount(request.price().amount())
                         .currency(request.price().currency())
                         .build())
-                .quantityTotal(request.quantityTotal())
-                .quantityAvailable(request.quantityTotal())
+                .quantityTotal(quantity)
+                .quantityAvailable(quantity)
                 .saleStartAt(saleStartAt)
                 .saleEndAt(request.saleEndAt())
                 .maxPerOrder(maxPerOrder)
@@ -89,6 +109,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
                 .position(ticketTypeRepository.findMaxPositionByEventId(event.getId()) + 1)
                 .build();
         TicketType created = ticketTypeRepository.save(ticketType);
+        if (seatPlan != null) {
+            layoutSeatCopier.apply(seatPlan, event, created.getId());
+        }
         auditLogService.recordByCurrentUser("ticket_type.created", "TicketType", created.getId(), created.getEventId(), AuditDetails.named(ticketType.getName()));
         return created;
     }

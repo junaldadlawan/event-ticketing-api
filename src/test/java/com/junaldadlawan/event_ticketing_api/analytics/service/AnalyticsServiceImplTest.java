@@ -63,6 +63,8 @@ class AnalyticsServiceImplTest {
     private com.junaldadlawan.event_ticketing_api.analytics.repository.EventInsightsRepository insightsRepository;
     @Mock
     private com.junaldadlawan.event_ticketing_api.analytics.repository.FunnelRepository funnelRepository;
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.analytics.repository.ShareCounterRepository shareCounterRepository;
 
     private AnalyticsServiceImpl service;
 
@@ -71,7 +73,7 @@ class AnalyticsServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new AnalyticsServiceImpl(eventRepository, orderRepository, ticketRepository, ticketTypeRepository, organizationRepository, accessGuard, insightsRepository, funnelRepository);
+        service = new AnalyticsServiceImpl(eventRepository, orderRepository, ticketRepository, ticketTypeRepository, organizationRepository, accessGuard, insightsRepository, funnelRepository, shareCounterRepository);
         eventId = UUID.randomUUID();
         orgId = UUID.randomUUID();
     }

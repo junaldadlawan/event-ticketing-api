@@ -4,6 +4,7 @@ import com.junaldadlawan.event_ticketing_api.auditlog.service.AuditLogService;
 import com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
+import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
 import com.junaldadlawan.event_ticketing_api.notification.enums.NotificationType;
 import com.junaldadlawan.event_ticketing_api.notification.repository.NotificationRepository;
 import com.junaldadlawan.event_ticketing_api.notification.service.NotificationService;
@@ -57,6 +58,7 @@ public class DraftEventCleanupService {
     private final NotificationRepository notificationRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
     private final DraftEventSettingsService settingsService;
+    private final UploadedFileUrls uploadedFileUrls;
 
     /** What one run did. */
     public record Result(int deleted, int warned) {
@@ -142,6 +144,7 @@ public class DraftEventCleanupService {
         auditLogService.record(null, AUTO_DELETED_ACTION, "Event", eventId, eventId, event.getOrganizationId(), details);
         String message = event.getTitle() + " was deleted because it was not published at least " + describe(minutes) + " before it started.";
         notifyTeam(event, NotificationType.EVENT_DRAFT_DELETED, message);
+        eventRepository.findImageUrls(eventId).forEach(uploadedFileUrls::deleteIfUnreferenced);
         return true;
     }
 

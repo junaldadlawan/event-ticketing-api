@@ -79,7 +79,7 @@ class ImageStorageServiceTest {
 
     @Test
     void store_eachFolder_isTheKeyPrefix_andTheSameLayoutOnDisk() throws Exception {
-        for (String folder : new String[] {"events", "organizations", "platform", "temporary", "tickets", "users"}) {
+        for (String folder : new String[] {"events", "organizations", "platform", "temporary", "tickets", "users", "venues"}) {
             String name = service.store(file("a.png", "image/png", image("png")), folder).name();
 
             assertThat(name).matches(folder + "/[0-9a-f-]{36}\\.png");
@@ -87,7 +87,7 @@ class ImageStorageServiceTest {
             assertThat(service.load(name).contentType()).isEqualTo("image/png");
         }
         assertThat(ImageStorageService.FOLDERS).containsExactlyInAnyOrder(
-                "events", "organizations", "platform", "temporary", "tickets", "users");
+                "events", "organizations", "platform", "temporary", "tickets", "users", "venues");
     }
 
     @Test

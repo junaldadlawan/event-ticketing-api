@@ -607,6 +607,26 @@ class CartServiceImplTest {
     }
 
     @Test
+    void addItem_reservedSeating_seatCopiedForAnotherTicketType_throwsBadRequest() {
+        UUID cartId = UUID.randomUUID();
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID seatId = UUID.randomUUID();
+        UUID seatMapId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        TicketType tt = reservedTicketType(ticketTypeId, eventId);
+        mockCartAndTicketType(cartId, ticketTypeId, tt, EventStatus.ON_SALE);
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of());
+        Seat seat = seat(seatId, seatMapId, SeatStatus.AVAILABLE);
+        seat.setTicketTypeId(UUID.randomUUID()); // copied from a venue layout for a different ticket type
+        when(seatRepository.findByIdForUpdate(seatId)).thenReturn(Optional.of(seat));
+        when(seatMapRepository.findById(seatMapId)).thenReturn(Optional.of(seatMap(seatMapId, eventId)));
+
+        assertThatThrownBy(() -> service.addItem(cartId, new CartItemCreateRequest(ticketTypeId, seatId, null)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("another ticket type");
+        verify(seatRepository, never()).save(any());
+    }
+
+    @Test
     void addItem_reservedSeating_seatNotAvailable_noStaleHold_throwsConflict() {
         UUID cartId = UUID.randomUUID();
         UUID ticketTypeId = UUID.randomUUID();

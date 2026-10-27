@@ -26,7 +26,7 @@ import java.time.Duration;
  * Image upload for the ticket template designer: {@code POST /api/v1/uploads}
  * (any signed-in user) stores one PNG/JPEG/WebP/GIF of up to 5 MB and returns
  * its absolute URL, under the optional {@code folder} it is for (events, organizations,
- * platform, tickets, users; default temporary); {@code GET /api/v1/uploads/files/{folder}/{name}}
+ * platform, tickets, users, venues; default temporary); {@code GET /api/v1/uploads/files/{folder}/{name}}
  * serves it publicly from whichever storage is configured
  * (the image ends up on tickets, which buyers and scanners render without any
  * special access).

@@ -25,6 +25,7 @@ import com.junaldadlawan.event_ticketing_api.organization.repository.Organizatio
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.refund.service.RefundService;
 import com.junaldadlawan.event_ticketing_api.ticket.entity.Ticket;
+import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
 import com.junaldadlawan.event_ticketing_api.ticket.repository.TicketRepository;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
@@ -38,6 +39,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -63,6 +65,7 @@ public class EventServiceImpl implements EventService {
     private final CategoryService categoryService;
     private final EventCompletionService eventCompletionService;
     private final EventLifecycleNotifier eventLifecycleNotifier;
+    private final UploadedFileUrls uploadedFileUrls;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -179,6 +182,7 @@ public class EventServiceImpl implements EventService {
         Instant oldEnd = event.getEndAt();
         String oldTimezone = event.getTimezone();
         UUID oldVenueId = event.getVenueId();
+        List<String> oldImages = new ArrayList<>(event.getImages());
 
         if (request.title() != null) {
             if (request.title().isBlank()) {
@@ -206,6 +210,8 @@ public class EventServiceImpl implements EventService {
         }
 
         Event saved = eventRepository.save(event);
+        // replaced or removed pictures go away unless something else still uses them (never one that was kept)
+        oldImages.stream().filter(url -> !saved.getImages().contains(url)).forEach(uploadedFileUrls::deleteIfUnreferenced);
         // BR-EVENT-006: only the fields that actually changed; an update that changed nothing is not logged
         Map<String, Object> changes = AuditDetails.changes(before, AuditDetails.snapshot(event, EventUpdateRequest.class));
         if (changes != null) {
@@ -297,6 +303,8 @@ public class EventServiceImpl implements EventService {
         event.markDeleted();
         eventRepository.save(event);
         auditLogService.recordByCurrentUser("event.deleted", "Event", eventId, eventId, AuditDetails.named(event.getTitle()));
+        // the event is soft-deleted and not restorable through the API, so its pictures are released like any unused file
+        new ArrayList<>(event.getImages()).forEach(uploadedFileUrls::deleteIfUnreferenced);
     }
 
     @Override

@@ -57,7 +57,8 @@ class VenueServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        venueService = new VenueServiceImpl(venueRepository, organizationRepository, accessGuard);
+        venueService = new VenueServiceImpl(venueRepository, organizationRepository, accessGuard,
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls.class));
         orgId = UUID.randomUUID();
     }
 
