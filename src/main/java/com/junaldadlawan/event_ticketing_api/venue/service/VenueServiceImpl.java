@@ -13,7 +13,6 @@ import com.junaldadlawan.event_ticketing_api.venue.dto.VenueCreateRequest;
 import com.junaldadlawan.event_ticketing_api.venue.dto.VenueUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
-import com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls;
 import com.junaldadlawan.event_ticketing_api.venue.enums.VenueType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,7 +31,6 @@ public class VenueServiceImpl implements VenueService {
     private final VenueRepository venueRepository;
     private final OrganizationRepository organizationRepository;
     private final OrganizationAccessGuard accessGuard;
-    private final UploadedFileUrls uploadedFileUrls;
 
     private static final Set<String> COUNTRY_CODES = Set.of(Locale.getISOCountries());
 
@@ -61,7 +59,6 @@ public class VenueServiceImpl implements VenueService {
                 .city(text("city", request.city(), 100))
                 .description(text("description", request.description(), 2000))
                 .maxCapacity(request.maxCapacity())
-                .coverImageUrl(coverImage(request.coverImageUrl()))
                 .build();
         return venueRepository.save(venue);
     }
@@ -123,16 +120,7 @@ public class VenueServiceImpl implements VenueService {
         if (request.maxCapacity() != null) {
             venue.setMaxCapacity(request.maxCapacity().orElse(null));
         }
-        String previousCover = venue.getCoverImageUrl();
-        if (request.coverImageUrl() != null) {
-            venue.setCoverImageUrl(coverImage(request.coverImageUrl().orElse(null)));
-        }
-        Venue saved = venueRepository.save(venue);
-        // a replaced or removed cover image goes away unless something else still uses it
-        if (previousCover != null && !previousCover.equals(saved.getCoverImageUrl())) {
-            uploadedFileUrls.deleteIfUnreferenced(previousCover);
-        }
-        return saved;
+        return venueRepository.save(venue);
     }
 
     /** Trimmed; blank is null; a too long or HTML value is a 400. */
@@ -173,18 +161,6 @@ public class VenueServiceImpl implements VenueService {
             throw new BadRequestException("country must be an ISO 3166-1 alpha-2 country code such as PH");
         }
         return code;
-    }
-
-    /** Only the URL of one of this server's own uploaded images is accepted. */
-    private String coverImage(String value) {
-        String trimmed = text("coverImageUrl", value, 500);
-        if (trimmed == null) {
-            return null;
-        }
-        if (uploadedFileUrls.ownFileName(trimmed).isEmpty()) {
-            throw new BadRequestException("coverImageUrl must be the URL of an image uploaded through POST /api/v1/uploads");
-        }
-        return trimmed;
     }
 
     public Venue getOrThrow(UUID venueId) {

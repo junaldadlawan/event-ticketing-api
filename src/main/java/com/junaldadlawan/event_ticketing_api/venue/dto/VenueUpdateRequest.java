@@ -44,13 +44,10 @@ public record VenueUpdateRequest(
         Optional<@Size(max = 2000) String> description,
 
         @JsonDeserialize(using = PresentOrNull.OfInteger.class)
-        Optional<@Min(1) Integer> maxCapacity,
-
-        @JsonDeserialize(using = PresentOrNull.OfString.class)
-        Optional<@Size(max = 500) String> coverImageUrl) {
+        Optional<@Min(1) Integer> maxCapacity) {
 
     /** An update of only the original fields. */
     public VenueUpdateRequest(String name, String address, Double latitude, Double longitude) {
-        this(name, address, latitude, longitude, null, null, null, null, null, null, null);
+        this(name, address, latitude, longitude, null, null, null, null, null, null);
     }
 }

@@ -70,8 +70,4 @@ public class Venue extends Auditable {
     /** People the venue holds; may be more than the seats of its seat layout. */
     @Column(name = "max_capacity")
     private Integer maxCapacity;
-
-    /** The URL of an image uploaded through the upload endpoint. */
-    @Column(name = "cover_image_url", length = 500)
-    private String coverImageUrl;
 }

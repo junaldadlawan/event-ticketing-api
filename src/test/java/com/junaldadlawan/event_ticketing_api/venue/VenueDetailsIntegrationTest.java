@@ -7,7 +7,6 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationMemberRepository;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
-import com.junaldadlawan.event_ticketing_api.upload.storage.FileStorage;
 import com.junaldadlawan.event_ticketing_api.user.entity.User;
 import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import com.junaldadlawan.event_ticketing_api.venue.repository.VenueRepository;
@@ -39,7 +38,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** The extra venue details on the real database: create, partial update, clearing, and the checks on country, capacity, type and cover image. */
+/** The extra venue details on the real database: create, partial update, clearing, and the checks on country, capacity and type. */
 @SpringBootTest
 @AutoConfigureMockMvc
 class VenueDetailsIntegrationTest {
@@ -58,11 +57,8 @@ class VenueDetailsIntegrationTest {
     private OrganizationMemberRepository organizationMemberRepository;
     @Autowired
     private VenueRepository venueRepository;
-    @Autowired
-    private FileStorage storage;
 
     private final List<UUID> venueIds = new ArrayList<>();
-    private final List<String> keys = new ArrayList<>();
     private OrganizationMember ownerMember;
     private UUID org;
     private String owner;
@@ -80,7 +76,6 @@ class VenueDetailsIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        keys.forEach(storage::delete);
         jdbc.update("delete from venue_layouts where venue_id in (select id from venues where organization_id = ?)", org);
         jdbc.update("delete from venues where organization_id = ?", org);
         organizationMemberRepository.findByUserIdAndOrganizationId(ownerMember.getUserId(), org).ifPresent(organizationMemberRepository::delete);
@@ -93,17 +88,6 @@ class VenueDetailsIntegrationTest {
             map.put((String) keysAndValues[i], keysAndValues[i + 1]);
         }
         return map;
-    }
-
-    private String upload() {
-        String key = "venues/" + UUID.randomUUID() + ".png";
-        storage.put(key, new byte[] {1, 2, 3}, "image/png");
-        keys.add(key);
-        return "http://localhost/api/v1/uploads/files/" + key;
-    }
-
-    private static String keyOf(String url) {
-        return url.substring(url.indexOf("venues/"));
     }
 
     private ResultActions create(Map<String, Object> body) throws Exception {
@@ -126,29 +110,27 @@ class VenueDetailsIntegrationTest {
         return objectMapper.readTree(mockMvc.perform(get("/api/v1/venues/{id}", id)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
     }
 
-    private Map<String, Object> full(String cover) {
+    private Map<String, Object> full() {
         return map("name", "Details Hall", "venueType", "CONCERT_HALL", "country", "ph", "province", "  Metro Manila ", "city", "Taguig",
                 "address", "7th Ave cor. 28th St, Bonifacio Global City", "latitude", 14.55, "longitude", 121.05, "description", "A big hall.",
-                "maxCapacity", 1200, "coverImageUrl", cover);
+                "maxCapacity", 1200);
     }
 
     @Test
     void create_withAllFields_returnsThemInCamelCase_trimmed_andTheCountryUpperCased() throws Exception {
-        String cover = upload();
-
-        UUID id = UUID.fromString(objectMapper.readTree(create(full(cover)).andExpect(status().isCreated())
+        UUID id = UUID.fromString(objectMapper.readTree(create(full()).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.venueType").value("CONCERT_HALL")).andExpect(jsonPath("$.country").value("PH"))
                 .andExpect(jsonPath("$.province").value("Metro Manila")).andExpect(jsonPath("$.city").value("Taguig"))
                 .andExpect(jsonPath("$.address").value("7th Ave cor. 28th St, Bonifacio Global City")).andExpect(jsonPath("$.latitude").value(14.55))
                 .andExpect(jsonPath("$.description").value("A big hall.")).andExpect(jsonPath("$.maxCapacity").value(1200))
-                .andExpect(jsonPath("$.coverImageUrl").value(cover)).andReturn().getResponse().getContentAsString()).get("id").asString());
+                .andExpect(jsonPath("$.coverImageUrl").doesNotExist()).andReturn().getResponse().getContentAsString()).get("id").asString());
         venueIds.add(id);
 
         JsonNode read = venue(id);
         assertThat(read.get("venueType").asString()).isEqualTo("CONCERT_HALL");
         assertThat(read.get("country").asString()).isEqualTo("PH");
         assertThat(read.get("maxCapacity").asInt()).isEqualTo(1200);
-        assertThat(read.get("coverImageUrl").asString()).isEqualTo(cover);
+        assertThat(read.has("coverImageUrl")).isFalse();
     }
 
     @Test
@@ -156,7 +138,7 @@ class VenueDetailsIntegrationTest {
         UUID plain = created(map("name", "Plain Venue"));
         UUID virtual = created(map("name", "Online Stage", "venueType", "VIRTUAL", "city", "  ", "description", ""));
 
-        for (String field : List.of("venueType", "country", "province", "city", "description", "maxCapacity", "coverImageUrl", "address", "latitude", "longitude")) {
+        for (String field : List.of("venueType", "country", "province", "city", "description", "maxCapacity", "address", "latitude", "longitude")) {
             assertThat(venue(plain).get(field).isNull()).as(field).isTrue();
         }
         JsonNode read = venue(virtual);
@@ -169,14 +151,15 @@ class VenueDetailsIntegrationTest {
 
     @Test
     void aPartialUpdate_changesOnlyTheFieldsSent() throws Exception {
-        UUID id = created(full(upload()));
+        UUID id = created(full());
         JsonNode before = venue(id);
 
         patchRaw(id, "{\"city\":\"Makati\",\"maxCapacity\":900}").andExpect(status().isOk())
-                .andExpect(jsonPath("$.city").value("Makati")).andExpect(jsonPath("$.maxCapacity").value(900));
+                .andExpect(jsonPath("$.city").value("Makati")).andExpect(jsonPath("$.maxCapacity").value(900))
+                .andExpect(jsonPath("$.coverImageUrl").doesNotExist());
 
         JsonNode after = venue(id);
-        for (String field : List.of("name", "venueType", "country", "province", "address", "latitude", "longitude", "description", "coverImageUrl")) {
+        for (String field : List.of("name", "venueType", "country", "province", "address", "latitude", "longitude", "description")) {
             assertThat(after.get(field)).as(field).isEqualTo(before.get(field));
         }
         assertThat(after.get("city").asString()).isEqualTo("Makati");
@@ -193,44 +176,27 @@ class VenueDetailsIntegrationTest {
 
     @Test
     void sendingNull_clearsAField_andABlankStringClearsToo_whileLeavingOneOutKeepsIt() throws Exception {
-        String cover = upload();
-        UUID id = created(full(cover));
+        UUID id = created(full());
 
-        patchRaw(id, "{\"venueType\":null,\"country\":null,\"province\":null,\"city\":\"  \",\"description\":null,\"maxCapacity\":null,\"coverImageUrl\":null}")
+        patchRaw(id, "{\"venueType\":null,\"country\":null,\"province\":null,\"city\":\"  \",\"description\":null,\"maxCapacity\":null}")
                 .andExpect(status().isOk());
 
         JsonNode read = venue(id);
-        for (String field : List.of("venueType", "country", "province", "city", "description", "maxCapacity", "coverImageUrl")) {
+        for (String field : List.of("venueType", "country", "province", "city", "description", "maxCapacity")) {
             assertThat(read.get(field).isNull()).as(field).isTrue();
         }
         assertThat(read.get("name").asString()).isEqualTo("Details Hall");   // left out = unchanged
         assertThat(read.get("address").asString()).startsWith("7th Ave");
         assertThat(read.get("latitude").asDouble()).isEqualTo(14.55);
-        assertThat(storage.exists(keyOf(cover))).isFalse();                  // the cleared cover image is removed from storage
     }
 
     @Test
     void anEmptyAddressClearsIt_forAVenueMovedOnline() throws Exception {
-        UUID id = created(full(upload()));
+        UUID id = created(full());
 
         patchRaw(id, "{\"venueType\":\"VIRTUAL\",\"address\":\"\"}").andExpect(status().isOk());
 
         assertThat(venue(id).get("address").isNull()).isTrue();
-    }
-
-    @Test
-    void aReplacedCoverImage_isRemovedFromStorage_unlessAnotherVenueStillUsesIt() throws Exception {
-        String shared = upload();
-        String other = upload();
-        UUID first = created(full(shared));
-        UUID second = created(full(shared));
-
-        patchRaw(first, "{\"coverImageUrl\":\"" + other + "\"}").andExpect(status().isOk());
-        assertThat(storage.exists(keyOf(shared))).isTrue();    // the second venue still uses it
-
-        patchRaw(second, "{\"coverImageUrl\":\"" + other + "\"}").andExpect(status().isOk());
-        assertThat(storage.exists(keyOf(shared))).isFalse();
-        assertThat(storage.exists(keyOf(other))).isTrue();
     }
 
     @Test
@@ -258,7 +224,7 @@ class VenueDetailsIntegrationTest {
     }
 
     @Test
-    void aBadTypeTextOrCoverImage_isRefused() throws Exception {
+    void aBadTypeOrText_isRefused() throws Exception {
         UUID id = created(map("name", "Checked Venue"));
 
         create(map("name", "Bad", "venueType", "CASTLE")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail", containsString("venueType must be one of")));
@@ -269,12 +235,6 @@ class VenueDetailsIntegrationTest {
         create(map("name", "Bad", "description", "<script>")).andExpect(status().isBadRequest());
         patchRaw(id, "{\"description\":\"" + "x".repeat(2001) + "\"}").andExpect(status().isBadRequest());
         patchRaw(id, "{\"city\":\"<b>\"}").andExpect(status().isBadRequest());
-        // only an image uploaded through this server is accepted as a cover
-        create(map("name", "Bad", "coverImageUrl", "https://evil.example.com/a.png")).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail", containsString("uploaded through POST /api/v1/uploads")));
-        create(map("name", "Bad", "coverImageUrl", "http://localhost/api/v1/uploads/files/venues/" + UUID.randomUUID() + ".png")).andExpect(status().isBadRequest());
-        patchRaw(id, "{\"coverImageUrl\":\"https://evil.example.com/a.png\"}").andExpect(status().isBadRequest());
-        create(map("name", "Bad", "coverImageUrl", "x".repeat(501))).andExpect(status().isBadRequest());
 
         assertThat(jdbc.queryForObject("select count(*) from venues where organization_id = ?", Integer.class, org)).isEqualTo(1);   // only the one made above
     }

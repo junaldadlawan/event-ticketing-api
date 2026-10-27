@@ -108,7 +108,7 @@ class UploadedFileUrlsTest {
 
     @Test
     void deleteIfUnreferenced_keepsTheFileWhenAnyOwnerStillUsesIt() {
-        for (int owner = 0; owner < 7; owner++) {
+        for (int owner = 0; owner < 6; owner++) {
             org.mockito.Mockito.reset(entityManager, query, storage);
             lenient().when(storage.exists(NAME)).thenReturn(true);
             referencedBy(owner, 1);

@@ -1439,7 +1439,7 @@ paths:
                   type: string
                   enum: [events, organizations, platform, temporary, tickets, users, venues]
                   default: temporary
-                  description: "What the image is for, which decides where it is stored: events (event images), organizations (organization documents), platform (posts), tickets (ticket template backgrounds and logos), users (profile pictures), venues (venue cover images). Omitted = temporary."
+                  description: "What the image is for, which decides where it is stored: events (event images), organizations (organization documents), platform (posts), tickets (ticket template backgrounds and logos), users (profile pictures), venues (no longer used by the API). Omitted = temporary."
       responses:
         "201":
           description: Stored. The returned URL is `/uploads/files/{folder}/{name}` on this server.
@@ -5131,7 +5131,6 @@ components:
         longitude: { type: [number, "null"] }
         description: { type: [string, "null"], maxLength: 2000 }
         maxCapacity: { type: [integer, "null"], minimum: 1, description: "People the venue holds; can be more than the seats in its seat layout (nothing is checked against it, the UI can compare the two)." }
-        coverImageUrl: { type: [string, "null"], maxLength: 500, description: "The URL of an image uploaded through POST /uploads (folder venues)." }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid, description: User (organizer) who added this venue. }
         updated_at: { type: string, format: date-time }
@@ -5146,8 +5145,7 @@ components:
       required: [name]
       description: |
         Everything but name is optional (a VIRTUAL venue may have no address, position or capacity). Strings are trimmed and a blank one is stored as
-        null. 400 for an unknown venueType or country code, a capacity below 1, text over its limit or with HTML, and a coverImageUrl that is not the
-        URL of an image uploaded through POST /uploads.
+        null. 400 for an unknown venueType or country code, a capacity below 1, and text over its limit or with HTML.
       properties:
         name: { type: string }
         venueType: { type: string, enum: [THEATER, ARENA, STADIUM, CONCERT_HALL, CONFERENCE_CENTER, CLUB_BAR, RESTAURANT, CHURCH, OUTDOOR, SCHOOL, OTHER, VIRTUAL] }
@@ -5159,14 +5157,13 @@ components:
         longitude: { type: number }
         description: { type: string, maxLength: 2000 }
         maxCapacity: { type: integer, minimum: 1 }
-        coverImageUrl: { type: string, maxLength: 500, description: "From POST /uploads with folder venues." }
 
     VenueUpdate:
       type: object
       description: |
         A partial update. For name, address, latitude and longitude a left-out or null field is unchanged (an empty address clears it). For
-        venueType, country, province, city, description, maxCapacity and coverImageUrl a left-out field is unchanged and null (or a blank string)
-        clears it. The same rules and 400s as VenueCreate. A replaced or cleared cover image is removed from storage unless something else uses it.
+        venueType, country, province, city, description and maxCapacity a left-out field is unchanged and null (or a blank string) clears it.
+        The same rules and 400s as VenueCreate.
       properties:
         name: { type: string }
         venueType: { type: [string, "null"], enum: [THEATER, ARENA, STADIUM, CONCERT_HALL, CONFERENCE_CENTER, CLUB_BAR, RESTAURANT, CHURCH, OUTDOOR, SCHOOL, OTHER, VIRTUAL, null] }
@@ -5178,7 +5175,6 @@ components:
         longitude: { type: number }
         description: { type: [string, "null"], maxLength: 2000 }
         maxCapacity: { type: [integer, "null"], minimum: 1 }
-        coverImageUrl: { type: [string, "null"], maxLength: 500 }
 
     DraftEventSettings:
       type: object
