@@ -240,7 +240,7 @@ class OrganizationChangeRequestIntegrationTest {
     @Test
     void anApplicationCarriesTheOptionalDetails_withTheSameValidation_andTheAdminSeesThemInTheReview() throws Exception {
         String applicant = bearer(persist(Role.CUSTOMER));
-        String docs = "\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/permit.pdf\"}]";
+        String docs = "\"country\":\"PH\",\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/permit.pdf\"}]";
 
         mockMvc.perform(post("/api/v1/organizations").header("Authorization", applicant).contentType("application/json")
                 .content("{\"name\":\"Bad Mail Org\"," + docs + ",\"contactEmail\":\"nope\"}")).andExpect(status().isBadRequest());
@@ -268,7 +268,7 @@ class OrganizationChangeRequestIntegrationTest {
     void anAdminAsksForARevision_theApplicantEditsThePendingApplicationDirectly_andTheFlagClears() throws Exception {
         User applicantUser = persist(Role.CUSTOMER);
         String applicant = bearer(applicantUser);
-        String docs = "\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/old.pdf\"}]";
+        String docs = "\"country\":\"PH\",\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/old.pdf\"}]";
         JsonNode created = json(mockMvc.perform(post("/api/v1/organizations").header("Authorization", applicant).contentType("application/json")
                 .content("{\"name\":\"Revise Me " + UUID.randomUUID() + "\"," + docs + "}")).andExpect(status().isCreated()).andExpect(jsonPath("$.revisionRequested").value(false)));
         UUID id = UUID.fromString(created.get("id").asText());

@@ -19,6 +19,7 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStat
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationChangeRequestRepository;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.region.service.RegionService;
 import com.junaldadlawan.event_ticketing_api.user.enums.Role;
 import com.junaldadlawan.event_ticketing_api.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -48,13 +49,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrganizationChangeRequestService {
 
-    private static final List<String> FIELDS = List.of("name", "contactEmail", "contactPhone", "address", "description");
+    private static final List<String> FIELDS = List.of("name", "contactEmail", "contactPhone", "address", "description", "country");
     private static final Map<String, Function<Organization, String>> GETTERS = Map.of(
             "name", Organization::getName, "contactEmail", Organization::getContactEmail, "contactPhone", Organization::getContactPhone,
-            "address", Organization::getAddress, "description", Organization::getDescription);
+            "address", Organization::getAddress, "description", Organization::getDescription, "country", Organization::getCountry);
     private static final Map<String, BiConsumer<Organization, String>> SETTERS = Map.of(
             "name", Organization::setName, "contactEmail", Organization::setContactEmail, "contactPhone", Organization::setContactPhone,
-            "address", Organization::setAddress, "description", Organization::setDescription);
+            "address", Organization::setAddress, "description", Organization::setDescription, "country", Organization::setCountry);
 
     private final OrganizationChangeRequestRepository requestRepository;
     private final OrganizationRepository organizationRepository;
@@ -62,6 +63,7 @@ public class OrganizationChangeRequestService {
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
+    private final RegionService regionService;
     private final ObjectMapper objectMapper;
 
     // ---- a pending application: revision asked by an admin, edited by the applicant (BR-ORG-010) ----
@@ -99,6 +101,7 @@ public class OrganizationChangeRequestService {
             throw new ForbiddenException("Only the applicant may edit a pending application");
         }
         Map<String, Object> changed = changedFields(organization, body);
+        requireSupportedCountry(changed);
         if (changed.isEmpty()) {
             throw new BadRequestException("Nothing to change: the values sent are the application's current ones");
         }
@@ -140,6 +143,7 @@ public class OrganizationChangeRequestService {
             throw new ForbiddenException("Only an approved organization may be updated");
         }
         Map<String, Object> requested = changedFields(organization, body);
+        requireSupportedCountry(requested);
         if (requested.isEmpty()) {
             throw new BadRequestException("Nothing to change: the values sent are the organization's current ones");
         }
@@ -215,6 +219,7 @@ public class OrganizationChangeRequestService {
             throw new ConflictException("The organization is no longer approved, so its details cannot be changed");
         }
         Map<String, Object> requested = read(request.getChangesJson());
+        requireSupportedCountry(requested);   // it may have been disabled since it was asked for
         Map<String, Object> before = valuesOf(organization, requested.keySet());   // includes the replaced documents: they stay in the audit trail
         applyChanges(organization, requested);
         organizationRepository.save(organization);
@@ -241,6 +246,13 @@ public class OrganizationChangeRequestService {
     }
 
     // ---- helpers ----
+
+    /** A country change must name an enabled platform country (400 otherwise). */
+    private void requireSupportedCountry(Map<String, Object> changes) {
+        if (changes.get("country") instanceof String country) {
+            regionService.requireEnabledCountry(country);
+        }
+    }
 
     private void decide(OrganizationChangeRequest request, ChangeRequestStatus status, String reason) {
         request.setStatus(status);
@@ -272,15 +284,16 @@ public class OrganizationChangeRequestService {
         sent.put("contactPhone", body.contactPhone());
         sent.put("address", body.address());
         sent.put("description", body.description());
+        sent.put("country", body.country());
         Map<String, Object> changed = new LinkedHashMap<>();
         for (String field : FIELDS) {
             String value = sent.get(field);
             if (value == null) {
                 continue;   // not sent = not changed
             }
-            String trimmed = value.trim();
-            if (field.equals("name") && trimmed.isEmpty()) {
-                throw new BadRequestException("name must not be blank");
+            String trimmed = field.equals("country") ? value.trim().toUpperCase(java.util.Locale.ROOT) : value.trim();
+            if ((field.equals("name") || field.equals("country")) && trimmed.isEmpty()) {
+                throw new BadRequestException(field + " must not be blank");
             }
             String normalized = trimmed.isEmpty() ? null : trimmed;
             if (!java.util.Objects.equals(normalized, GETTERS.get(field).apply(organization))) {

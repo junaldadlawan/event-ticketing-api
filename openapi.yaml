@@ -32,6 +32,8 @@ tags:
   - name: PlatformFees
   - name: PlatformSettings
     description: Platform-wide settings admins manage (BR-ADMIN-SETTINGS-002).
+  - name: Regions
+    description: Admin-managed platform currencies (USD reference rates) and countries.
   - name: Uploads
   - name: Events
   - name: TicketTypes
@@ -1530,6 +1532,122 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform/regions:
+    get:
+      operationId: getPlatformRegions
+      tags: [Regions]
+      summary: The enabled currencies and countries (public, cacheable)
+      description: |
+        Every country and currency picker is built from this. USD is the reference currency: `usdRate` is how many units of a
+        currency buy 1 USD. `usdRate` is null until the exchange-rate feed has given one; `rateStale` is true when the last fetch failed
+        or had no rate for it (the last known rate is kept, never made up). Sent with `Cache-Control: public, max-age=300`.
+        Display only: checkout takes PHP alone for now.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformRegions" }
+
+  /admin/currencies:
+    post:
+      operationId: enableCurrency
+      tags: [Regions]
+      summary: Enable a currency (admin only)
+      description: Fetches its USD rate at once. Logged as `currency.enabled` (with the rate and its source).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: "^[A-Za-z]{3}$", description: ISO 4217 code, e.g. EUR. }
+      responses:
+        "201":
+          description: Enabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportedCurrency" }
+        "400": { description: Not an ISO 4217 currency code }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Already enabled, or the exchange-rate feed has no rate for it }
+        "502": { description: The exchange-rate feed could not be reached; nothing was changed }
+
+  /admin/currencies/{code}:
+    delete:
+      operationId: disableCurrency
+      tags: [Regions]
+      summary: Disable a currency (admin only)
+      description: Logged as `currency.disabled`. The row and its last rate are kept, so enabling it again is quick.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Disabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Not an enabled currency }
+        "409": { description: "USD (the reference), or still used by an enabled country, an organization, or the ticket types of an event that hasn't ended" }
+
+  /admin/currencies/refresh:
+    post:
+      operationId: refreshCurrencyRates
+      tags: [Regions]
+      summary: Re-fetch every enabled currency's rate now (admin only)
+      description: |
+        The same refresh a daily job runs. Each updated rate is logged as `currency.rate_refreshed` (rate and source). When the feed
+        fails, or has no rate for a currency, the last rate is kept and `rateStale` is set.
+      responses:
+        "200":
+          description: The enabled currencies after the refresh
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SupportedCurrency" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/countries/{code}:
+    put:
+      operationId: putCountry
+      tags: [Regions]
+      summary: Enable a country or change its currency (admin only)
+      description: |
+        Logged as `country.enabled`, or `country.updated` for a currency change. Organizations already approved keep the currency
+        they were approved with; new approvals get the new one.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string }, description: ISO 3166-1 alpha-2 code, e.g. SG. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currencyCode]
+              properties:
+                currencyCode: { type: string, pattern: "^[A-Za-z]{3}$", description: Must be an enabled currency. }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportedCountry" }
+        "400": { description: Unknown country code, or the currency is not enabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      operationId: disableCountry
+      tags: [Regions]
+      summary: Disable a country (admin only)
+      description: Logged as `country.disabled`.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Disabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Not an enabled country }
+        "409": { description: An organization is in it, or the venue of an upcoming event is }
 
   /platform-settings/draft-events:
     get:
@@ -3787,7 +3905,8 @@ paths:
           description: >
             Nothing to check out, a payment for this key is already in progress, the idempotency key was used with
             another itemIds, or the event has ended (`Event has ended`; nothing is charged - and a payment that
-            completes after the end is refunded instead of issuing tickets)
+            completes after the end is refunded instead of issuing tickets), or the organization's currency is not PHP
+            (`Payments in <CODE> are not available yet`)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -4869,6 +4988,10 @@ components:
         contactPhone: { type: [string, "null"] }
         address: { type: [string, "null"] }
         description: { type: [string, "null"] }
+        country: { type: string, description: ISO 3166-1 alpha-2. Changed through a change request (BR-ORG-009). }
+        currency:
+          type: [string, "null"]
+          description: The country's currency when the organization was approved (null before). It never changes afterwards; ticket prices must be in it.
         status:
           type: string
           enum: [pending, approved, rejected]
@@ -4890,10 +5013,11 @@ components:
 
     OrganizationCreate:
       type: object
-      required: [name, documents]
+      required: [name, documents, country]
       description: The optional details are the organization's initial values (no change request: it is still pending and an admin reviews the whole application). They are returned on the Organization, so the admin sees them in the review.
       properties:
         name: { type: string }
+        country: { type: string, pattern: "^[A-Za-z]{2}$", description: "An enabled country from GET /platform/regions, otherwise 400." }
         contactEmail: { type: string, format: email, maxLength: 255 }
         contactPhone: { type: string, maxLength: 30, description: "Digits, spaces and + ( ) - ." }
         address: { type: string, maxLength: 500 }
@@ -4917,6 +5041,7 @@ components:
         contactPhone: { type: string, maxLength: 30, description: "Digits, spaces and + ( ) - ." }
         address: { type: string, maxLength: 500 }
         description: { type: string, maxLength: 2000 }
+        country: { type: string, pattern: "^[A-Za-z]{2}$", description: "An enabled country (400 otherwise). The currency stays the one fixed at approval." }
         documents:
           type: array
           minItems: 1
@@ -4928,6 +5053,51 @@ components:
             properties:
               type: { type: string, maxLength: 100 }
               url: { type: string, format: uri, maxLength: 500, pattern: "^https?://\\S+$" }
+
+    SupportedCurrency:
+      type: object
+      properties:
+        code: { type: string, example: PHP }
+        name: { type: string, example: Philippine Peso }
+        symbol: { type: string, example: "₱" }
+        minorUnits: { type: integer, example: 2 }
+        enabled: { type: boolean }
+        usdRate: { type: [number, "null"], description: Units of this currency per 1 USD. Null until the feed has given a rate. }
+        rateUpdatedAt: { type: [string, "null"], format: date-time }
+        rateStale: { type: boolean, description: The last fetch failed or had no rate; usdRate is the last known one. }
+
+    SupportedCountry:
+      type: object
+      properties:
+        code: { type: string, example: PH }
+        name: { type: string, example: Philippines }
+        currencyCode: { type: string, example: PHP }
+        enabled: { type: boolean }
+
+    PlatformRegions:
+      type: object
+      properties:
+        baseCurrency: { type: string, example: USD }
+        currencies:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              name: { type: string }
+              symbol: { type: string }
+              minorUnits: { type: integer }
+              usdRate: { type: [number, "null"] }
+              rateUpdatedAt: { type: [string, "null"], format: date-time }
+              rateStale: { type: boolean }
+        countries:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              name: { type: string }
+              currencyCode: { type: string }
 
     OrganizationDocument:
       type: object

@@ -170,8 +170,8 @@ class VenueDetailsIntegrationTest {
     void anUpdate_canChangeTheTypeAndCountry_normalisingThem() throws Exception {
         UUID id = created(map("name", "Changing Venue"));
 
-        patchRaw(id, "{\"venueType\":\" stadium \",\"country\":\" us \"}").andExpect(status().isOk())
-                .andExpect(jsonPath("$.venueType").value("STADIUM")).andExpect(jsonPath("$.country").value("US"));
+        patchRaw(id, "{\"venueType\":\" stadium \",\"country\":\" ph \"}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.venueType").value("STADIUM")).andExpect(jsonPath("$.country").value("PH"));
     }
 
     @Test
@@ -200,12 +200,13 @@ class VenueDetailsIntegrationTest {
     }
 
     @Test
-    void anUnknownCountryCode_isRefused() throws Exception {
+    void anUnknownOrNotEnabledCountryCode_isRefused() throws Exception {
         UUID id = created(map("name", "Country Venue", "country", "PH"));
 
-        for (String bad : List.of("ZZ", "XX", "PHL", "P", "Philippines", "12")) {
+        // US is a real ISO code, but not a country the platform has enabled
+        for (String bad : List.of("ZZ", "XX", "PHL", "P", "Philippines", "12", "US")) {
             create(map("name", "Bad", "country", bad)).andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.detail", containsString("ISO 3166-1 alpha-2")));
+                    .andExpect(jsonPath("$.detail", containsString("not a supported country")));
             patchRaw(id, "{\"country\":\"" + bad + "\"}").andExpect(status().isBadRequest());
         }
         assertThat(venue(id).get("country").asString()).isEqualTo("PH");   // refused updates changed nothing

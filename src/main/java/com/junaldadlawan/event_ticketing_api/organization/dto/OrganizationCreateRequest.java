@@ -40,10 +40,15 @@ public record OrganizationCreateRequest(
 
         @Size(max = 2000)
         @NoHtml
-        String description) implements Serializable {
+        String description,
+
+        // ISO 3166-1 alpha-2; must be a country the platform has enabled (GET /platform/regions)
+        @NotBlank
+        @Pattern(regexp = "[A-Za-z]{2}", message = "must be a 2-letter ISO 3166-1 country code")
+        String country) implements Serializable {
 
     /** An application without the optional details. */
-    public OrganizationCreateRequest(String name, List<DocumentDto> documents) {
-        this(name, documents, null, null, null, null);
+    public OrganizationCreateRequest(String name, List<DocumentDto> documents, String country) {
+        this(name, documents, null, null, null, null, country);
     }
 }

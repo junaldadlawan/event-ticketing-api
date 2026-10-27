@@ -91,7 +91,7 @@ class OrganizationSecurityIntegrationTest {
                         .header("Authorization", "Bearer " + applicantToken)
                         .contentType("application/json")
                         .content("""
-                                {"name":"%s","documents":[{"type":"business_permit","url":"https://docs/permit.pdf"}]}
+                                {"name":"%s","country":"PH","documents":[{"type":"business_permit","url":"https://docs/permit.pdf"}]}
                                 """.formatted(orgName)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))

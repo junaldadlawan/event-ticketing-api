@@ -18,6 +18,7 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.platformsetting.entity.TicketSaleSettings;
 import com.junaldadlawan.event_ticketing_api.platformsetting.service.TicketSaleSettingsService;
+import com.junaldadlawan.event_ticketing_api.region.service.RegionService;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeCreateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
@@ -58,6 +59,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
     private final EntityManager entityManager;
     private final AuditLogService auditLogService;
     private final LayoutSeatCopier layoutSeatCopier;
+    private final RegionService regionService;
 
     @Override
     @Transactional
@@ -73,6 +75,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         int maxPerOrder = request.maxPerOrder() != null ? request.maxPerOrder()
                 : request.maxPerUser() != null ? Math.min(DEFAULT_MAX_PER_ORDER, request.maxPerUser()) : DEFAULT_MAX_PER_ORDER;
         requireMaxPerOrderWithinPerUser(maxPerOrder, request.maxPerUser());
+        regionService.requireOrganizationCurrency(event.getOrganizationId(), request.price().currency());
 
         // reserved seating from a seat layout: the seats copied are the stock
         LayoutSeatCopier.Plan seatPlan = null;
@@ -161,6 +164,7 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             ticketType.setName(request.name());
         }
         if (request.price() != null) {
+            regionService.requireOrganizationCurrency(event.getOrganizationId(), request.price().currency());
             ticketType.setPrice(Money.builder()
                     .amount(request.price().amount())
                     .currency(request.price().currency())

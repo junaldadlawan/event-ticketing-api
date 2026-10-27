@@ -137,6 +137,9 @@ class CheckoutServiceImplTest {
     @Mock
     private com.junaldadlawan.event_ticketing_api.order.repository.PendingCheckoutRepository pendingCheckoutRepository;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository organizationRepository;
+
     private CheckoutServiceImpl service;
 
     private UUID buyerId;
@@ -147,7 +150,7 @@ class CheckoutServiceImplTest {
     void setUp() {
         service = new CheckoutServiceImpl(
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
-                eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
+                eventRepository, organizationRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
                 notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
                 pendingCheckoutRepository, org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class), gatewayFeeService, null, null, null,
@@ -397,6 +400,34 @@ class CheckoutServiceImplTest {
         verify(orderRepository, never()).saveAndFlush(any());
         verify(paymentRepository, never()).save(any());
         verify(cartItemRepository, never()).delete(any());
+        verify(idempotencyKeyManager).delete(idempotencyKey);
+    }
+
+    // ---- only PHP can be paid in for now ----
+
+    @Test
+    void checkout_anOrganizationWhoseCurrencyIsNotPhp_isRefusedBeforeCharging_andFreesKey() {
+        when(accessGuard.currentUserId()).thenReturn(buyerId);
+        when(cartRepository.findById(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        stubFreshClaim();
+        when(cartRepository.findByIdForUpdate(cartId)).thenReturn(Optional.of(cart(cartId, buyerId)));
+        UUID ticketTypeId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        CartItem item = gaItem(cartId, ticketTypeId, 1, Instant.now().plus(10, ChronoUnit.MINUTES));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(item));
+        when(cartService.get(cartId)).thenReturn(cartView(cartId, buyerId, 1000L, null));
+        when(ticketTypeRepository.findByIdAndDeletedAtIsNull(ticketTypeId)).thenReturn(Optional.of(ticketType(ticketTypeId, eventId)));
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event(eventId, orgId)));
+        when(organizationRepository.findById(orgId)).thenReturn(Optional.of(
+                com.junaldadlawan.event_ticketing_api.organization.entity.Organization.builder().id(orgId).currency("USD").build()));
+
+        assertThatThrownBy(() -> service.checkout(cartId, idempotencyKey, "tok_ok"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Payments in USD are not available yet");
+
+        verify(paymentGatewayClient, never()).charge(any(), any(), any(), any());
+        verify(orderRepository, never()).saveAndFlush(any());
         verify(idempotencyKeyManager).delete(idempotencyKey);
     }
 

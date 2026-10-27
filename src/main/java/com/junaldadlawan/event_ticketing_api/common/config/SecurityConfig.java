@@ -151,6 +151,8 @@ public class SecurityConfig {
                         // Announcements and sales: everyone reads them (like the public event list); writing and removing need a
                         // login and are admin-only (checked in PostServiceImpl).
                         .requestMatchers(HttpMethod.GET, "/api/v1/posts").permitAll()
+                        // the enabled countries and currencies every country/currency picker is built from (sign-up included)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform/regions").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/posts").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/posts/*").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/posts/*").authenticated()

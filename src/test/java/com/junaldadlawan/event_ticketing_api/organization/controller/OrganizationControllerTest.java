@@ -76,7 +76,7 @@ class OrganizationControllerTest {
         mockMvc.perform(post("/api/v1/organizations")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Acme Events","documents":[{"type":"business_permit","url":"https://docs/permit.pdf"}]}
+                                {"name":"Acme Events","country":"PH","documents":[{"type":"business_permit","url":"https://docs/permit.pdf"}]}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Acme Events"))
@@ -97,7 +97,7 @@ class OrganizationControllerTest {
         mockMvc.perform(post("/api/v1/organizations")
                         .contentType("application/json")
                         .content("""
-                                {"name":"","documents":[{"type":"business_permit","url":"https://docs/permit.pdf"}]}
+                                {"name":"","country":"PH","documents":[{"type":"business_permit","url":"https://docs/permit.pdf"}]}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
@@ -108,7 +108,7 @@ class OrganizationControllerTest {
         mockMvc.perform(post("/api/v1/organizations")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Acme Events","documents":[]}
+                                {"name":"Acme Events","country":"PH","documents":[]}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));

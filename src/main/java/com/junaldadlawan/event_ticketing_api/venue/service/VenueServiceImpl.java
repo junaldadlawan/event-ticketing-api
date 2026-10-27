@@ -9,6 +9,7 @@ import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationRole
 import com.junaldadlawan.event_ticketing_api.organization.enums.OrganizationStatus;
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
+import com.junaldadlawan.event_ticketing_api.region.service.RegionService;
 import com.junaldadlawan.event_ticketing_api.venue.dto.VenueCreateRequest;
 import com.junaldadlawan.event_ticketing_api.venue.dto.VenueUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.venue.entity.Venue;
@@ -31,8 +32,7 @@ public class VenueServiceImpl implements VenueService {
     private final VenueRepository venueRepository;
     private final OrganizationRepository organizationRepository;
     private final OrganizationAccessGuard accessGuard;
-
-    private static final Set<String> COUNTRY_CODES = Set.of(Locale.getISOCountries());
+    private final RegionService regionService;
 
     @Override
     public Venue create(UUID orgId, VenueCreateRequest request) {
@@ -150,17 +150,10 @@ public class VenueServiceImpl implements VenueService {
         }
     }
 
-    /** The upper-case ISO 3166-1 alpha-2 code, or a 400 for an unknown one. */
-    private static String country(String value) {
+    /** The upper-case code of an enabled platform country, or a 400. */
+    private String country(String value) {
         String trimmed = text("country", value, 200);
-        if (trimmed == null) {
-            return null;
-        }
-        String code = trimmed.toUpperCase(Locale.ROOT);
-        if (!COUNTRY_CODES.contains(code)) {
-            throw new BadRequestException("country must be an ISO 3166-1 alpha-2 country code such as PH");
-        }
-        return code;
+        return trimmed == null ? null : regionService.requireEnabledCountry(trimmed);
     }
 
     public Venue getOrThrow(UUID venueId) {

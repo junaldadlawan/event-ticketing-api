@@ -58,6 +58,9 @@ class OrganizationServiceImplTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.region.service.RegionService regionService;
+
     private OrganizationServiceImpl organizationService;
 
     private UUID orgId;
@@ -66,7 +69,7 @@ class OrganizationServiceImplTest {
     @BeforeEach
     void setUp() {
         organizationService = new OrganizationServiceImpl(organizationRepository, organizationMemberRepository, accessGuard, auditLogService,
-                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.user.repository.UserRepository.class));
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.user.repository.UserRepository.class), regionService);
         orgId = UUID.randomUUID();
         applicantId = UUID.randomUUID();
     }
@@ -94,7 +97,8 @@ class OrganizationServiceImplTest {
     @Test
     void apply_createsPendingOrganizationWithNoOwner() {
         OrganizationCreateRequest request = new OrganizationCreateRequest(
-                "Acme Events", List.of(new DocumentDto("business_permit", "https://docs/permit.pdf")));
+                "Acme Events", List.of(new DocumentDto("business_permit", "https://docs/permit.pdf")), "PH");
+        when(regionService.requireEnabledCountry("PH")).thenReturn("PH");
         when(organizationRepository.save(any(Organization.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Organization saved = organizationService.apply(request);
@@ -104,6 +108,8 @@ class OrganizationServiceImplTest {
         assertThat(saved.getName()).isEqualTo("Acme Events");
         assertThat(saved.getDocuments()).hasSize(1);
         assertThat(saved.getDocuments().getFirst().getType()).isEqualTo("business_permit");
+        assertThat(saved.getCountry()).isEqualTo("PH");
+        assertThat(saved.getCurrency()).isNull();   // fixed when approved
     }
 
     // ---- approve() : BR-ORG-003/004, UC-ADMIN-01 ----

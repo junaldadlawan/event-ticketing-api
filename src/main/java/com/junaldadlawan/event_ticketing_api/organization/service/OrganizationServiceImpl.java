@@ -22,6 +22,7 @@ import com.junaldadlawan.event_ticketing_api.organization.repository.Organizatio
 import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.organization.specification.OrganizationSpecification;
+import com.junaldadlawan.event_ticketing_api.region.service.RegionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final OrganizationAccessGuard accessGuard;
     private final AuditLogService auditLogService;
     private final UserRepository userRepository;
+    private final RegionService regionService;
 
     @Override
     public Organization apply(OrganizationCreateRequest request) {
@@ -56,6 +58,7 @@ public class OrganizationServiceImpl implements OrganizationService {
                 .contactPhone(blankToNull(request.contactPhone()))
                 .address(blankToNull(request.address()))
                 .description(blankToNull(request.description()))
+                .country(regionService.requireEnabledCountry(request.country()))
                 .build();
         Organization saved = organizationRepository.save(organization);
         auditLogService.recordByCurrentUser("organization.applied", "Organization", saved.getId(), null, saved.getId(),
@@ -114,6 +117,8 @@ public class OrganizationServiceImpl implements OrganizationService {
         organization.setStatus(OrganizationStatus.APPROVED);
         organization.setRevisionRequested(false);
         organization.setOwnerId(applicantId);
+        // fixed from now on: a later change to the country's currency doesn't touch it
+        organization.setCurrency(regionService.currencyOfCountry(organization.getCountry()));
         organizationRepository.save(organization);
 
         grantRole(applicantId, orgId, OrganizationRole.OWNER);
