@@ -220,6 +220,9 @@ public class CartServiceImpl implements CartService {
         if (ticketType.isSalesPaused()) {
             throw new ConflictException("Sales for this ticket type are paused");
         }
+        if (ticketType.isSuspended()) {
+            throw new ConflictException("Sales for this ticket type are suspended");
+        }
 
         if (now.isBefore(ticketType.getSaleStartAt()) || now.isAfter(ticketType.getSaleEndAt())) {
             throw new ConflictException("Ticket type is not currently on sale");

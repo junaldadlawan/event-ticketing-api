@@ -2436,6 +2436,8 @@ paths:
         check out once selling resumes). ACTIVE: normal selling again - the sale window and the event's status still
         decide whether it can actually be bought. Tickets already sold are untouched. Asking for the state it is
         already in is not an error. This is the same switch as `sales_paused` on the update.
+        While an admin has suspended the ticket type, ACTIVE is refused (409 "Suspended by an admin, contact support"); PAUSED is still allowed
+        and stays in place after the suspension is lifted.
       requestBody:
         required: true
         content:
@@ -2450,7 +2452,55 @@ paths:
         "400": { description: "Missing or unknown status" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/EventEnded" }
+        "409": { description: "The event has ended, or ACTIVE was asked for while the ticket type is suspended by an admin (\"Suspended by an admin, contact support\")." }
+
+  /ticket-types/{ticketTypeId}/suspension:
+    parameters:
+      - $ref: "#/components/parameters/TicketTypeId"
+    post:
+      operationId: suspendTicketType
+      tags: [TicketTypes]
+      summary: Suspend a ticket type (admin)
+      description: |
+        Buyers still see the ticket type, but it can no longer be added to a cart (409) and a cart that already holds it can no longer
+        check out (409, as for a paused one). Tickets already sold are untouched. The admin and the time are recorded; the organizer's own
+        pause state is separate and is not changed, and the organizer cannot resume selling until an admin lifts the suspension. Logged as
+        `ticket_type.suspended` with the reason in the details (capped at 500 characters there; the full reason stays on the ticket type).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000, description: "Shown to the event's organizers. Trimmed; no HTML." }
+      responses:
+        "200":
+          description: The suspended ticket type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The ticket type is already suspended. }
+    delete:
+      operationId: unsuspendTicketType
+      tags: [TicketTypes]
+      summary: Lift a ticket type's suspension (admin)
+      description: The organizer's own pause state is left as it was. Logged as `ticket_type.unsuspended`.
+      responses:
+        "200":
+          description: The ticket type, no longer suspended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The ticket type is not suspended. }
 
   /events/{eventId}/seatmap:
     parameters:
@@ -5264,6 +5314,9 @@ components:
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
         sales_paused: { type: boolean, description: "While true the type can not be added to a cart and a cart holding it can not check out. Set with PUT /ticket-types/{id}/sales-status." }
+        suspended: { type: boolean, description: "An admin suspended it (POST /ticket-types/{id}/suspension): buyers see it but cannot buy it, and only an admin lifts it. Separate from sales_paused." }
+        suspensionReason: { type: [string, "null"], description: "Why it was suspended. Only returned to the event's owner, organizers holding EVENTS and admins; null for everyone else and when not suspended." }
+        suspendedAt: { type: [string, "null"], format: date-time }
         color: { type: [string, "null"], pattern: "^#[0-9A-F]{6}$", description: "Display colour set by the organizer, uppercase #RRGGBB (e.g. #1A2B3C); buyers' tickets are tinted with it. Null = none (the app's default grey)." }
         max_per_user: { type: [integer, "null"], minimum: 1, description: "BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total, across all their orders. Null = unlimited." }
         position: { type: integer, minimum: 0, description: "Where it sits in the event's list (0 = first), as arranged by the organizer. The list endpoint returns ticket types in this order; new ones go to the end. Set with PUT /events/{id}/ticket-types/order." }
@@ -5459,7 +5512,7 @@ components:
         sale_start_at: { type: string, format: date-time }
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
-        sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged." }
+        sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged. false is refused while an admin has suspended the ticket type (409 \"Suspended by an admin, contact support\")." }
         color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit to leave unchanged; null clears it; anything else is a 400 with a field error. Logged as ticket_type.updated with before/after." }
         max_per_user: { type: [integer, "null"], minimum: 1, description: "Omit to leave unchanged; null = unlimited. The resulting max_per_order must not be more (400)." }
 

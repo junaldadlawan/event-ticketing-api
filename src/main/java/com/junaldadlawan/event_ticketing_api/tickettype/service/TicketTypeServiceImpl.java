@@ -189,6 +189,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
             ticketType.setColor(upper(request.color().orElse(null)));
         }
         if (request.salesPaused() != null) {
+            if (!request.salesPaused()) {
+                requireNotSuspended(ticketType);
+            }
             ticketType.setSalesPaused(request.salesPaused());
         }
         if (request.maxPerUser() != null) {
@@ -318,6 +321,9 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         requireOwnerOrOrganizerOrAdmin(event.getOrganizationId());
         EventCompletionService.requireNotEnded(event);
 
+        if (!paused) {
+            requireNotSuspended(ticketType);
+        }
         if (ticketType.isSalesPaused() == paused) {
             return ticketType;
         }
@@ -326,6 +332,57 @@ public class TicketTypeServiceImpl implements TicketTypeService {
         auditLogService.recordByCurrentUser(paused ? "ticket_type.sales_paused" : "ticket_type.sales_resumed",
                 "TicketType", ticketTypeId, ticketType.getEventId(), AuditDetails.named(ticketType.getName()));
         return saved;
+    }
+
+    @Override
+    @Transactional
+    public TicketType suspend(UUID ticketTypeId, String reason) {
+        accessGuard.requireAdmin();
+        TicketType ticketType = getOrThrow(ticketTypeId);
+        if (ticketType.isSuspended()) {
+            throw new ConflictException("This ticket type is already suspended");
+        }
+        ticketType.setSuspendedAt(Instant.now());
+        ticketType.setSuspendedBy(accessGuard.currentUserId());
+        ticketType.setSuspensionReason(reason.trim());
+        TicketType saved = ticketTypeRepository.save(ticketType);
+        Map<String, Object> details = AuditDetails.named(ticketType.getName());
+        details.putAll(AuditDetails.reason(saved.getSuspensionReason()));   // capped like every audit text; the full reason stays on the ticket type
+        auditLogService.recordByCurrentUser("ticket_type.suspended", "TicketType", ticketTypeId, ticketType.getEventId(), details);
+        return saved;
+    }
+
+    @Override
+    @Transactional
+    public TicketType unsuspend(UUID ticketTypeId) {
+        accessGuard.requireAdmin();
+        TicketType ticketType = getOrThrow(ticketTypeId);
+        if (!ticketType.isSuspended()) {
+            throw new ConflictException("This ticket type is not suspended");
+        }
+        ticketType.setSuspendedAt(null);
+        ticketType.setSuspendedBy(null);
+        ticketType.setSuspensionReason(null);
+        TicketType saved = ticketTypeRepository.save(ticketType);
+        auditLogService.recordByCurrentUser("ticket_type.unsuspended", "TicketType", ticketTypeId, ticketType.getEventId(), AuditDetails.named(ticketType.getName()));
+        return saved;
+    }
+
+    @Override
+    public boolean mayManage(UUID eventId) {
+        try {
+            requireOwnerOrOrganizerOrAdmin(getEventOrThrow(eventId).getOrganizationId());
+            return true;
+        } catch (ForbiddenException e) {   // includes an anonymous caller
+            return false;
+        }
+    }
+
+    /** The organizer's resume never lifts an admin's suspension. */
+    private static void requireNotSuspended(TicketType ticketType) {
+        if (ticketType.isSuspended()) {
+            throw new ConflictException("Suspended by an admin, contact support");
+        }
     }
 
     public TicketType getOrThrow(UUID ticketTypeId) {

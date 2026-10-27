@@ -256,6 +256,9 @@ public class CheckoutServiceImpl implements CheckoutService {
             if (heldType.isSalesPaused()) {
                 throw new ConflictException("Sales for ticket type '" + heldType.getName() + "' are paused");
             }
+            if (heldType.isSuspended()) {   // an admin's suspension stops a cart that already holds it, like a pause
+                throw new ConflictException("Sales for ticket type '" + heldType.getName() + "' are suspended");
+            }
             // BR-TICKET-LIMIT-001: checked again here, as other orders may have been paid since these were added to the cart
             int checkingOut = items.stream().filter(item -> item.getTicketTypeId().equals(heldType.getId()))
                     .mapToInt(CartItem::getQuantity).sum();
