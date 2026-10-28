@@ -37,9 +37,18 @@ public record OrganizationUpdateRequest(
 
         // replaces the organization's documents (at least one, at most DocumentDto.MAX_DOCUMENTS); for an approved organization an admin approves it
         @Size(max = DocumentDto.MAX_DOCUMENTS)
-        List<@Valid DocumentDto> documents) implements Serializable {
+        List<@Valid DocumentDto> documents,
+
+        // an enabled platform country (ISO 3166-1 alpha-2); the organization's currency stays the one fixed when it was approved
+        @Pattern(regexp = "[A-Za-z]{2}", message = "must be a 2-letter ISO 3166-1 country code")
+        String country) implements Serializable {
 
     public OrganizationUpdateRequest(String name, String contactEmail, String contactPhone, String address, String description) {
-        this(name, contactEmail, contactPhone, address, description, null);
+        this(name, contactEmail, contactPhone, address, description, null, null);
+    }
+
+    public OrganizationUpdateRequest(String name, String contactEmail, String contactPhone, String address, String description,
+                                     List<DocumentDto> documents) {
+        this(name, contactEmail, contactPhone, address, description, documents, null);
     }
 }

@@ -3,6 +3,7 @@ package com.junaldadlawan.event_ticketing_api.tickettype.dto;
 import com.junaldadlawan.event_ticketing_api.common.validation.NoHtml;
 import com.junaldadlawan.event_ticketing_api.tickettype.enums.TicketTypeKind;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -12,6 +13,7 @@ import jakarta.validation.constraints.Size;
 
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * DTO for {@link com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType}
@@ -41,7 +43,7 @@ public record TicketTypeCreateRequest(
         @Valid
         MoneyDto price,
 
-        @NotNull
+        /** Required unless the seats come from a seat layout (layoutId with sectionId / wholeLayout): then it is the number of seats copied and this is ignored. */
         @Positive
         Integer quantityTotal,
 
@@ -58,17 +60,42 @@ public record TicketTypeCreateRequest(
 
         /** BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total; null = unlimited. */
         @Min(1)
-        Integer maxPerUser) implements Serializable {
+        Integer maxPerUser,
+
+        /** RESERVED_SEATING only: the organization seat layout to copy seats from, with sectionId or wholeLayout. */
+        UUID layoutId,
+
+        /** RESERVED_SEATING only: copy the seats of this section of the layout (a snapshot). */
+        UUID sectionId,
+
+        /** RESERVED_SEATING only: copy the seats of every section of the layout. Not together with sectionId. */
+        Boolean wholeLayout) implements Serializable {
+
+    /** A create without a layout to copy seats from. */
+    public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
+                                   Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder, String color, Integer maxPerUser) {
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, color, maxPerUser, null, null, null);
+    }
+
+    /** True when this create takes its seats (and so its quantity) from a seat layout. */
+    public boolean fromLayout() {
+        return layoutId != null || sectionId != null || Boolean.TRUE.equals(wholeLayout);
+    }
+
+    @AssertTrue(message = "quantityTotal is required unless the seats are copied from a seat layout (layoutId with sectionId or wholeLayout)")
+    public boolean isQuantityTotalGiven() {
+        return quantityTotal != null || fromLayout();
+    }
 
     /** A create without a per-buyer limit. */
     public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
                                    Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder, String color) {
-        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, color, null);
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, color, null, null, null, null);
     }
 
     /** A create without a colour or per-buyer limit. */
     public TicketTypeCreateRequest(String name, TicketTypeKind kind, MoneyDto price, Integer quantityTotal,
                                    Instant saleStartAt, Instant saleEndAt, Integer maxPerOrder) {
-        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null, null);
+        this(name, kind, price, quantityTotal, saleStartAt, saleEndAt, maxPerOrder, null, null, null, null, null);
     }
 }

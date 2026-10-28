@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
 public class ImageStorageService {
 
     /** The bucket's top-level folders (event-ticketing-media); every new upload goes in one of them. */
-    public static final Set<String> FOLDERS = Set.of("events", "organizations", "platform", "temporary", "tickets", "users");
+    public static final Set<String> FOLDERS = Set.of("events", "organizations", "platform", "temporary", "tickets", "users", "venues");
 
     /** Where an upload goes when the client does not say what it is for. */
     public static final String DEFAULT_FOLDER = "temporary";

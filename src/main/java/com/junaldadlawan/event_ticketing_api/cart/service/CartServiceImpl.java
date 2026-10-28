@@ -220,6 +220,9 @@ public class CartServiceImpl implements CartService {
         if (ticketType.isSalesPaused()) {
             throw new ConflictException("Sales for this ticket type are paused");
         }
+        if (ticketType.isSuspended()) {
+            throw new ConflictException("Sales for this ticket type are suspended");
+        }
 
         if (now.isBefore(ticketType.getSaleStartAt()) || now.isAfter(ticketType.getSaleEndAt())) {
             throw new ConflictException("Ticket type is not currently on sale");
@@ -320,6 +323,10 @@ public class CartServiceImpl implements CartService {
                 .orElseThrow(() -> new ResourceNotFoundException("Seat map for seat " + seat.getId() + " not found"));
         if (!seatMap.getEventId().equals(ticketType.getEventId())) {
             throw new BadRequestException("Seat does not belong to this ticket type's event");
+        }
+        // a seat copied from a venue layout is sold under the ticket type it was copied for (so a VIP seat cannot be bought with a cheaper type)
+        if (seat.getTicketTypeId() != null && !seat.getTicketTypeId().equals(ticketType.getId())) {
+            throw new BadRequestException("Seat belongs to another ticket type");
         }
         // BR-TICKET-LIMIT-001: each seat is one more ticket of this type
         int seatsInCart = cartItemRepository.findByCartId(cart.getId()).stream()

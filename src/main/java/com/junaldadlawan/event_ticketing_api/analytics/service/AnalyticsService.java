@@ -25,6 +25,9 @@ public interface AnalyticsService {
      */
     EventFunnelResponse getEventFunnel(UUID eventId, java.time.LocalDate from, java.time.LocalDate to);
 
+    /** The share counters per day (in the event's time zone) from {@code from} to {@code to}, with a row for every day. Same access as the other event analytics. */
+    com.junaldadlawan.event_ticketing_api.analytics.dto.ShareTimelineResponse getEventShareTimeline(UUID eventId, java.time.LocalDate from, java.time.LocalDate to);
+
     /** {@code GET /analytics/platform} (BR-ANALYTICS-002) - admin only. */
     PlatformAnalyticsResponse getPlatformAnalytics();
 }

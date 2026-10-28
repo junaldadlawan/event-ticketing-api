@@ -3,6 +3,8 @@ package com.junaldadlawan.event_ticketing_api.seatmap.dto;
 import com.junaldadlawan.event_ticketing_api.seatmap.entity.Seat;
 import com.junaldadlawan.event_ticketing_api.seatmap.enums.SeatStatus;
 
+import com.junaldadlawan.event_ticketing_api.venue.layout.VenueLayout;
+
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
@@ -17,6 +19,13 @@ public record SeatResponse(
         String row,
         String seatNumber,
         SeatStatus status,
+        UUID sectionId,
+        UUID ticketTypeId,
+        Double x,
+        Double y,
+        VenueLayout.SeatType type,
+        String sectionColor,
+        VenueLayout.SectionKind sectionKind,
         Instant createdAt,
         Instant updatedAt) implements Serializable {
 
@@ -27,6 +36,13 @@ public record SeatResponse(
                 seat.getRow(),
                 seat.getSeatNumber(),
                 seat.getStatus(),
+                seat.getLayoutSectionId(),
+                seat.getTicketTypeId(),
+                seat.getX(),
+                seat.getY(),
+                seat.getSeatType(),
+                seat.getSectionColor(),
+                seat.getSectionKind(),
                 seat.getCreatedAt(),
                 seat.getUpdatedAt());
     }

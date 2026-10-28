@@ -14,6 +14,8 @@ import java.util.UUID;
 public interface SeatRepository extends JpaRepository<Seat, UUID> {
     List<Seat> findBySeatMapId(UUID seatMapId);
 
+    boolean existsBySeatMapIdAndLayoutSectionIdIn(UUID seatMapId, java.util.Collection<UUID> layoutSectionIds);
+
     /**
      * Row-locking finder (Phase 5a cart/hold concurrency). Used by
      * {@code CartServiceImpl} to serialize concurrent reserved-seating

@@ -48,6 +48,8 @@ public class SecurityConfig {
                         // BR-ANALYTICS-003: a visitor opening a public event page is recorded with or without an account. It only ever
                         // answers 204 and is rate-limited per client (EventViewServiceImpl); a bearer token, when sent, is still read.
                         .requestMatchers(HttpMethod.POST, "/api/v1/events/*/views").permitAll()
+                        // Share tracking: the button click and the opening of a short link are counted for anyone; neither reads or stores anything about the caller.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/events/*/share-clicks", "/api/v1/events/*/share-buy-clicks", "/api/v1/share-links/*/open").permitAll()
                         // Must precede the broader GET /api/v1/events/** permitAll
                         // matcher below (Spring Security matches in declaration
                         // order, first match wins) - promo-code listing is
@@ -149,6 +151,8 @@ public class SecurityConfig {
                         // Announcements and sales: everyone reads them (like the public event list); writing and removing need a
                         // login and are admin-only (checked in PostServiceImpl).
                         .requestMatchers(HttpMethod.GET, "/api/v1/posts").permitAll()
+                        // the enabled countries and currencies every country/currency picker is built from (sign-up included)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform/regions").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/posts").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/posts/*").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/posts/*").authenticated()
@@ -165,6 +169,9 @@ public class SecurityConfig {
                         // tickets; uploading itself needs a login (anyRequest().authenticated()).
                         .requestMatchers(HttpMethod.GET, "/api/v1/uploads/files/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/uploads").authenticated()
+                        // the seat layout is for the organization's members and admins, unlike the public venue itself
+                        .requestMatchers(HttpMethod.GET, "/api/v1/venues/*/layout").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/venues/*/layout").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/venues/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/venues/**").authenticated()
                         // /api/v1/events/**'s existing GET permitAll already covers

@@ -28,6 +28,7 @@ organization's events only.
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | **Everyday use** | | | | | | | | |
 | Browse public events, categories and live posts | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Read the enabled countries and currencies (`GET /platform/regions`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Register and log in | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Buy tickets (cart and checkout) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Transfer, resell, waitlist, raise a dispute on own tickets | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
@@ -64,6 +65,7 @@ organization's events only.
 | List what can be paid out and generate payouts in a batch | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Set platform fee rules, generate payouts | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Set the payment gateway fee and who pays it (customer, organization or platform) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Enable or disable platform currencies and countries, refresh exchange rates | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Platform analytics, audit log, handle disputes | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Read the organization's events in any status, their ticket types, check-in config and a ticket's scan records (read only) | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Download the scanner app (APK) | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |

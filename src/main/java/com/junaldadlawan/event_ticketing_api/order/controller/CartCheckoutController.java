@@ -1,6 +1,9 @@
 package com.junaldadlawan.event_ticketing_api.order.controller;
 
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
+import com.junaldadlawan.event_ticketing_api.common.exception.TooManyRequestsException;
+import com.junaldadlawan.event_ticketing_api.common.ratelimit.RateLimiter;
+import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.order.dto.CheckoutRequest;
 import com.junaldadlawan.event_ticketing_api.order.dto.CheckoutStartResponse;
 import com.junaldadlawan.event_ticketing_api.order.dto.OrderResponse;
@@ -8,6 +11,7 @@ import com.junaldadlawan.event_ticketing_api.order.service.CheckoutService;
 import com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,6 +39,12 @@ public class CartCheckoutController {
 
     private final CheckoutService checkoutService;
     private final PaymentMethodService paymentMethodService;
+    private final RateLimiter rateLimiter;
+    private final OrganizationAccessGuard accessGuard;
+
+    // BR-NFR-004: cap checkout attempts per buyer to deter payment-testing/scalping automation.
+    @Value("${app.ratelimit.checkout-per-minute:15}")
+    private int checkoutPerMinute;
 
     /**
      * With the mock or Stripe gateway this charges at once and answers 201 with the order. With PayMongo the card is entered in the
@@ -45,6 +55,9 @@ public class CartCheckoutController {
     public ResponseEntity<Object> checkout(@PathVariable UUID cartId,
                                            @RequestHeader("Idempotency-Key") UUID idempotencyKey,
                                            @Valid @RequestBody(required = false) CheckoutRequest request) {
+        if (!rateLimiter.tryAcquire("checkout", accessGuard.currentUserId().toString(), checkoutPerMinute)) {
+            throw new TooManyRequestsException("Too many checkout attempts. Try again in a minute.");
+        }
         if (checkoutService.isAsynchronous()) {
             List<UUID> itemIds = request == null ? null : request.itemIds();
             if (request != null && request.paymentMethodId() != null) {

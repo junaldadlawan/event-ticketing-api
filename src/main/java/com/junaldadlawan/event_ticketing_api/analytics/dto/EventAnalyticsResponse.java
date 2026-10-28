@@ -16,5 +16,13 @@ public record EventAnalyticsResponse(
         int ticketsSold,
         MoneyDto revenue,
         int remainingInventory,
-        List<SalesOverTimeEntry> salesOverTime) implements Serializable {
+        List<SalesOverTimeEntry> salesOverTime,
+        long shareClicks,
+        long shareCopies,
+        long shareQrs,
+        long shareOpens,
+        long shareLinkOpens,
+        long shareQrScans,
+        long shareLinkBuys,
+        long shareQrBuys) implements Serializable {
 }

@@ -35,4 +35,16 @@ public interface TicketTypeService {
      * changes nothing.
      */
     TicketType setSalesStatus(UUID ticketTypeId, SalesStatus status);
+
+    /**
+     * Admin only: suspends the ticket type with a reason the organizer sees. Like a pause it stops carts and checkout (tickets already sold are
+     * untouched), but the organizer cannot resume it. 409 when already suspended.
+     */
+    TicketType suspend(UUID ticketTypeId, String reason);
+
+    /** Admin only: lifts the suspension; the organizer's own pause state is left as it was. 409 when not suspended. */
+    TicketType unsuspend(UUID ticketTypeId);
+
+    /** True when the caller may manage the event's ticket types (its owner, an organizer holding EVENTS, or an admin); false for anyone else. */
+    boolean mayManage(UUID eventId);
 }

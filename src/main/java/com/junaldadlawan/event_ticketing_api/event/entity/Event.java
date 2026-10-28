@@ -41,6 +41,10 @@ public class Event extends Auditable {
     @Column(name = "venue_id")
     private UUID venueId;
 
+    /** The organization seat layout its reserved seats were copied from (set by the first ticket type that copies seats). */
+    @Column(name = "layout_id")
+    private UUID layoutId;
+
     @Column(name = "start_time", nullable = false)
     private Instant startAt;
 
@@ -76,4 +80,30 @@ public class Event extends Auditable {
 
     @Column(name = "ticket_prefix", nullable = false, length = 3)
     private String ticketPrefix;
+
+    // Share tracking. Read-only for JPA on purpose: saving an event must never write back an old counter, so only the
+    // repository's atomic updates (ShareCounterRepository, EventRepository.assignShareCode) change these columns.
+    @Column(name = "share_code", insertable = false, updatable = false)
+    private String shareCode;
+
+    @Column(name = "share_click_count", insertable = false, updatable = false)
+    private long shareClickCount;
+
+    @Column(name = "share_copy_count", insertable = false, updatable = false)
+    private long shareCopyCount;
+
+    @Column(name = "share_qr_count", insertable = false, updatable = false)
+    private long shareQrCount;
+
+    @Column(name = "share_link_open_count", insertable = false, updatable = false)
+    private long shareLinkOpenCount;
+
+    @Column(name = "share_qr_scan_count", insertable = false, updatable = false)
+    private long shareQrScanCount;
+
+    @Column(name = "share_link_buy_count", insertable = false, updatable = false)
+    private long shareLinkBuyCount;
+
+    @Column(name = "share_qr_buy_count", insertable = false, updatable = false)
+    private long shareQrBuyCount;
 }

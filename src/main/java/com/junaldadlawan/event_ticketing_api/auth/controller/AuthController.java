@@ -6,11 +6,15 @@ import com.junaldadlawan.event_ticketing_api.auth.dto.LogoutRequest;
 import com.junaldadlawan.event_ticketing_api.auth.dto.RefreshRequest;
 import com.junaldadlawan.event_ticketing_api.auth.dto.TokenPairResponse;
 import com.junaldadlawan.event_ticketing_api.auth.service.AuthService;
+import com.junaldadlawan.event_ticketing_api.common.exception.TooManyRequestsException;
+import com.junaldadlawan.event_ticketing_api.common.ratelimit.RateLimiter;
 import com.junaldadlawan.event_ticketing_api.user.dto.RegisterRequest;
 import com.junaldadlawan.event_ticketing_api.user.dto.UserResponse;
 import com.junaldadlawan.event_ticketing_api.user.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,6 +30,11 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserService userService;
+    private final RateLimiter rateLimiter;
+
+    // BR-NFR-004: cap login attempts per caller IP to deter credential stuffing (a shared IP is deliberate - one source can't hammer many accounts).
+    @Value("${app.ratelimit.login-per-minute:10}")
+    private int loginPerMinute;
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
@@ -34,7 +43,10 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public TokenPairResponse login(@Valid @RequestBody LoginRequest request) {
+    public TokenPairResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+        if (!rateLimiter.tryAcquire("login", RateLimiter.clientIp(http), loginPerMinute)) {
+            throw new TooManyRequestsException("Too many login attempts. Try again in a minute.");
+        }
         return authService.login(request);
     }
 

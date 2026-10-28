@@ -40,6 +40,8 @@ import com.junaldadlawan.event_ticketing_api.order.repository.CheckoutIdempotenc
 import com.junaldadlawan.event_ticketing_api.order.repository.OrderRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.PaymentRepository;
 import com.junaldadlawan.event_ticketing_api.order.repository.PendingCheckoutRepository;
+import com.junaldadlawan.event_ticketing_api.organization.entity.Organization;
+import com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository;
 import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.enums.GatewayFeeCardOrigin;
 import com.junaldadlawan.event_ticketing_api.gatewayfee.service.GatewayFeeQuote;
@@ -105,6 +107,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final TicketTypeRepository ticketTypeRepository;
     private final SeatRepository seatRepository;
     private final EventRepository eventRepository;
+    private final OrganizationRepository organizationRepository;
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final CheckoutIdempotencyKeyRepository idempotencyKeyRepository;
@@ -125,6 +128,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final CardVaultingStatus cardVaultingStatus;
     private final TicketTypeBuyerLimit ticketTypeBuyerLimit;
     private final com.junaldadlawan.event_ticketing_api.analytics.service.CartActivityRecorder cartActivityRecorder;
+    private static final String PAYABLE_CURRENCY = "PHP";
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -256,6 +260,9 @@ public class CheckoutServiceImpl implements CheckoutService {
             if (heldType.isSalesPaused()) {
                 throw new ConflictException("Sales for ticket type '" + heldType.getName() + "' are paused");
             }
+            if (heldType.isSuspended()) {   // an admin's suspension stops a cart that already holds it, like a pause
+                throw new ConflictException("Sales for ticket type '" + heldType.getName() + "' are suspended");
+            }
             // BR-TICKET-LIMIT-001: checked again here, as other orders may have been paid since these were added to the cart
             int checkingOut = items.stream().filter(item -> item.getTicketTypeId().equals(heldType.getId()))
                     .mapToInt(CartItem::getQuantity).sum();
@@ -304,6 +311,11 @@ public class CheckoutServiceImpl implements CheckoutService {
         // BR-EVENT-005: refused before charging; in the payment webhook this throws, and the payment is refunded
         EventCompletionService.requireNotEnded(event);
         UUID payeeId = event.getOrganizationId();
+        // other currencies are set up and shown already, but only PHP can be paid in for now
+        String currency = organizationRepository.findById(payeeId).map(Organization::getCurrency).orElse(null);
+        if (currency != null && !PAYABLE_CURRENCY.equals(currency)) {
+            throw new ConflictException("Payments in " + currency + " are not available yet");
+        }
 
         // The platform fee is added on top of the ticket price: the buyer is charged ticket total + fee, the organizer
         // keeps the ticket total (the fee is deducted from the organizer's side when the payout is generated).

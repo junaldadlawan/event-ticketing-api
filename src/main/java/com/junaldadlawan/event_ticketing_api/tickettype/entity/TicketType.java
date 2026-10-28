@@ -80,6 +80,22 @@ public class TicketType extends Auditable {
     @Column(name = "sales_paused", nullable = false)
     private boolean salesPaused;
 
+    /** Set while an admin has suspended the ticket type: like a pause, but only an admin lifts it. Null = not suspended. */
+    @Column(name = "suspended_at")
+    private Instant suspendedAt;
+
+    /** The admin who suspended it. */
+    @Column(name = "suspended_by")
+    private UUID suspendedBy;
+
+    /** Why, shown to the organizer. */
+    @Column(name = "suspension_reason", length = 1000)
+    private String suspensionReason;
+
+    public boolean isSuspended() {
+        return suspendedAt != null;
+    }
+
     /** Display colour "#RRGGBB" (uppercase) buyers' tickets are tinted with; null = none. */
     @Column(name = "color", length = 7)
     private String color;

@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.seatmap.entity;
 
 import com.junaldadlawan.event_ticketing_api.seatmap.enums.SeatStatus;
+import com.junaldadlawan.event_ticketing_api.venue.layout.VenueLayout;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -57,6 +58,33 @@ public class Seat {
     @Builder.Default
     @Column(name = "status", nullable = false, length = 20)
     private SeatStatus status = SeatStatus.AVAILABLE;
+
+    // Seats copied from a venue's seat layout (see LayoutSeatCopier); all null on seats that were not.
+    /** The ticket type this seat is sold under; a reserved-seating buyer can only pick seats of the ticket type they add to the cart. */
+    @Column(name = "ticket_type_id")
+    private UUID ticketTypeId;
+
+    /** The id of the layout section the seat came from. */
+    @Column(name = "layout_section_id")
+    private UUID layoutSectionId;
+
+    /** Where the seat is on the plan (the plan's own units, the section's position and turn already applied). */
+    @Column(name = "x")
+    private Double x;
+
+    @Column(name = "y")
+    private Double y;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "seat_type", length = 20)
+    private VenueLayout.SeatType seatType;
+
+    @Column(name = "section_color", length = 7)
+    private String sectionColor;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "section_kind", length = 20)
+    private VenueLayout.SectionKind sectionKind;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)

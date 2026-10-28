@@ -130,7 +130,7 @@ class OrganizationMineIntegrationTest {
     @Test
     void anApplicantSeesTheirPendingAndRejectedApplications() throws Exception {
         User applicant = user(Role.CUSTOMER);
-        String body = "{\"name\":\"Applicant Org %s\",\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/permit.pdf\"}]}";
+        String body = "{\"name\":\"Applicant Org %s\",\"country\":\"PH\",\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/permit.pdf\"}]}";
         UUID pending = applied(applicant, body.formatted(UUID.randomUUID()));
         UUID rejected = applied(applicant, body.formatted(UUID.randomUUID()));
         mockMvc.perform(post("/api/v1/organizations/{id}/reject", rejected).header("Authorization", token(user(Role.ADMIN)))
@@ -157,7 +157,7 @@ class OrganizationMineIntegrationTest {
     @Test
     void anApplicantWhoIsAlsoAMemberSeesTheOrganizationOnce() throws Exception {
         User applicant = user(Role.CUSTOMER);
-        UUID id = applied(applicant, "{\"name\":\"Both Org %s\",\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/permit.pdf\"}]}"
+        UUID id = applied(applicant, "{\"name\":\"Both Org %s\",\"country\":\"PH\",\"documents\":[{\"type\":\"business_permit\",\"url\":\"https://docs/permit.pdf\"}]}"
                 .formatted(UUID.randomUUID()));
         member(applicant, id, OrganizationRole.OWNER);
 

@@ -38,4 +38,18 @@ public class SeatMap extends Auditable {
 
     @Column(name = "event_id", nullable = false)
     private UUID eventId;
+
+    // The venue layout the seats were copied from, kept as a snapshot for the buyers' plan (null when the seats were not copied from a layout).
+    @Column(name = "layout_version")
+    private Integer layoutVersion;
+
+    @Column(name = "layout_width")
+    private Double layoutWidth;
+
+    @Column(name = "layout_height")
+    private Double layoutHeight;
+
+    /** The layout's shapes (stage, labels, walls) as JSON. */
+    @Column(name = "layout_shapes")
+    private String layoutShapes;
 }

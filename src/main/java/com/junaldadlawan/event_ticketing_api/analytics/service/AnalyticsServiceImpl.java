@@ -5,6 +5,8 @@ import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAnalyticsRespons
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventAudienceResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventSalesPatternsResponse;
 import com.junaldadlawan.event_ticketing_api.analytics.dto.EventFunnelResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.dto.ShareTimelineResponse;
+import com.junaldadlawan.event_ticketing_api.analytics.repository.ShareCounterRepository;
 import com.junaldadlawan.event_ticketing_api.analytics.repository.EventInsightsRepository;
 import com.junaldadlawan.event_ticketing_api.analytics.repository.FunnelRepository;
 import com.junaldadlawan.event_ticketing_api.common.exception.BadRequestException;
@@ -72,6 +74,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     private final OrganizationAccessGuard accessGuard;
     private final EventInsightsRepository insightsRepository;
     private final FunnelRepository funnelRepository;
+    private final ShareCounterRepository shareCounterRepository;
 
     static final int MAX_FUNNEL_DAYS = 366;
 
@@ -97,7 +100,9 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<SalesOverTimeEntry> salesOverTime = buildSalesOverTime(eventId, orderIds, currency);
 
         return new EventAnalyticsResponse(eventId, (int) ticketsSold, new MoneyDto(revenueAmount, currency),
-                remainingInventory, salesOverTime);
+                remainingInventory, salesOverTime, event.getShareClickCount(), event.getShareCopyCount(),
+                event.getShareQrCount(), event.getShareLinkOpenCount() + event.getShareQrScanCount(), event.getShareLinkOpenCount(),
+                event.getShareQrScanCount(), event.getShareLinkBuyCount(), event.getShareQrBuyCount());
     }
 
     @Override
@@ -249,6 +254,52 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     private static long quantity(Map<String, FunnelRepository.ActivityTotal> byAction, String action) {
         FunnelRepository.ActivityTotal total = byAction.get(action);
         return total == null ? 0 : total.quantity();
+    }
+
+    @Override
+    public ShareTimelineResponse getEventShareTimeline(UUID eventId, LocalDate from, LocalDate to) {
+        Event event = requireEventAccess(eventId);
+        String timezone = event.getTimezone() == null || event.getTimezone().isBlank() ? "UTC" : event.getTimezone();
+        ZoneId zone = ZoneId.of(timezone);
+        LocalDate end = to != null ? to : LocalDate.now(zone);
+        LocalDate trackingSince = shareCounterRepository.firstDay(eventId);
+        LocalDate start = from;
+        if (start == null) {
+            // default: the day counting began (else the event's creation), never more than the longest range allowed
+            start = trackingSince != null ? trackingSince
+                    : event.getCreatedAt() == null ? end : event.getCreatedAt().atZone(zone).toLocalDate();
+            if (start.isAfter(end)) {
+                start = end;
+            }
+            if (start.plusDays(MAX_FUNNEL_DAYS - 1L).isBefore(end)) {
+                start = end.minusDays(MAX_FUNNEL_DAYS - 1L);
+            }
+        }
+        if (start.isAfter(end)) {
+            throw new BadRequestException("from must not be after to");
+        }
+        if (start.plusDays(MAX_FUNNEL_DAYS - 1L).isBefore(end)) {
+            throw new BadRequestException("The range must not be longer than " + MAX_FUNNEL_DAYS + " days");
+        }
+        Map<LocalDate, ShareCounterRepository.Day> rows = new HashMap<>();
+        shareCounterRepository.days(eventId, start, end).forEach(row -> rows.put(row.day(), row));
+        List<ShareTimelineResponse.Day> days = new ArrayList<>();
+        for (LocalDate day = start; !day.isAfter(end); day = day.plusDays(1)) {
+            ShareCounterRepository.Day row = rows.get(day);
+            days.add(row == null ? new ShareTimelineResponse.Day(day, 0, 0, 0, 0, 0, 0, 0)
+                    : new ShareTimelineResponse.Day(day, row.shareButton(), row.copyLink(), row.qrGenerate(), row.linkOpen(), row.qrScan(),
+                            row.linkBuy(), row.qrBuy()));
+        }
+        Map<Integer, ShareCounterRepository.Hour> hourRows = new HashMap<>();
+        shareCounterRepository.hours(eventId, start, end).forEach(row -> hourRows.put(row.hour(), row));
+        List<ShareTimelineResponse.Hour> byHour = new ArrayList<>();
+        for (int hour = 0; hour < 24; hour++) {
+            ShareCounterRepository.Hour row = hourRows.get(hour);
+            byHour.add(row == null ? new ShareTimelineResponse.Hour(hour, 0, 0, 0, 0, 0, 0, 0)
+                    : new ShareTimelineResponse.Hour(hour, row.shareButton(), row.copyLink(), row.qrGenerate(), row.linkOpen(), row.qrScan(),
+                            row.linkBuy(), row.qrBuy()));
+        }
+        return new ShareTimelineResponse(timezone, trackingSince, days, byHour);
     }
 
     private Event requireEventAccess(UUID eventId) {

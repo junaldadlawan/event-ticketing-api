@@ -54,6 +54,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -66,6 +67,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -83,6 +85,8 @@ class CheckoutIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     @Autowired
     private JwtService jwtService;
     @Autowired
@@ -788,6 +792,116 @@ class CheckoutIntegrationTest {
         putSalesStatus(ownerToken, UUID.randomUUID(), "PAUSED").andExpect(status().isNotFound());
         putSalesStatus(ownerToken, ticketTypeId, "ON_SALE").andExpect(status().isBadRequest());
         putSalesStatus(ownerToken, ticketTypeId, "").andExpect(status().isBadRequest());
+    }
+
+    // ---- an admin's suspension (POST / DELETE /ticket-types/{id}/suspension) ----
+
+    private org.springframework.test.web.servlet.ResultActions suspend(String token, UUID ticketTypeId, String body) throws Exception {
+        return mockMvc.perform(post("/api/v1/ticket-types/{id}/suspension", ticketTypeId)
+                .header("Authorization", "Bearer " + token).contentType("application/json").content(body));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions unsuspend(String token, UUID ticketTypeId) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .delete("/api/v1/ticket-types/{id}/suspension", ticketTypeId).header("Authorization", "Bearer " + token));
+    }
+
+    @Test
+    void suspension_blocksCartAndCheckout_theOrganizerCannotResume_andOnlyAnAdminLiftsIt() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        User buyer = inMemoryUser(Role.CUSTOMER);
+        User admin = inMemoryUser(Role.ADMIN);
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+        String ownerToken = jwtService.generateAccessToken(owner);
+        String adminToken = jwtService.generateAccessToken(admin);
+        String buyerToken = jwtService.generateAccessToken(buyer);
+        UUID cartId = createCart(buyerToken);
+        addGaItem(buyerToken, cartId, ticketTypeId);
+
+        suspend(adminToken, ticketTypeId, "{\"reason\":\"  Misleading ticket name  \"}").andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.suspended").value(true))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.suspensionReason").value("Misleading ticket name"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.salesPaused").value(false));
+        suspend(adminToken, ticketTypeId, "{\"reason\":\"again\"}").andExpect(status().isConflict());
+        var stored = ticketTypeRepository.findById(ticketTypeId).orElseThrow();
+        assertThat(stored.getSuspendedBy()).isEqualTo(admin.getId());
+        assertThat(stored.getSuspendedAt()).isNotNull();
+
+        // a cart already holding it cannot check out, and nothing is charged
+        UUID key = UUID.randomUUID();
+        createdIdempotencyKeyIds.add(key);
+        MvcResult blocked = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(blocked.getResponse().getStatus()).isEqualTo(409);
+        assertThat(blocked.getResponse().getContentAsString()).contains("suspended");
+        assertThat(orderRepository.findByCartId(cartId)).isEmpty();
+        // it cannot be added to a cart either
+        String otherBuyerToken = jwtService.generateAccessToken(inMemoryUser(Role.CUSTOMER));
+        UUID otherCartId = createCart(otherBuyerToken);
+        mockMvc.perform(post("/api/v1/carts/{cartId}/items", otherCartId).header("Authorization", "Bearer " + otherBuyerToken)
+                        .contentType("application/json").content("{\"ticketTypeId\":\"" + ticketTypeId + "\",\"quantity\":1}"))
+                .andExpect(status().isConflict());
+
+        // buyers still see it, without the reason; the organizer sees the reason
+        mockMvc.perform(get("/api/v1/ticket-types/{id}", ticketTypeId)).andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.suspended").value(true))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.suspensionReason").doesNotExist());
+        mockMvc.perform(get("/api/v1/events/{id}/ticket-types", eventId).header("Authorization", "Bearer " + buyerToken))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].suspensionReason").doesNotExist());
+        mockMvc.perform(get("/api/v1/events/{id}/ticket-types", eventId).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].suspensionReason").value("Misleading ticket name"));
+
+        // the organizer can pause, but neither resume route lifts the suspension
+        putSalesStatus(ownerToken, ticketTypeId, "PAUSED").andExpect(status().isOk());
+        putSalesStatus(ownerToken, ticketTypeId, "ACTIVE").andExpect(status().isConflict())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.detail").value("Suspended by an admin, contact support"));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/ticket-types/{id}", ticketTypeId)
+                        .header("Authorization", "Bearer " + ownerToken).contentType("application/json").content("{\"salesPaused\":false}"))
+                .andExpect(status().isConflict());
+        assertThat(ticketTypeRepository.findById(ticketTypeId).orElseThrow().isSalesPaused()).isTrue();
+
+        // lifting it leaves the organizer's own pause in place
+        unsuspend(ownerToken, ticketTypeId).andExpect(status().isForbidden());
+        unsuspend(adminToken, ticketTypeId).andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.suspended").value(false))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.suspensionReason").doesNotExist())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.salesPaused").value(true));
+        unsuspend(adminToken, ticketTypeId).andExpect(status().isConflict());
+
+        // once the organizer resumes, the same cart and key check out
+        putSalesStatus(ownerToken, ticketTypeId, "ACTIVE").andExpect(status().isOk());
+        MvcResult paid = checkout(buyerToken, cartId, key, "tok_ok");
+        assertThat(paid.getResponse().getStatus()).isEqualTo(201);
+        trackOrderAndPaymentFromResponse(paid);
+    }
+
+    @Test
+    void suspension_isAdminOnly_needsAReason_andIsLogged() throws Exception {
+        User owner = inMemoryUser(Role.CUSTOMER);
+        String adminToken = jwtService.generateAccessToken(inMemoryUser(Role.ADMIN));
+        UUID orgId = persistOrganization(owner.getId());
+        grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
+        UUID eventId = persistEvent(orgId, EventStatus.PUBLISHED);
+        UUID ticketTypeId = persistGaTicketType(eventId, 5);
+
+        suspend(jwtService.generateAccessToken(owner), ticketTypeId, "{\"reason\":\"mine\"}").andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/ticket-types/{id}/suspension", ticketTypeId).contentType("application/json").content("{\"reason\":\"x\"}"))
+                .andExpect(status().isUnauthorized());
+        suspend(adminToken, ticketTypeId, "{}").andExpect(status().isBadRequest());
+        suspend(adminToken, ticketTypeId, "{\"reason\":\"   \"}").andExpect(status().isBadRequest());
+        suspend(adminToken, ticketTypeId, "{\"reason\":\"" + "x".repeat(1001) + "\"}").andExpect(status().isBadRequest());
+        suspend(adminToken, UUID.randomUUID(), "{\"reason\":\"x\"}").andExpect(status().isNotFound());
+        assertThat(ticketTypeRepository.findById(ticketTypeId).orElseThrow().isSuspended()).isFalse();
+
+        suspend(adminToken, ticketTypeId, "{\"reason\":\"" + "y".repeat(1000) + "\"}").andExpect(status().isOk());
+        unsuspend(adminToken, ticketTypeId).andExpect(status().isOk());
+
+        List<Map<String, Object>> entries = jdbcTemplate.queryForList(
+                "select action, details->>'reason' reason from audit_log_entries where target_id = ? order by created_at", ticketTypeId);
+        assertThat(entries).extracting(entry -> entry.get("action")).containsExactly("ticket_type.suspended", "ticket_type.unsuspended");
+        assertThat((String) entries.get(0).get("reason")).startsWith("yyy");
     }
 
     // ---- editing, pausing and deleting promo codes (PATCH / PUT status / DELETE /promo-codes/{id}) ----

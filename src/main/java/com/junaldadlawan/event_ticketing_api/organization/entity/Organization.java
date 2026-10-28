@@ -61,6 +61,15 @@ public class Organization extends Auditable {
     @Column(name = "description", length = 2000)
     private String description;
 
+    /** ISO 3166-1 alpha-2, an enabled platform country when chosen; PH for organizations from before countries existed. */
+    @Column(name = "country", nullable = false, length = 2)
+    @Builder.Default
+    private String country = "PH";
+
+    /** The country's currency, fixed when the organization is approved (null before); later changes to the country's currency do not touch it. */
+    @Column(name = "currency", length = 3)
+    private String currency;
+
     @ElementCollection
     @CollectionTable(
             name = "organization_documents",

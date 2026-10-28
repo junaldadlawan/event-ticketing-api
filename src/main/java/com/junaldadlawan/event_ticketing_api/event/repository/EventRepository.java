@@ -37,7 +37,26 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
             + " and e.status = com.junaldadlawan.event_ticketing_api.event.enums.EventStatus.DRAFT and e.deletedAt is null and e.startAt <= :cutoff")
     int softDeleteDraftIfDue(@Param("id") UUID id, @Param("cutoff") Instant cutoff, @Param("now") Instant now);
 
+    Optional<Event> findByShareCodeAndDeletedAtIsNull(String shareCode);
+
+    /** Sets the event's share code only while it has none (1 = set, 0 = it already had one); a taken code violates the unique index. */
+    @Modifying
+    @Transactional
+    @Query(value = "update events set share_code = :code where id = :id and share_code is null", nativeQuery = true)
+    int assignShareCode(@Param("id") UUID id, @Param("code") String code);
+
+    /** The stored share code, read from the database (an entity loaded earlier in the same request would still show the old value). */
+    @Query("select e.shareCode from Event e where e.id = :id")
+    Optional<String> findShareCode(@Param("id") UUID id);
+
+    /** The picture URLs of one event, read without loading the event (for code that runs outside a web request). */
+    @Query("select i from Event e join e.images i where e.id = :id")
+    List<String> findImageUrls(@Param("id") UUID id);
+
     boolean existsByTicketPrefix(String ticketPrefix);
+
+    /** True when an event that has not ended (and is not cancelled) uses the seat layout. */
+    boolean existsByLayoutIdAndDeletedAtIsNullAndEndAtAfterAndStatusNot(UUID layoutId, Instant now, EventStatus status);
 
     Optional<Event> findByIdAndDeletedAtIsNull(UUID id);
 

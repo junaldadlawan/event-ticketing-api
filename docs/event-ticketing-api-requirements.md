@@ -209,7 +209,7 @@ Roles are not mutually exclusive at the account level — a single account may h
 
 - **Assumption:** Payment processing will integrate with a third-party provider (e.g. Stripe) rather than the platform becoming a payment processor itself. To confirm in the architecture phase.
 - **Assumption:** Standard industry-practice NFR targets (as stated in section 5) apply; no specific contractual SLA, compliance regime, or target region has been set yet.
-- **Open question:** Target initial markets/regions (affects currency, tax/VAT handling, and applicable privacy law).
+- **Open question:** Target initial markets/regions (affects currency, tax/VAT handling, and applicable privacy law). *Partly settled:* the supported countries and currencies are an admin-managed list (Philippines / PHP at launch, USD as the reference currency for display); payments stay PHP-only until tax and payment handling for other currencies is decided.
 - **Open question:** Expected scale for v1 launch (number of organizers, peak concurrent buyers per on-sale) — needed to size the inventory-locking and queueing design in the architecture phase.
 - **Open question:** Resale policy defaults — should peer-to-peer resale be opt-in or opt-out for organizers at launch?
 - **Open question:** Mid-event mode switching — if an organizer switches an event from pure offline mode to standard mode (or vice versa) while check-in is already underway and the sole device holds unsynced offline scans, how should that transition work? Assumed rare enough to require a forced sync/re-online step rather than a fully seamless transition, to be confirmed in the architecture phase.

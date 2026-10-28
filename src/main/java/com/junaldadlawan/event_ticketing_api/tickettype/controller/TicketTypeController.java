@@ -4,6 +4,8 @@ import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeCreateRequ
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeOrderRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeResponse;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeSalesStatusRequest;
+import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeSuspensionRequest;
+import com.junaldadlawan.event_ticketing_api.tickettype.entity.TicketType;
 import com.junaldadlawan.event_ticketing_api.tickettype.dto.TicketTypeUpdateRequest;
 import com.junaldadlawan.event_ticketing_api.tickettype.service.TicketTypeService;
 import jakarta.validation.Valid;
@@ -40,7 +42,9 @@ public class TicketTypeController {
 
     @GetMapping("/api/v1/events/{eventId}/ticket-types")
     public List<TicketTypeResponse> list(@PathVariable UUID eventId) {
-        return ticketTypeService.list(eventId).stream().map(TicketTypeResponse::from).toList();
+        List<TicketType> ticketTypes = ticketTypeService.list(eventId);
+        boolean manager = ticketTypeService.mayManage(eventId);
+        return ticketTypes.stream().map(TicketTypeResponse::from).map(response -> manager ? response : response.withoutReason()).toList();
     }
 
     /** Saves the arrangement of the event's ticket types (the organizer drags them into order). */
@@ -51,7 +55,9 @@ public class TicketTypeController {
 
     @GetMapping("/api/v1/ticket-types/{ticketTypeId}")
     public TicketTypeResponse get(@PathVariable UUID ticketTypeId) {
-        return TicketTypeResponse.from(ticketTypeService.get(ticketTypeId));
+        TicketType ticketType = ticketTypeService.get(ticketTypeId);
+        TicketTypeResponse response = TicketTypeResponse.from(ticketType);
+        return ticketTypeService.mayManage(ticketType.getEventId()) ? response : response.withoutReason();
     }
 
     @PatchMapping("/api/v1/ticket-types/{ticketTypeId}")
@@ -64,6 +70,18 @@ public class TicketTypeController {
     public TicketTypeResponse setSalesStatus(@PathVariable UUID ticketTypeId,
                                              @Valid @RequestBody TicketTypeSalesStatusRequest request) {
         return TicketTypeResponse.from(ticketTypeService.setSalesStatus(ticketTypeId, request.status()));
+    }
+
+    /** Admin only: suspend selling this ticket type, with a reason its organizers see. */
+    @PostMapping("/api/v1/ticket-types/{ticketTypeId}/suspension")
+    public TicketTypeResponse suspend(@PathVariable UUID ticketTypeId, @Valid @RequestBody TicketTypeSuspensionRequest request) {
+        return TicketTypeResponse.from(ticketTypeService.suspend(ticketTypeId, request.reason()));
+    }
+
+    /** Admin only: lift the suspension. */
+    @DeleteMapping("/api/v1/ticket-types/{ticketTypeId}/suspension")
+    public TicketTypeResponse unsuspend(@PathVariable UUID ticketTypeId) {
+        return TicketTypeResponse.from(ticketTypeService.unsuspend(ticketTypeId));
     }
 
     @DeleteMapping("/api/v1/ticket-types/{ticketTypeId}")

@@ -22,6 +22,11 @@ public record TicketTypeResponse(
         Instant saleEndAt,
         int maxPerOrder,
         boolean salesPaused,
+        /** An admin suspended it: buyers see it but cannot buy it, and only an admin can lift it. */
+        boolean suspended,
+        /** Why it was suspended; only for the event's organizers and admins (null for anyone else, and when not suspended). */
+        String suspensionReason,
+        Instant suspendedAt,
         String color,
         Integer maxPerUser,
         int position,
@@ -43,6 +48,9 @@ public record TicketTypeResponse(
                 ticketType.getSaleEndAt(),
                 ticketType.getMaxPerOrder(),
                 ticketType.isSalesPaused(),
+                ticketType.isSuspended(),
+                ticketType.getSuspensionReason(),
+                ticketType.getSuspendedAt(),
                 ticketType.getColor(),
                 ticketType.getMaxPerUser(),
                 ticketType.getPosition(),
@@ -50,5 +58,11 @@ public record TicketTypeResponse(
                 ticketType.getCreatedAt(),
                 ticketType.getUpdatedBy(),
                 ticketType.getUpdatedAt());
+    }
+
+    /** The same without the suspension reason, for callers who do not manage the event. */
+    public TicketTypeResponse withoutReason() {
+        return new TicketTypeResponse(id, eventId, name, kind, price, quantityTotal, quantityAvailable, saleStartAt, saleEndAt, maxPerOrder,
+                salesPaused, suspended, null, suspendedAt, color, maxPerUser, position, createdBy, createdAt, updatedBy, updatedAt);
     }
 }

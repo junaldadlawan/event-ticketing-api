@@ -25,11 +25,15 @@ tags:
   - name: Auth
   - name: Organizations
   - name: Venues
+  - name: Layouts
+    description: Organization seat layouts and the admin-managed presets they can be copied from.
   - name: Categories
   - name: Posts
   - name: PlatformFees
   - name: PlatformSettings
     description: Platform-wide settings admins manage (BR-ADMIN-SETTINGS-002).
+  - name: Regions
+    description: Admin-managed platform currencies (USD reference rates) and countries.
   - name: Uploads
   - name: Events
   - name: TicketTypes
@@ -136,6 +140,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TokenPair" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /auth/refresh:
     post:
@@ -1435,9 +1440,9 @@ paths:
                 file: { type: string, format: binary }
                 folder:
                   type: string
-                  enum: [events, organizations, platform, temporary, tickets, users]
+                  enum: [events, organizations, platform, temporary, tickets, users, venues]
                   default: temporary
-                  description: "What the image is for, which decides where it is stored: events (event images), organizations (organization documents), platform (posts), tickets (ticket template backgrounds and logos), users (profile pictures). Omitted = temporary."
+                  description: "What the image is for, which decides where it is stored: events (event images), organizations (organization documents), platform (posts), tickets (ticket template backgrounds and logos), users (profile pictures), venues (no longer used by the API). Omitted = temporary."
       responses:
         "201":
           description: Stored. The returned URL is `/uploads/files/{folder}/{name}` on this server.
@@ -1528,6 +1533,122 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /platform/regions:
+    get:
+      operationId: getPlatformRegions
+      tags: [Regions]
+      summary: The enabled currencies and countries (public, cacheable)
+      description: |
+        Every country and currency picker is built from this. USD is the reference currency: `usdRate` is how many units of a
+        currency buy 1 USD. `usdRate` is null until the exchange-rate feed has given one; `rateStale` is true when the last fetch failed
+        or had no rate for it (the last known rate is kept, never made up). Sent with `Cache-Control: public, max-age=300`.
+        Display only: checkout takes PHP alone for now.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformRegions" }
+
+  /admin/currencies:
+    post:
+      operationId: enableCurrency
+      tags: [Regions]
+      summary: Enable a currency (admin only)
+      description: Fetches its USD rate at once. Logged as `currency.enabled` (with the rate and its source).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: "^[A-Za-z]{3}$", description: ISO 4217 code, e.g. EUR. }
+      responses:
+        "201":
+          description: Enabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportedCurrency" }
+        "400": { description: Not an ISO 4217 currency code }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Already enabled, or the exchange-rate feed has no rate for it }
+        "502": { description: The exchange-rate feed could not be reached; nothing was changed }
+
+  /admin/currencies/{code}:
+    delete:
+      operationId: disableCurrency
+      tags: [Regions]
+      summary: Disable a currency (admin only)
+      description: Logged as `currency.disabled`. The row and its last rate are kept, so enabling it again is quick.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Disabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Not an enabled currency }
+        "409": { description: "USD (the reference), or still used by an enabled country, an organization, or the ticket types of an event that hasn't ended" }
+
+  /admin/currencies/refresh:
+    post:
+      operationId: refreshCurrencyRates
+      tags: [Regions]
+      summary: Re-fetch every enabled currency's rate now (admin only)
+      description: |
+        The same refresh a daily job runs. Each updated rate is logged as `currency.rate_refreshed` (rate and source). When the feed
+        fails, or has no rate for a currency, the last rate is kept and `rateStale` is set.
+      responses:
+        "200":
+          description: The enabled currencies after the refresh
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SupportedCurrency" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/countries/{code}:
+    put:
+      operationId: putCountry
+      tags: [Regions]
+      summary: Enable a country or change its currency (admin only)
+      description: |
+        Logged as `country.enabled`, or `country.updated` for a currency change. Organizations already approved keep the currency
+        they were approved with; new approvals get the new one.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string }, description: ISO 3166-1 alpha-2 code, e.g. SG. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currencyCode]
+              properties:
+                currencyCode: { type: string, pattern: "^[A-Za-z]{3}$", description: Must be an enabled currency. }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportedCountry" }
+        "400": { description: Unknown country code, or the currency is not enabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      operationId: disableCountry
+      tags: [Regions]
+      summary: Disable a country (admin only)
+      description: Logged as `country.disabled`.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Disabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Not an enabled country }
+        "409": { description: An organization is in it, or the venue of an upcoming event is }
 
   /platform-settings/draft-events:
     get:
@@ -1960,6 +2081,270 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Venue" }
 
+  /venues/{venueId}/layout:
+    parameters:
+      - $ref: "#/components/parameters/VenueId"
+    get:
+      operationId: getVenueLayout
+      deprecated: true
+      tags: [Venues]
+      summary: The venue's seat layout (members of the organization, or admin)
+      description: |
+        **Deprecated** (removed after one release): layouts now belong to the organization, see `/organizations/{orgId}/layouts`. Each venue
+        layout was moved into an organization layout named after the venue.
+        The layout the editor saved, or an empty plan (`version` 0, no sections or shapes, 1000 x 800) when none was saved yet.
+        403 for anyone who is not a member of the venue's organization (or an admin); 404 for an unknown venue.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueLayout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: replaceVenueLayout
+      deprecated: true
+      tags: [Venues]
+      summary: Replace the venue's whole seat layout (the organization's owner, or an organizer holding EVENTS)
+      description: |
+        The editor saves the entire design every time; the answer is the saved layout with `version` one higher (the first save is 1). `version`
+        in the body is ignored. Admins can read a layout but not edit it. Logged as `venue.layout.updated` (version, section and seat counts only).
+        Editing a layout never touches events that already copied seats from it.
+        **Deprecated** (removed after one release): ticket types no longer copy seats from a venue layout, so saving here reaches no event. Use
+        `PUT /layouts/{layoutId}`.
+
+        **Coordinates** are in the plan's own units, (0, 0) at the top-left, x to the right, y down. A section sits at (x, y) and is turned by
+        `rotation` degrees about that point; a seat's (x, y) are inside the section, and a row's `offset` moves the whole row along the section's
+        x axis. Where a seat ends up on the plan (offset, then rotation, then the section's position) must stay inside `width` x `height`.
+
+        **Rules (400 with a message that says what and where, e.g. `sections[2].rows[0].seats[5]: x puts the seat outside the plan ...`):**
+        at most 50 sections and 5,000 seats in total; section ids unique; section names unique (ignoring case and surrounding spaces, at most 100
+        characters); within a section each row label + seat number pair unique (labels and numbers at most 20 characters); `color` #RRGGBB; `kind`
+        VIP or STANDARD; seat `type` SEAT, WHEELCHAIR or BLOCKED (default SEAT); shape `type` STAGE, LABEL or WALL (a LABEL needs `text`, a STAGE or
+        WALL needs `width` and `height`; at most 200 shapes, the box before rotation stays inside the plan); rotation between -360 and 360; names and
+        text without HTML; all numbers finite.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VenueLayout" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueLayout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /organizations/{orgId}/layouts:
+    parameters:
+      - { name: orgId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: listSeatLayouts
+      tags: [Layouts]
+      summary: The organization's seat layouts (members of the organization, or admin)
+      description: Sorted by name, without the sections and shapes. 403 for anyone who is not a member (or an admin); 404 for an unknown organization.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SeatLayoutSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: createSeatLayout
+      tags: [Layouts]
+      summary: Create a seat layout (the organization's owner, or an organizer holding EVENTS)
+      description: |
+        The whole design, with the same rules as the venue layout editor (see `PUT /venues/{venueId}/layout`), plus a `name` (at most 100
+        characters, no HTML, trimmed) that is unique in the organization ignoring case. Starts at `version` 1. Admins are read-only. Logged as
+        `layout.created` (name, version, section and seat counts).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SeatLayoutRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeatLayout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The organization already has a layout with that name. }
+
+  /organizations/{orgId}/layouts/from-preset/{presetId}:
+    parameters:
+      - { name: orgId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: presetId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: copyLayoutPreset
+      tags: [Layouts]
+      summary: Copy a preset into the organization as an editable layout (the organization's owner, or an organizer holding EVENTS)
+      description: |
+        No body. The copy takes the preset's name and design, starts at `version` 1 and is independent: later edits to the preset never change
+        it. Logged as `layout.created` with the `presetId`. 404 for an unknown, deleted or inactive preset; 409 when the organization already
+        has a layout with the preset's name (rename that one first).
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeatLayout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The organization already has a layout with the preset's name. }
+
+  /layouts/{layoutId}:
+    parameters:
+      - { name: layoutId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSeatLayout
+      tags: [Layouts]
+      summary: A seat layout in full (members of its organization, or admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeatLayout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: replaceSeatLayout
+      tags: [Layouts]
+      summary: Replace the whole layout, name included (the organization's owner, or an organizer holding EVENTS)
+      description: |
+        Same rules as create; the answer has `version` one higher. Events that already copied seats keep their snapshot, and cannot copy more
+        sections from the changed layout (409 on ticket type creation). Logged as `layout.updated`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SeatLayoutRequest" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeatLayout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Another layout of the organization has that name. }
+    delete:
+      operationId: deleteSeatLayout
+      tags: [Layouts]
+      summary: Soft delete a layout (the organization's owner, or an organizer holding EVENTS)
+      description: Logged as `layout.deleted`. Its name is free again afterwards.
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: An event that has not ended (and is not cancelled) still uses the layout. }
+
+  /layout-presets:
+    get:
+      operationId: listLayoutPresets
+      tags: [Layouts]
+      summary: Preset layouts (owners and organizers of any organization, and admins)
+      description: The active presets, sorted by name, without sections and shapes. An admin also sees inactive ones. 403 for anyone else.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PresetLayoutSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createLayoutPreset
+      tags: [Layouts]
+      summary: Create a preset (admin)
+      description: Same layout rules as an organization layout; `name` unique among presets ignoring case; `active` defaults to true. Logged as `layout_preset.created`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresetLayoutRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PresetLayout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: A preset with that name exists. }
+
+  /layout-presets/{presetId}:
+    parameters:
+      - { name: presetId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLayoutPreset
+      tags: [Layouts]
+      summary: A preset in full (owners and organizers of any organization, and admins)
+      description: 404 for an inactive preset unless the caller is an admin.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PresetLayout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: replaceLayoutPreset
+      tags: [Layouts]
+      summary: Replace a preset (admin)
+      description: The answer has `version` one higher; an omitted or null `active` keeps the current value. Copies already made are not changed. Logged as `layout_preset.updated`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresetLayoutRequest" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PresetLayout" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Another preset has that name. }
+    delete:
+      operationId: deleteLayoutPreset
+      tags: [Layouts]
+      summary: Soft delete a preset (admin)
+      description: Copies already made are kept. Logged as `layout_preset.deleted`.
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /events:
     get:
       operationId: listEvents
@@ -2170,6 +2555,8 @@ paths:
         check out once selling resumes). ACTIVE: normal selling again - the sale window and the event's status still
         decide whether it can actually be bought. Tickets already sold are untouched. Asking for the state it is
         already in is not an error. This is the same switch as `sales_paused` on the update.
+        While an admin has suspended the ticket type, ACTIVE is refused (409 "Suspended by an admin, contact support"); PAUSED is still allowed
+        and stays in place after the suspension is lifted.
       requestBody:
         required: true
         content:
@@ -2184,7 +2571,55 @@ paths:
         "400": { description: "Missing or unknown status" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/EventEnded" }
+        "409": { description: "The event has ended, or ACTIVE was asked for while the ticket type is suspended by an admin (\"Suspended by an admin, contact support\")." }
+
+  /ticket-types/{ticketTypeId}/suspension:
+    parameters:
+      - $ref: "#/components/parameters/TicketTypeId"
+    post:
+      operationId: suspendTicketType
+      tags: [TicketTypes]
+      summary: Suspend a ticket type (admin)
+      description: |
+        Buyers still see the ticket type, but it can no longer be added to a cart (409) and a cart that already holds it can no longer
+        check out (409, as for a paused one). Tickets already sold are untouched. The admin and the time are recorded; the organizer's own
+        pause state is separate and is not changed, and the organizer cannot resume selling until an admin lifts the suspension. Logged as
+        `ticket_type.suspended` with the reason in the details (capped at 500 characters there; the full reason stays on the ticket type).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000, description: "Shown to the event's organizers. Trimmed; no HTML." }
+      responses:
+        "200":
+          description: The suspended ticket type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The ticket type is already suspended. }
+    delete:
+      operationId: unsuspendTicketType
+      tags: [TicketTypes]
+      summary: Lift a ticket type's suspension (admin)
+      description: The organizer's own pause state is left as it was. Logged as `ticket_type.unsuspended`.
+      responses:
+        "200":
+          description: The ticket type, no longer suspended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The ticket type is not suspended. }
 
   /events/{eventId}/seatmap:
     parameters:
@@ -2194,6 +2629,12 @@ paths:
       tags: [SeatMaps]
       security: []
       summary: Get the event's seat map with live seat status (reserved-seating events only)
+      description: |
+        For seats copied from a seat layout (see `layoutId` with `sectionId` / `wholeLayout` on ticket type creation) each seat carries its place on the plan
+        (`x`, `y`, with its section's position and rotation already applied), its `type` (SEAT or WHEELCHAIR; blocked seats are never copied), its
+        section's `sectionColor` and `sectionKind`, and the `ticketTypeId` it is sold under; `width`, `height` and `shapes` (stage, labels, walls)
+        describe the plan. This is a snapshot taken when the seats were copied: editing the layout later never changes it. Seats that were not
+        copied from a layout have null for these fields.
       responses:
         "200":
           description: OK
@@ -2986,6 +3427,112 @@ paths:
         "204": { description: Received (counted or not). }
         "400": { description: The body is not JSON. }
 
+  /events/{eventId}/share-clicks:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: recordEventShareClick
+      tags: [Analytics]
+      summary: Count a click in the Share window (public)
+      description: |
+        Adds one to the counter of the `action`: SHARE_BUTTON -> `shareClicks`, COPY_LINK -> `shareCopies`, QR_GENERATE -> `shareQrs`. The body is
+        optional; no body, no `action` or an unknown one counts as SHARE_BUTTON, so a client that sends nothing keeps working. Every call counts,
+        including repeated clicks from the same person: there is no deduplication, and nothing about the caller (IP, user agent, user id) is read
+        or stored. Always answers 204, whatever happened, so it never reveals whether the event exists. Only PUBLISHED, ON_SALE and SOLD_OUT events
+        are counted. The counters are independent of each other and of the opens and buy clicks below.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [SHARE_BUTTON, COPY_LINK, QR_GENERATE], default: SHARE_BUTTON }
+      responses:
+        "204": { description: Received (counted or not). }
+        "400": { description: The body is not JSON. }
+
+  /events/{eventId}/share-buy-clicks:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      operationId: recordEventShareBuyClick
+      tags: [Analytics]
+      summary: Count a buy click from a shared visit (public)
+      description: |
+        Adds one to `shareLinkBuys` (`source` LINK) or `shareQrBuys` (`source` QR): the visitor came through the shared link or its QR code and
+        pressed buy. An unknown or missing `source` counts nothing. No deduplication; nothing about the caller is read or stored. Always answers
+        204, whatever happened. Only PUBLISHED, ON_SALE and SOLD_OUT events are counted.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source: { type: string, enum: [LINK, QR] }
+      responses:
+        "204": { description: Received (counted or not). }
+        "400": { description: The body is not JSON. }
+
+  /events/{eventId}/share-link:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventShareLink
+      tags: [Analytics]
+      summary: The event's short share link (public)
+      description: |
+        The event's share code: 8 random URL-safe characters, unique, created the first time it is asked for (existing events already have one).
+        The web app serves the link at `path` and calls `POST /share-links/{code}/open` when it is opened. 404 for an event that is
+        unknown or not PUBLISHED, ON_SALE or SOLD_OUT.
+      security: []
+      responses:
+        "200":
+          description: The share link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLink" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /share-links/{code}/open:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        schema: { type: string }
+        description: The event's share code (`ShareLink.code`).
+    post:
+      operationId: openShareLink
+      tags: [Analytics]
+      summary: Count an open of a share link and find its event (public)
+      description: |
+        Adds one to `shareLinkOpens` (`source` LINK) or `shareQrScans` (`source` QR) of the event and returns the event to show. The body is
+        optional; no body, no `source` or an unknown one counts as LINK. Every call counts, with no deduplication; nothing about the caller is
+        read or stored. An unknown code (or one whose event is not PUBLISHED, ON_SALE or SOLD_OUT) is a 404 and counts nothing. Independent of
+        `/events/{eventId}/share-clicks`.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source: { type: string, enum: [LINK, QR], default: LINK }
+      responses:
+        "200":
+          description: The event the link points at
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eventId: { type: string, format: uuid }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /events/{eventId}/analytics/funnel:
     parameters:
       - $ref: "#/components/parameters/EventId"
@@ -3007,6 +3554,35 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EventFunnel" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events/{eventId}/analytics/share-timeline:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      operationId: getEventShareTimeline
+      tags: [Analytics]
+      summary: The share counters per day, for a line chart (owning organizer/owner with ANALYTICS, or admin)
+      description: |
+        The counts of `POST /events/{eventId}/share-clicks`, `/share-links/{code}/open` and `/share-buy-clicks` per day, the day being the event's
+        own calendar day (`timezone`). `days` has a row for every day of the range, zeros included, so the chart needs no gaps filled. Totals from
+        before the daily history existed have no dates and are not spread over past days: `trackingSince` is the first day that has any count (null
+        when none yet) and earlier days are zeros. `byHour` always has the 24 hours (0-23, in the event's time zone), zeros included, each summed
+        over the requested `from`..`to` days. Counts from before the hourly history existed have no hour: they are left out of `byHour` (not
+        spread over the hours), so its totals can be lower than the sum of `days` for the same range. Aggregate counts only; nothing about visitors
+        is stored.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: "First day (default: `trackingSince`, else the day the event was created; at most 366 days before `to`)." }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Last day, included (default: today in the event's time zone). At most 366 days." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareTimeline" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -3234,6 +3810,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
     delete:
       operationId: removePromoCode
       tags: [Cart]
@@ -3330,7 +3907,8 @@ paths:
           description: >
             Nothing to check out, a payment for this key is already in progress, the idempotency key was used with
             another itemIds, or the event has ended (`Event has ended`; nothing is charged - and a payment that
-            completes after the end is refunded instead of issuing tickets)
+            completes after the end is refunded instead of issuing tickets), or the organization's currency is not PHP
+            (`Payments in <CODE> are not available yet`)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3344,6 +3922,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /checkouts/{checkoutId}:
     parameters:
@@ -4270,6 +4849,13 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: >
+        Too many requests in the current window (BR-NFR-004). Login is limited per caller IP; checkout and promo-code
+        application per signed-in buyer. The window is one minute.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
     EventReviewRequest:
@@ -4412,6 +4998,10 @@ components:
         contactPhone: { type: [string, "null"] }
         address: { type: [string, "null"] }
         description: { type: [string, "null"] }
+        country: { type: string, description: ISO 3166-1 alpha-2. Changed through a change request (BR-ORG-009). }
+        currency:
+          type: [string, "null"]
+          description: The country's currency when the organization was approved (null before). It never changes afterwards; ticket prices must be in it.
         status:
           type: string
           enum: [pending, approved, rejected]
@@ -4433,10 +5023,11 @@ components:
 
     OrganizationCreate:
       type: object
-      required: [name, documents]
+      required: [name, documents, country]
       description: The optional details are the organization's initial values (no change request: it is still pending and an admin reviews the whole application). They are returned on the Organization, so the admin sees them in the review.
       properties:
         name: { type: string }
+        country: { type: string, pattern: "^[A-Za-z]{2}$", description: "An enabled country from GET /platform/regions, otherwise 400." }
         contactEmail: { type: string, format: email, maxLength: 255 }
         contactPhone: { type: string, maxLength: 30, description: "Digits, spaces and + ( ) - ." }
         address: { type: string, maxLength: 500 }
@@ -4460,6 +5051,7 @@ components:
         contactPhone: { type: string, maxLength: 30, description: "Digits, spaces and + ( ) - ." }
         address: { type: string, maxLength: 500 }
         description: { type: string, maxLength: 2000 }
+        country: { type: string, pattern: "^[A-Za-z]{2}$", description: "An enabled country (400 otherwise). The currency stays the one fixed at approval." }
         documents:
           type: array
           minItems: 1
@@ -4471,6 +5063,51 @@ components:
             properties:
               type: { type: string, maxLength: 100 }
               url: { type: string, format: uri, maxLength: 500, pattern: "^https?://\\S+$" }
+
+    SupportedCurrency:
+      type: object
+      properties:
+        code: { type: string, example: PHP }
+        name: { type: string, example: Philippine Peso }
+        symbol: { type: string, example: "₱" }
+        minorUnits: { type: integer, example: 2 }
+        enabled: { type: boolean }
+        usdRate: { type: [number, "null"], description: Units of this currency per 1 USD. Null until the feed has given a rate. }
+        rateUpdatedAt: { type: [string, "null"], format: date-time }
+        rateStale: { type: boolean, description: The last fetch failed or had no rate; usdRate is the last known one. }
+
+    SupportedCountry:
+      type: object
+      properties:
+        code: { type: string, example: PH }
+        name: { type: string, example: Philippines }
+        currencyCode: { type: string, example: PHP }
+        enabled: { type: boolean }
+
+    PlatformRegions:
+      type: object
+      properties:
+        baseCurrency: { type: string, example: USD }
+        currencies:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              name: { type: string }
+              symbol: { type: string }
+              minorUnits: { type: integer }
+              usdRate: { type: [number, "null"] }
+              rateUpdatedAt: { type: [string, "null"], format: date-time }
+              rateStale: { type: boolean }
+        countries:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              name: { type: string }
+              currencyCode: { type: string }
 
     OrganizationDocument:
       type: object
@@ -4665,9 +5302,15 @@ components:
         id: { type: string, format: uuid }
         organization_id: { type: string, format: uuid }
         name: { type: string }
-        address: { type: [string, "null"], description: "Null for a purely virtual venue." }
+        venueType: { type: [string, "null"], enum: [THEATER, ARENA, STADIUM, CONCERT_HALL, CONFERENCE_CENTER, CLUB_BAR, RESTAURANT, CHURCH, OUTDOOR, SCHOOL, OTHER, VIRTUAL, null], description: "Null for venues created before this field existed." }
+        country: { type: [string, "null"], description: "ISO 3166-1 alpha-2 code, upper-case, e.g. PH." }
+        province: { type: [string, "null"], maxLength: 100, description: "State, province or region." }
+        city: { type: [string, "null"], maxLength: 100 }
+        address: { type: [string, "null"], maxLength: 500, description: "The complete street address. Null for a purely virtual venue." }
         latitude: { type: [number, "null"] }
         longitude: { type: [number, "null"] }
+        description: { type: [string, "null"], maxLength: 2000 }
+        maxCapacity: { type: [integer, "null"], minimum: 1, description: "People the venue holds; can be more than the seats in its seat layout (nothing is checked against it, the UI can compare the two)." }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid, description: User (organizer) who added this venue. }
         updated_at: { type: string, format: date-time }
@@ -4680,19 +5323,38 @@ components:
     VenueCreate:
       type: object
       required: [name]
+      description: |
+        Everything but name is optional (a VIRTUAL venue may have no address, position or capacity). Strings are trimmed and a blank one is stored as
+        null. 400 for an unknown venueType or country code, a capacity below 1, and text over its limit or with HTML.
       properties:
         name: { type: string }
-        address: { type: string }
+        venueType: { type: string, enum: [THEATER, ARENA, STADIUM, CONCERT_HALL, CONFERENCE_CENTER, CLUB_BAR, RESTAURANT, CHURCH, OUTDOOR, SCHOOL, OTHER, VIRTUAL] }
+        country: { type: string, description: "ISO 3166-1 alpha-2 code (either case, stored upper-case), e.g. PH." }
+        province: { type: string, maxLength: 100 }
+        city: { type: string, maxLength: 100 }
+        address: { type: string, maxLength: 500 }
         latitude: { type: number }
         longitude: { type: number }
+        description: { type: string, maxLength: 2000 }
+        maxCapacity: { type: integer, minimum: 1 }
 
     VenueUpdate:
       type: object
+      description: |
+        A partial update. For name, address, latitude and longitude a left-out or null field is unchanged (an empty address clears it). For
+        venueType, country, province, city, description and maxCapacity a left-out field is unchanged and null (or a blank string) clears it.
+        The same rules and 400s as VenueCreate.
       properties:
         name: { type: string }
-        address: { type: string }
+        venueType: { type: [string, "null"], enum: [THEATER, ARENA, STADIUM, CONCERT_HALL, CONFERENCE_CENTER, CLUB_BAR, RESTAURANT, CHURCH, OUTDOOR, SCHOOL, OTHER, VIRTUAL, null] }
+        country: { type: [string, "null"], description: "ISO 3166-1 alpha-2 code." }
+        province: { type: [string, "null"], maxLength: 100 }
+        city: { type: [string, "null"], maxLength: 100 }
+        address: { type: string, maxLength: 500 }
         latitude: { type: number }
         longitude: { type: number }
+        description: { type: [string, "null"], maxLength: 2000 }
+        maxCapacity: { type: [integer, "null"], minimum: 1 }
 
     DraftEventSettings:
       type: object
@@ -4785,6 +5447,12 @@ components:
         seats:
           type: array
           items: { $ref: "#/components/schemas/Seat" }
+        width: { type: [number, "null"], description: "The plan's width when the seats were copied from a seat layout." }
+        height: { type: [number, "null"] }
+        shapes:
+          type: [array, "null"]
+          description: The layout's stage, labels and walls, as they were when the seats were copied.
+          items: { $ref: "#/components/schemas/VenueLayoutShape" }
         created_at: { type: string, format: date-time }
         created_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
@@ -4798,6 +5466,13 @@ components:
         row: { type: string }
         seat_number: { type: string }
         status: { type: string, enum: [available, held, sold] }
+        sectionId: { type: [string, "null"], format: uuid, description: "The layout section the seat was copied from." }
+        ticketTypeId: { type: [string, "null"], format: uuid, description: "The ticket type the seat is sold under; a cart line of another ticket type cannot take it (400)." }
+        x: { type: [number, "null"], description: "Position on the plan." }
+        y: { type: [number, "null"] }
+        type: { type: [string, "null"], enum: [SEAT, WHEELCHAIR, null] }
+        sectionColor: { type: [string, "null"], description: "#RRGGBB" }
+        sectionKind: { type: [string, "null"], enum: [VIP, STANDARD, null] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -4815,6 +5490,9 @@ components:
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
         sales_paused: { type: boolean, description: "While true the type can not be added to a cart and a cart holding it can not check out. Set with PUT /ticket-types/{id}/sales-status." }
+        suspended: { type: boolean, description: "An admin suspended it (POST /ticket-types/{id}/suspension): buyers see it but cannot buy it, and only an admin lifts it. Separate from sales_paused." }
+        suspensionReason: { type: [string, "null"], description: "Why it was suspended. Only returned to the event's owner, organizers holding EVENTS and admins; null for everyone else and when not suspended." }
+        suspendedAt: { type: [string, "null"], format: date-time }
         color: { type: [string, "null"], pattern: "^#[0-9A-F]{6}$", description: "Display colour set by the organizer, uppercase #RRGGBB (e.g. #1A2B3C); buyers' tickets are tinted with it. Null = none (the app's default grey)." }
         max_per_user: { type: [integer, "null"], minimum: 1, description: "BR-TICKET-LIMIT-001: most tickets of this type one buyer may buy in total, across all their orders. Null = unlimited." }
         position: { type: integer, minimum: 0, description: "Where it sits in the event's list (0 = first), as arranged by the organizer. The list endpoint returns ticket types in this order; new ones go to the end. Set with PUT /events/{id}/ticket-types/order." }
@@ -4830,12 +5508,160 @@ components:
         name: { type: string }
         kind: { type: string, enum: [general_admission, reserved_seating] }
         price: { $ref: "#/components/schemas/Money" }
-        quantity_total: { type: integer }
+        quantity_total: { type: integer, description: "Required (400) unless the seats are copied from a seat layout with layoutId and sectionId or wholeLayout; then it is ignored and the quantity is the number of seats copied." }
+        layoutId: { type: string, format: uuid, description: "RESERVED_SEATING only. The organization seat layout (GET /organizations/{orgId}/layouts) to copy seats from, with exactly one of sectionId or wholeLayout: true. The event remembers it; an event copies from one layout only. 400 for another kind, a missing or unknown layout, a layout of another organization, or neither/both of sectionId and wholeLayout." }
+        sectionId: { type: string, format: uuid, description: "RESERVED_SEATING only, with layoutId. Copy the seats of this section of the layout into the event's seat map (a snapshot; BLOCKED seats are not copied, quantity_total = seats copied). 400 for an unknown section or a section with no seats for sale; 409 when that section already has a ticket type in this event, the event already copied from another layout, or the layout changed since this event first copied from it." }
+        wholeLayout: { type: boolean, description: "RESERVED_SEATING only. With layoutId: copy the seats of every section of the layout (same rules and errors as sectionId)." }
         sale_start_at: { type: string, format: date-time, description: "Optional; omit to start sales now (server time). A past time is accepted." }
         sale_end_at: { type: string, format: date-time, description: "Must be at least the minimum sale duration (default 1 hour) after sale_start_at and at least the sales-close time (default 1 hour) before the event ends - so sales may go on after the event has started. Otherwise 400 \"Ticket sales must end at least <duration> before the event ends (by <time>)\"." }
         max_per_order: { type: integer, default: 10 }
         color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit or null for none. Anything else is a 400." }
         max_per_user: { type: [integer, "null"], minimum: 1, description: "Per-buyer limit (null = unlimited). max_per_order must not be more (400 'Max per order can't be more than the per-buyer limit'); when max_per_order is omitted it defaults to the lower of 10 and this." }
+
+    SeatLayoutRequest:
+      type: object
+      required: [name, width, height, sections]
+      properties:
+        name: { type: string, maxLength: 100, description: "Unique in the organization (ignoring case); trimmed; no HTML." }
+        width: { type: number, minimum: 1, maximum: 100000 }
+        height: { type: number, minimum: 1, maximum: 100000 }
+        sections:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/VenueLayoutSection" }
+        shapes:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/VenueLayoutShape" }
+
+    SeatLayout:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        name: { type: string }
+        version: { type: integer, description: "1 when created, +1 on every replace." }
+        seatCount: { type: integer, description: "Every seat, blocked ones included." }
+        width: { type: number }
+        height: { type: number }
+        sections:
+          type: array
+          items: { $ref: "#/components/schemas/VenueLayoutSection" }
+        shapes:
+          type: array
+          items: { $ref: "#/components/schemas/VenueLayoutShape" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    SeatLayoutSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        width: { type: number }
+        height: { type: number }
+        seatCount: { type: integer }
+        version: { type: integer }
+
+    PresetLayoutRequest:
+      allOf:
+        - { $ref: "#/components/schemas/SeatLayoutRequest" }
+        - type: object
+          properties:
+            name: { type: string, maxLength: 100, description: "Unique among presets (ignoring case); trimmed; no HTML." }
+            description: { type: [string, "null"], maxLength: 500 }
+            active: { type: [boolean, "null"], description: "Only active presets are shown to organizers. Null: true on create, unchanged on replace." }
+
+    PresetLayout:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        active: { type: boolean }
+        version: { type: integer }
+        seatCount: { type: integer }
+        width: { type: number }
+        height: { type: number }
+        sections:
+          type: array
+          items: { $ref: "#/components/schemas/VenueLayoutSection" }
+        shapes:
+          type: array
+          items: { $ref: "#/components/schemas/VenueLayoutShape" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PresetLayoutSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        active: { type: boolean }
+        width: { type: number }
+        height: { type: number }
+        seatCount: { type: integer }
+        version: { type: integer }
+
+    VenueLayout:
+      type: object
+      required: [width, height, sections]
+      properties:
+        venueId: { type: string, format: uuid, readOnly: true }
+        version: { type: integer, readOnly: true, description: "0 = nothing saved yet; +1 on every save." }
+        width: { type: number, minimum: 1, maximum: 100000 }
+        height: { type: number, minimum: 1, maximum: 100000 }
+        sections:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/VenueLayoutSection" }
+        shapes:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/VenueLayoutShape" }
+
+    VenueLayoutSection:
+      type: object
+      required: [id, name, kind, color, x, y, rows]
+      properties:
+        id: { type: string, format: uuid, description: "Chosen by the client; unique in the layout." }
+        name: { type: string, maxLength: 100, description: "Unique in the layout (ignoring case)." }
+        kind: { type: string, enum: [VIP, STANDARD] }
+        color: { type: string, pattern: "^#[0-9A-Fa-f]{6}$", description: "Stored upper-case." }
+        x: { type: number }
+        y: { type: number }
+        rotation: { type: number, minimum: -360, maximum: 360, default: 0, description: Degrees, about (x, y). }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [label, seats]
+            properties:
+              label: { type: string, maxLength: 20 }
+              offset: { type: number, default: 0, description: "Moves the whole row along the section's x axis." }
+              seats:
+                type: array
+                items:
+                  type: object
+                  required: [number, x, y]
+                  properties:
+                    number: { type: string, maxLength: 20, description: "Unique together with the row label inside the section." }
+                    x: { type: number }
+                    y: { type: number }
+                    type: { type: string, enum: [SEAT, WHEELCHAIR, BLOCKED], default: SEAT, description: "BLOCKED seats are not for sale and never copied into an event." }
+
+    VenueLayoutShape:
+      type: object
+      required: [type, x, y]
+      properties:
+        type: { type: string, enum: [STAGE, LABEL, WALL] }
+        text: { type: [string, "null"], maxLength: 200, description: "Required for a LABEL." }
+        x: { type: number }
+        y: { type: number }
+        width: { type: number, minimum: 0, description: "Required for a STAGE or WALL." }
+        height: { type: number, minimum: 0 }
+        rotation: { type: number, minimum: -360, maximum: 360, default: 0 }
 
     TicketTypeSalesStatus:
       type: object
@@ -4862,7 +5688,7 @@ components:
         sale_start_at: { type: string, format: date-time }
         sale_end_at: { type: string, format: date-time }
         max_per_order: { type: integer }
-        sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged." }
+        sales_paused: { type: boolean, description: "true pauses sales, false resumes; omit to leave unchanged. false is refused while an admin has suspended the ticket type (409 \"Suspended by an admin, contact support\")." }
         color: { type: [string, "null"], pattern: "^#[0-9A-Fa-f]{6}$", description: "Display colour #RRGGBB, either case (stored uppercase). Omit to leave unchanged; null clears it; anything else is a 400 with a field error. Logged as ticket_type.updated with before/after." }
         max_per_user: { type: [integer, "null"], minimum: 1, description: "Omit to leave unchanged; null = unlimited. The resulting max_per_order must not be more (400)." }
 
@@ -5866,6 +6692,56 @@ components:
               date: { type: string, format: date }
               tickets_sold: { type: integer }
               revenue: { $ref: "#/components/schemas/Money" }
+        shareClicks: { type: integer, format: int64, minimum: 0, description: "Share-window clicks with action SHARE_BUTTON (POST /events/{eventId}/share-clicks)." }
+        shareCopies: { type: integer, format: int64, minimum: 0, description: "Share-window clicks with action COPY_LINK." }
+        shareQrs: { type: integer, format: int64, minimum: 0, description: "Share-window clicks with action QR_GENERATE." }
+        shareLinkOpens: { type: integer, format: int64, minimum: 0, description: "Opens of the short share link with source LINK (POST /share-links/{code}/open)." }
+        shareQrScans: { type: integer, format: int64, minimum: 0, description: "Opens of the short share link with source QR." }
+        shareOpens: { type: integer, format: int64, minimum: 0, description: "shareLinkOpens + shareQrScans." }
+        shareLinkBuys: { type: integer, format: int64, minimum: 0, description: "Buy clicks from shared visits with source LINK (POST /events/{eventId}/share-buy-clicks)." }
+        shareQrBuys: { type: integer, format: int64, minimum: 0, description: "Buy clicks from shared visits with source QR." }
+
+    ShareTimeline:
+      type: object
+      properties:
+        timezone: { type: string, description: "The event's time zone; `day` is a calendar day in it." }
+        trackingSince: { type: [string, "null"], format: date, description: "The first day with any count; null when nothing was counted yet." }
+        days:
+          type: array
+          description: One row for every day of the range, in order, zeros included.
+          items:
+            type: object
+            properties:
+              day: { type: string, format: date }
+              shareButton: { type: integer, format: int64, minimum: 0 }
+              copyLink: { type: integer, format: int64, minimum: 0 }
+              qrGenerate: { type: integer, format: int64, minimum: 0 }
+              linkOpen: { type: integer, format: int64, minimum: 0 }
+              qrScan: { type: integer, format: int64, minimum: 0 }
+              linkBuy: { type: integer, format: int64, minimum: 0 }
+              qrBuy: { type: integer, format: int64, minimum: 0 }
+        byHour:
+          type: array
+          minItems: 24
+          maxItems: 24
+          description: The 24 hours of the day in order (0-23, the event's time zone), zeros included, summed over the requested range. Counts from before the hourly history existed are not included.
+          items:
+            type: object
+            properties:
+              hour: { type: integer, minimum: 0, maximum: 23 }
+              shareButton: { type: integer, format: int64, minimum: 0 }
+              copyLink: { type: integer, format: int64, minimum: 0 }
+              qrGenerate: { type: integer, format: int64, minimum: 0 }
+              linkOpen: { type: integer, format: int64, minimum: 0 }
+              qrScan: { type: integer, format: int64, minimum: 0 }
+              linkBuy: { type: integer, format: int64, minimum: 0 }
+              qrBuy: { type: integer, format: int64, minimum: 0 }
+
+    ShareLink:
+      type: object
+      properties:
+        code: { type: string, description: "8 random URL-safe characters." }
+        path: { type: string, description: "The path of the shared link, /s/{code}." }
 
     EventAudience:
       type: object

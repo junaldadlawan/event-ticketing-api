@@ -88,6 +88,9 @@ class EventServiceImplTest {
     @Mock
     private CategoryService categoryService;
 
+    @Mock
+    private com.junaldadlawan.event_ticketing_api.upload.service.UploadedFileUrls uploadedFileUrls;
+
     private EventServiceImpl eventService;
 
     private UUID orgId;
@@ -96,7 +99,8 @@ class EventServiceImplTest {
     void setUp() {
         eventService = new EventServiceImpl(eventRepository, organizationRepository, venueRepository, accessGuard, refundService, ticketRepository, notificationService, auditLogService, categoryService,
                 new EventCompletionService(eventRepository, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.event.cache.PublicEventCacheEvictionListener.class), auditLogService),
-                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.notification.service.EventLifecycleNotifier.class));
+                org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.notification.service.EventLifecycleNotifier.class),
+                uploadedFileUrls);
         orgId = UUID.randomUUID();
         // Default: any category resolves, canonicalised to a capitalised name (music -> Music).
         lenient().when(categoryService.resolveActive(anyString())).thenAnswer(invocation -> {
@@ -483,6 +487,44 @@ class EventServiceImplTest {
 
         assertThat(result.getImages()).containsExactly("https://example.com/a.jpg");
         assertThat(result.getTitle()).isEqualTo("Original Title");
+    }
+
+    @Test
+    void updateEvent_replacedImage_releasesOnlyTheRemovedOnes() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerAccess(eventId, EventStatus.DRAFT);
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId).orElseThrow();
+        event.setImages(new java.util.ArrayList<>(List.of("https://example.com/keep.jpg", "https://example.com/old.jpg")));
+
+        eventService.updateEvent(eventId, new EventUpdateRequest(null, null, null,
+                List.of("https://example.com/keep.jpg", "https://example.com/new.jpg")));
+
+        verify(uploadedFileUrls).deleteIfUnreferenced("https://example.com/old.jpg");
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced("https://example.com/keep.jpg");
+        verify(uploadedFileUrls, never()).deleteIfUnreferenced("https://example.com/new.jpg");
+    }
+
+    @Test
+    void updateEvent_clearedImages_releasesAllOfThem() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerAccess(eventId, EventStatus.DRAFT);
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId).orElseThrow();
+        event.setImages(new java.util.ArrayList<>(List.of("https://example.com/a.jpg")));
+
+        eventService.updateEvent(eventId, new EventUpdateRequest(null, null, null, List.of()));
+
+        verify(uploadedFileUrls).deleteIfUnreferenced("https://example.com/a.jpg");
+    }
+
+    @Test
+    void updateEvent_imagesOmitted_releasesNothing() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerAccess(eventId, EventStatus.DRAFT);
+        eventRepository.findByIdAndDeletedAtIsNull(eventId).orElseThrow().setImages(new java.util.ArrayList<>(List.of("https://example.com/a.jpg")));
+
+        eventService.updateEvent(eventId, new EventUpdateRequest("New Title", null, null, null));
+
+        verifyNoInteractions(uploadedFileUrls);
     }
 
     @Test
@@ -929,6 +971,18 @@ class EventServiceImplTest {
         eventService.delete(eventId);
 
         verify(eventRepository).save(argThatDeleted());
+    }
+
+    @Test
+    void delete_releasesTheEventsImages() {
+        UUID eventId = UUID.randomUUID();
+        mockOwnerAccess(eventId, EventStatus.DRAFT);
+        eventRepository.findByIdAndDeletedAtIsNull(eventId).orElseThrow().setImages(new java.util.ArrayList<>(List.of("https://example.com/a.jpg", "https://example.com/b.jpg")));
+
+        eventService.delete(eventId);
+
+        verify(uploadedFileUrls).deleteIfUnreferenced("https://example.com/a.jpg");
+        verify(uploadedFileUrls).deleteIfUnreferenced("https://example.com/b.jpg");
     }
 
     private Event argThatDeleted() {

@@ -48,13 +48,21 @@ class EventAnalyticsControllerTest {
     void get_validRequest_returns200() throws Exception {
         UUID eventId = UUID.randomUUID();
         when(analyticsService.getEventAnalytics(eventId)).thenReturn(
-                new EventAnalyticsResponse(eventId, 10, new MoneyDto(50000L, "USD"), 5, List.of()));
+                new EventAnalyticsResponse(eventId, 10, new MoneyDto(50000L, "USD"), 5, List.of(), 7, 6, 5, 5, 3, 2, 1, 0));
 
         mockMvc.perform(get("/api/v1/events/{eventId}/analytics", eventId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ticketsSold").value(10))
                 .andExpect(jsonPath("$.revenue.amount").value(50000))
-                .andExpect(jsonPath("$.remainingInventory").value(5));
+                .andExpect(jsonPath("$.remainingInventory").value(5))
+                .andExpect(jsonPath("$.shareClicks").value(7))
+                .andExpect(jsonPath("$.shareCopies").value(6))
+                .andExpect(jsonPath("$.shareQrs").value(5))
+                .andExpect(jsonPath("$.shareOpens").value(5))
+                .andExpect(jsonPath("$.shareLinkOpens").value(3))
+                .andExpect(jsonPath("$.shareQrScans").value(2))
+                .andExpect(jsonPath("$.shareLinkBuys").value(1))
+                .andExpect(jsonPath("$.shareQrBuys").value(0));
     }
 
     @Test

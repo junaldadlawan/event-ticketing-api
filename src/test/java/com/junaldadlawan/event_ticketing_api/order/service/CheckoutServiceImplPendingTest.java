@@ -124,7 +124,7 @@ class CheckoutServiceImplPendingTest {
     void setUp() {
         service = new CheckoutServiceImpl(
                 cartRepository, cartItemRepository, cartService, ticketTypeRepository, seatRepository,
-                eventRepository, orderRepository, paymentRepository, idempotencyKeyRepository,
+                eventRepository, org.mockito.Mockito.mock(com.junaldadlawan.event_ticketing_api.organization.repository.OrganizationRepository.class), orderRepository, paymentRepository, idempotencyKeyRepository,
                 idempotencyKeyManager, paymentGatewayClient, accessGuard, promoCodeRepository,
                 notificationService, promoCodeUsageLimitGuard, ticketRepository, ticketCredentialService, platformFeeService,
                 pendingCheckoutRepository, transactionManager, gatewayFeeService, null, null, null,

@@ -72,6 +72,7 @@ public class UploadedFileUrls {
             Optional<String> name = ownFileName(url);
             if (name.isPresent() && !isReferenced(url)) {
                 imageStorageService.delete(name.get());
+                log.info("Deleted unused upload {}", name.get());
             }
         } catch (RuntimeException e) {
             log.warn("Could not clean up an unused upload", e);
@@ -84,7 +85,7 @@ public class UploadedFileUrls {
                 || exists("select count(p) from Post p where p.imageUrl = :url and p.deletedAt is null", url)
                 || exists("select count(m) from EventRecapMessage m where m.imageUrl = :url and m.deletedAt is null", url)
                 || exists("select count(t) from TicketTemplate t where t.backgroundImageUrl = :url or t.logoUrl = :url", url)
-                || exists("select count(e) from Event e join e.images i where i = :url", url)
+                || exists("select count(e) from Event e join e.images i where i = :url and e.deletedAt is null", url)
                 || exists("select count(o) from Organization o join o.documents d where d.url = :url", url);
     }
 
