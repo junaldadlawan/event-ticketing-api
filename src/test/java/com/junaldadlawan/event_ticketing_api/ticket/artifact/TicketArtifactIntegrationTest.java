@@ -461,7 +461,7 @@ class TicketArtifactIntegrationTest {
         grantOrgRole(owner.getId(), orgId, OrganizationRole.OWNER);
         UUID eventId = persistEvent(orgId);
         UUID ticketTypeId = persistTicketType(eventId);
-        String realCredential = UUID.randomUUID() + "." + "genuinelySecretHmacSignature";
+        String realCredential = "11111111-2222-3333-4444-555555555555.genuinelySecretHmacSignature"; // fixed, see the placement test
         UUID ticketId = persistTicket(eventId, ticketTypeId, null, buyer.getId(), realCredential);
         String buyerToken = jwtService.generateAccessToken(buyer);
 
@@ -471,7 +471,11 @@ class TicketArtifactIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        String decoded = decodeQr(result.getResponse().getContentAsByteArray());
+        // only the default bottom-right QR spot, so the random ticket number text elsewhere cannot throw ZXing off
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()));
+        ByteArrayOutputStream qrSpot = new ByteArrayOutputStream();
+        ImageIO.write(image.getSubimage(616, 96, 260, 260), "png", qrSpot);
+        String decoded = decodeQr(qrSpot.toByteArray());
 
         Ticket persisted = ticketRepository.findById(ticketId).orElseThrow();
         assertThat(persisted.getCredential()).isEqualTo(realCredential);
