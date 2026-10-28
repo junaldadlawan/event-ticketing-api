@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.ticket;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.ScannerDevice;
 import com.junaldadlawan.event_ticketing_api.checkin.enums.ScannerDeviceStatus;
 import com.junaldadlawan.event_ticketing_api.checkin.repository.CheckInRecordRepository;
@@ -78,7 +79,7 @@ class TicketCheckInIntegrationTest {
                 .status(OrganizationStatus.APPROVED).ownerId(UUID.randomUUID()).documents(List.of()).build()).getId();
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("CheckIn View Event").description("desc")
-                .category("music").status(EventStatus.PUBLISHED).ticketPrefix("W" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         orderId = orderRepository.save(Order.builder().buyerId(buyer.getId()).payeeType(PayeeType.ORGANIZATION).payeeId(orgId)
                 .status(OrderStatus.PAID).total(Money.builder().amount(1000L).currency("USD").build())

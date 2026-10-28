@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.scannerapp;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -140,7 +141,7 @@ class ScannerAppAndStaffAccessIntegrationTest {
     private UUID event(UUID organizationId, EventStatus status, String title) {
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         UUID id = eventRepository.save(Event.builder().organizationId(organizationId).title(title).description("d").category("music").status(status)
-                .ticketPrefix("S" + UUID.randomUUID().toString().substring(0, 2).toUpperCase()).startAt(start).endAt(start.plus(2, ChronoUnit.HOURS))
+                .ticketPrefix(TestTicketPrefixes.free(jdbc)).startAt(start).endAt(start.plus(2, ChronoUnit.HOURS))
                 .timezone("UTC").build()).getId();
         eventIds.add(id);
         return id;

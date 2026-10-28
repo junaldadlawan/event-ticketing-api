@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.checkin;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInRecord;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.FallbackScanRecord;
@@ -78,6 +80,8 @@ class CheckInIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private JdbcTemplate jdbc;
     @Autowired
     private JwtService jwtService;
     @Autowired
@@ -189,7 +193,7 @@ class CheckInIntegrationTest {
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         Event event = Event.builder().organizationId(organizationId).title("CheckIn Test Event").description("desc")
                 .category("music").status(EventStatus.PUBLISHED)
-                .ticketPrefix("V" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build();
         Event saved = eventRepository.save(event);
         createdEventIds.add(saved.getId());

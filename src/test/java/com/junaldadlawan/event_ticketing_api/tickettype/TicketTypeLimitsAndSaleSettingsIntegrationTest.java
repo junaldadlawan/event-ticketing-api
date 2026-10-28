@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.tickettype;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -86,7 +87,7 @@ class TicketTypeLimitsAndSaleSettingsIntegrationTest {
         organizationMemberRepository.save(member);
         eventStart = Instant.now().plus(10, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Limits Test Event").description("desc")
-                .category("music").status(EventStatus.PUBLISHED).ticketPrefix("L" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(eventStart).endAt(eventStart.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
     }
 

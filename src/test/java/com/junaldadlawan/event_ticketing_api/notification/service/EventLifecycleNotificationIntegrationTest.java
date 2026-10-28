@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.notification.service;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -266,7 +267,7 @@ class EventLifecycleNotificationIntegrationTest {
 
     private UUID event(EventStatus status, Instant notificationsFrom, Integer gateMinutes) {
         UUID id = eventRepository.save(Event.builder().organizationId(orgId).title(title).description("desc").category("music")
-                .status(status).ticketPrefix("N" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(status).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(end).timezone("Asia/Manila").notificationsFrom(notificationsFrom).gateOpensMinutesBefore(gateMinutes).build()).getId();
         eventIds.add(id);
         return id;

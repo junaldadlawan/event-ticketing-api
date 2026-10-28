@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.tickettemplate;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -56,6 +58,8 @@ class TicketTemplateAccessIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Autowired
     private JwtService jwtService;
@@ -138,7 +142,7 @@ class TicketTemplateAccessIntegrationTest {
                 .description("desc")
                 .category("music")
                 .status(status)
-                .ticketPrefix("T" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt)
                 .endAt(startAt.plus(2, ChronoUnit.HOURS))
                 .timezone("UTC")

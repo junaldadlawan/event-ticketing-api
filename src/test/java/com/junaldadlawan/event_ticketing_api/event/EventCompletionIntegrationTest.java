@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.event;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -56,6 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class EventCompletionIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private JdbcTemplate jdbc;
     @Autowired private JwtService jwtService;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private EventCompletionService eventCompletionService;
@@ -324,7 +327,7 @@ class EventCompletionIntegrationTest {
                 .description("desc")
                 .category("music")
                 .status(status)
-                .ticketPrefix("C" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(endAt.minus(2, ChronoUnit.HOURS))
                 .endAt(endAt)
                 .timezone("UTC")

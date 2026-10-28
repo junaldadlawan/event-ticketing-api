@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.platformfee;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
@@ -187,7 +188,7 @@ class PlatformFeeIntegrationTest {
     private UUID event(UUID orgId) {
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         Event saved = eventRepository.save(Event.builder().organizationId(orgId).title("Fee Test Event").description("d").category("music")
-                .status(EventStatus.ON_SALE).ticketPrefix("F" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(EventStatus.ON_SALE).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build());
         eventIds.add(saved.getId());
         return saved.getId();

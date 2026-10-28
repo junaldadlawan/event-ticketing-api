@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.tickettype;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -66,7 +67,7 @@ class TicketTypeColorIntegrationTest {
         organizationMemberRepository.save(member);
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Colour Test Event").description("desc")
-                .category("music").status(EventStatus.PUBLISHED).ticketPrefix("C" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
     }
 

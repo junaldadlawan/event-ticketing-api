@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.ticket.artifact;
 
 import com.google.zxing.BinaryBitmap;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.google.zxing.DecodeHintType;
 import com.google.zxing.LuminanceSource;
 import com.google.zxing.MultiFormatReader;
@@ -86,6 +88,8 @@ class TicketArtifactIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Autowired
     private JwtService jwtService;
@@ -197,7 +201,7 @@ class TicketArtifactIntegrationTest {
                 .description("desc")
                 .category("music")
                 .status(EventStatus.PUBLISHED)
-                .ticketPrefix("T" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt)
                 .endAt(startAt.plus(2, ChronoUnit.HOURS))
                 .timezone("UTC")

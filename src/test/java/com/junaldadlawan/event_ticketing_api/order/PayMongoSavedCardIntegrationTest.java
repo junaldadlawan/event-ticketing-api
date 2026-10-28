@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.order;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -103,7 +104,7 @@ class PayMongoSavedCardIntegrationTest {
                 .status(OrganizationStatus.APPROVED).ownerId(UUID.randomUUID()).documents(List.of()).build()).getId();
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Saved Card Event").description("d").category("music")
-                .status(EventStatus.ON_SALE).ticketPrefix("C" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(EventStatus.ON_SALE).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         ticketTypeId = ticketTypeRepository.save(TicketType.builder().eventId(eventId).name("GA").kind(TicketTypeKind.GENERAL_ADMISSION)
                 .price(Money.builder().amount(100_00).currency("PHP").build()).quantityTotal(50).quantityAvailable(50)

@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.moderation;
 
 import com.junaldadlawan.event_ticketing_api.auditlog.repository.AuditLogEntryRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -46,6 +48,8 @@ class ModerationActionIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private JdbcTemplate jdbc;
     @Autowired
     private JwtService jwtService;
     @Autowired
@@ -114,7 +118,7 @@ class ModerationActionIntegrationTest {
     private UUID persistEvent(UUID organizationId, EventStatus status) {
         Instant startAt = Instant.now().plus(10, java.time.temporal.ChronoUnit.DAYS);
         Event event = Event.builder().organizationId(organizationId).title("Moderation Test Event").description("d")
-                .category("music").status(status).ticketPrefix("M" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(status).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, java.time.temporal.ChronoUnit.HOURS)).timezone("UTC").build();
         Event saved = eventRepository.save(event);
         createdEventIds.add(saved.getId());

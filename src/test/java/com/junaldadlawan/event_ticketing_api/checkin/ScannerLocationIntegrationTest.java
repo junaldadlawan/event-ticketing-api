@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.checkin;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInConfig;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInRecord;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.ScannerDevice;
@@ -93,7 +94,7 @@ class ScannerLocationIntegrationTest {
         stranger = bearer(user(Role.CUSTOMER));
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Location Test Event").description("desc")
-                .category("music").status(EventStatus.PUBLISHED).ticketPrefix("L" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
     }
 

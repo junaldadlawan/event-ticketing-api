@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.post;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -50,6 +52,8 @@ class PostIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired
+    private JdbcTemplate jdbc;
+    @Autowired
     private JwtService jwtService;
     @Autowired
     private ObjectMapper objectMapper;
@@ -89,7 +93,7 @@ class PostIntegrationTest {
     private UUID event(EventStatus status, boolean deleted) {
         Instant start = Instant.now().plus(20, ChronoUnit.DAYS);
         Event event = Event.builder().organizationId(org()).title("Post Event " + UUID.randomUUID()).description("d").category("music")
-                .status(status).ticketPrefix("P" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(status).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build();
         if (deleted) {
             event.markDeleted();

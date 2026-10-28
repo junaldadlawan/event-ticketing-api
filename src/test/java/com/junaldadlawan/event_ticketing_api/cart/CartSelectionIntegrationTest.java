@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.cart;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
@@ -129,7 +130,7 @@ class CartSelectionIntegrationTest {
                 .status(OrganizationStatus.APPROVED).ownerId(UUID.randomUUID()).documents(List.of()).build()).getId();
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Selection Test Event").description("d").category("music")
-                .status(EventStatus.ON_SALE).ticketPrefix("S" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(EventStatus.ON_SALE).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         ticketTypeA = ticketType("A", 1_000);
         ticketTypeB = ticketType("B", 3_000);
