@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.analytics;
 
 import com.junaldadlawan.event_ticketing_api.analytics.repository.FunnelRepository;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -85,7 +86,7 @@ class CartActivityFailureIntegrationTest {
                 .ownerId(UUID.randomUUID()).documents(List.of()).build()).getId();
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Funnel Failure Event").description("d").category("music")
-                .status(EventStatus.PUBLISHED).ticketPrefix("X" + UUID.randomUUID().toString().substring(0, 2).toUpperCase()).startAt(start)
+                .status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc)).startAt(start)
                 .endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         ticketTypeId = ticketTypeRepository.save(TicketType.builder().eventId(eventId).name("GA").kind(TicketTypeKind.GENERAL_ADMISSION)
                 .price(Money.builder().amount(1000L).currency("USD").build()).quantityTotal(10).quantityAvailable(10)

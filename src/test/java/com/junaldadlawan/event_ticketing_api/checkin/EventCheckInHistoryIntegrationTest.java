@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.checkin;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInRecord;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.FallbackScanRecord;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.ScannerDevice;
@@ -162,7 +163,7 @@ class EventCheckInHistoryIntegrationTest {
     private UUID event(UUID org) {
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         UUID id = eventRepository.save(Event.builder().organizationId(org).title("History Test Event").description("d").category("music")
-                .status(EventStatus.PUBLISHED).ticketPrefix("H" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         eventIds.add(id);
         return id;

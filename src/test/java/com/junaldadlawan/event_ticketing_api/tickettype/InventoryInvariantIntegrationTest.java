@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.tickettype;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.NoFeesExtension;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
@@ -93,7 +94,7 @@ class InventoryInvariantIntegrationTest {
 
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Inventory Test Event").description("d").category("music")
-                .status(EventStatus.PUBLISHED).ticketPrefix("V" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         refundPolicyRepository.save(RefundPolicy.builder().eventId(eventId).ruleType(RefundRuleType.CUSTOM).build());
         ticketTypeId = ticketTypeRepository.save(TicketType.builder().eventId(eventId).name("GA").kind(TicketTypeKind.GENERAL_ADMISSION)

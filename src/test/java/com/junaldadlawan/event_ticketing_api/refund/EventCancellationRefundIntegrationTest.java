@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.refund;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -67,6 +69,8 @@ class EventCancellationRefundIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private JdbcTemplate jdbc;
     @Autowired
     private JwtService jwtService;
     @Autowired
@@ -171,7 +175,7 @@ class EventCancellationRefundIntegrationTest {
                 .description("desc")
                 .category("music")
                 .status(EventStatus.PUBLISHED)
-                .ticketPrefix("C" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt)
                 .endAt(startAt.plus(2, ChronoUnit.HOURS))
                 .timezone("UTC")

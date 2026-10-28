@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.notification;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
@@ -85,6 +87,8 @@ class NotificationIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private JdbcTemplate jdbc;
     @Autowired
     private JwtService jwtService;
     @Autowired
@@ -244,7 +248,7 @@ class NotificationIntegrationTest {
                 .description("desc")
                 .category("music")
                 .status(EventStatus.PUBLISHED)
-                .ticketPrefix("N" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt)
                 .endAt(startAt.plus(2, ChronoUnit.HOURS))
                 .timezone("UTC")

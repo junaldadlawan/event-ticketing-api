@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.order;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartItemRepository;
 import com.junaldadlawan.event_ticketing_api.cart.repository.CartRepository;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
@@ -118,7 +119,7 @@ class PayMongoCheckoutIntegrationTest {
         orgIds.add(org.getId());
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         Event event = eventRepository.save(Event.builder().organizationId(org.getId()).title("PayMongo Test Event").description("d")
-                .category("music").status(EventStatus.ON_SALE).ticketPrefix("P" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.ON_SALE).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build());
         eventIds.add(event.getId());
         TicketType type = ticketTypeRepository.save(TicketType.builder().eventId(event.getId()).name("GA").kind(TicketTypeKind.GENERAL_ADMISSION)

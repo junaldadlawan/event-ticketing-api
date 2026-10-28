@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.gatewayfee;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -91,7 +92,7 @@ class GatewayFeeIntegrationTest {
         orgIds.add(org.getId());
         Instant start = Instant.now().plus(10, ChronoUnit.DAYS);
         Event event = eventRepository.save(Event.builder().organizationId(org.getId()).title("Gateway Fee Test Event").description("d")
-                .category("music").status(EventStatus.ON_SALE).ticketPrefix("G" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.ON_SALE).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(start).endAt(start.plus(2, ChronoUnit.HOURS)).timezone("UTC").build());
         eventIds.add(event.getId());
         eventId = event.getId();

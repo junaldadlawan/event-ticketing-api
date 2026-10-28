@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.organization;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -62,7 +63,7 @@ class OrganizationPermissionIntegrationTest {
         member(owner, Set.of(OrganizationRole.OWNER), null);
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Permission Test Event").description("desc")
-                .category("music").status(EventStatus.DRAFT).ticketPrefix("Q" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.DRAFT).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
     }
 

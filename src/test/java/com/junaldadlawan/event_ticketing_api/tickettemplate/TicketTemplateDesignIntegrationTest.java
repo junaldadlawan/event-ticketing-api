@@ -1,6 +1,8 @@
 package com.junaldadlawan.event_ticketing_api.tickettemplate;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -68,6 +70,8 @@ class TicketTemplateDesignIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired
+    private JdbcTemplate jdbc;
+    @Autowired
     private JwtService jwtService;
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -115,7 +119,7 @@ class TicketTemplateDesignIntegrationTest {
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         Event event = eventRepository.save(Event.builder().organizationId(organization.getId()).title("Design Test Event")
                 .description("desc").category("Music").status(EventStatus.DRAFT)
-                .ticketPrefix("D" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build());
         createdEventIds.add(event.getId());
         return event.getId();

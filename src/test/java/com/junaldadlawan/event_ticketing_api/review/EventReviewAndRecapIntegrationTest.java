@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.review;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
 import com.junaldadlawan.event_ticketing_api.event.repository.EventRepository;
@@ -268,7 +269,7 @@ class EventReviewAndRecapIntegrationTest {
 
     private UUID event(Instant startAt, EventStatus status) {
         UUID id = eventRepository.save(Event.builder().organizationId(orgId).title("Review Test Event").description("desc")
-                .category("music").status(status).ticketPrefix("R" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(status).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         eventIds.add(id);
         return id;

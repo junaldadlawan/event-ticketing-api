@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.cart;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.common.entity.Money;
 import com.junaldadlawan.event_ticketing_api.event.entity.Event;
 import com.junaldadlawan.event_ticketing_api.event.enums.EventStatus;
@@ -89,7 +90,7 @@ class CartPromoCodeLifecycleIntegrationTest {
         organizationMemberRepository.save(membership);
         Instant startAt = Instant.now().plus(10, ChronoUnit.DAYS);
         eventId = eventRepository.save(Event.builder().organizationId(orgId).title("Promo Lifecycle Event").description("desc")
-                .category("music").status(EventStatus.PUBLISHED).ticketPrefix("P" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
         ticketTypeId = ticketTypeRepository.save(TicketType.builder().eventId(eventId).name("General Admission")
                 .kind(TicketTypeKind.GENERAL_ADMISSION).price(Money.builder().amount(1000).currency("PHP").build())

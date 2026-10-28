@@ -1,6 +1,7 @@
 package com.junaldadlawan.event_ticketing_api.ticket;
 
 import com.junaldadlawan.event_ticketing_api.auth.service.JwtService;
+import com.junaldadlawan.event_ticketing_api.common.TestTicketPrefixes;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.CheckInRecord;
 import com.junaldadlawan.event_ticketing_api.checkin.entity.ScannerDevice;
 import com.junaldadlawan.event_ticketing_api.checkin.enums.CheckInResult;
@@ -188,7 +189,7 @@ class MyTicketsIntegrationTest {
     private UUID event(int daysAhead) {
         Instant startAt = Instant.now().plus(daysAhead, ChronoUnit.DAYS);
         return eventRepository.save(Event.builder().organizationId(orgId).title("My Tickets Event").description("desc")
-                .category("music").status(EventStatus.PUBLISHED).ticketPrefix("M" + UUID.randomUUID().toString().substring(0, 2).toUpperCase())
+                .category("music").status(EventStatus.PUBLISHED).ticketPrefix(TestTicketPrefixes.free(jdbc))
                 .startAt(startAt).endAt(startAt.plus(2, ChronoUnit.HOURS)).timezone("UTC").build()).getId();
     }
 
