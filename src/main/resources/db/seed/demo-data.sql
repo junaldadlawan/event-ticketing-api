@@ -113,8 +113,8 @@ END $$;
 -- ---------------------------------------------------------------------------
 -- The organization: approved, owned by owner@demo.test
 -- ---------------------------------------------------------------------------
-INSERT INTO organizations (id, name, status, owner_id, created_by, created_at)
-SELECT 'd0000000-0000-4000-8000-000000000001', 'Demo Events Co.', 'APPROVED', u.id, 'Demo Seed', now()
+INSERT INTO organizations (id, name, status, owner_id, country, currency, created_by, created_at)
+SELECT 'd0000000-0000-4000-8000-000000000001', 'Demo Events Co.', 'APPROVED', u.id, 'PH', 'PHP', 'Demo Seed', now()
 FROM users u
 WHERE u.email = 'owner@demo.test'
 ON CONFLICT DO NOTHING;
@@ -137,8 +137,8 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------
 -- The second organization: approved, owned by owner2@demo.test (no other members, no events)
 -- ---------------------------------------------------------------------------
-INSERT INTO organizations (id, name, status, owner_id, created_by, created_at)
-SELECT 'd0000000-0000-4000-8000-000000000005', 'Demo Productions', 'APPROVED', u.id, 'Demo Seed', now()
+INSERT INTO organizations (id, name, status, owner_id, country, currency, created_by, created_at)
+SELECT 'd0000000-0000-4000-8000-000000000005', 'Demo Productions', 'APPROVED', u.id, 'PH', 'PHP', 'Demo Seed', now()
 FROM users u
 WHERE u.email = 'owner2@demo.test'
 ON CONFLICT DO NOTHING;
