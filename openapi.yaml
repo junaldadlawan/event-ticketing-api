@@ -140,6 +140,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TokenPair" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /auth/refresh:
     post:
@@ -3809,6 +3810,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
     delete:
       operationId: removePromoCode
       tags: [Cart]
@@ -3920,6 +3922,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /checkouts/{checkoutId}:
     parameters:
@@ -4843,6 +4846,13 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     ValidationError:
       description: Request failed validation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: >
+        Too many requests in the current window (BR-NFR-004). Login is limited per caller IP; checkout and promo-code
+        application per signed-in buyer. The window is one minute.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

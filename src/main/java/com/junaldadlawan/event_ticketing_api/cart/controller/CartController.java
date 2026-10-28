@@ -5,8 +5,12 @@ import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemCreateRequest;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartItemQuantityRequest;
 import com.junaldadlawan.event_ticketing_api.cart.dto.CartResponse;
 import com.junaldadlawan.event_ticketing_api.cart.service.CartService;
+import com.junaldadlawan.event_ticketing_api.common.exception.TooManyRequestsException;
+import com.junaldadlawan.event_ticketing_api.common.ratelimit.RateLimiter;
+import com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +32,12 @@ import java.util.UUID;
 public class CartController {
 
     private final CartService cartService;
+    private final RateLimiter rateLimiter;
+    private final OrganizationAccessGuard accessGuard;
+
+    // BR-NFR-004: cap promo-code tries per buyer so a code can't be brute-forced.
+    @Value("${app.ratelimit.promo-per-minute:20}")
+    private int promoPerMinute;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -60,6 +70,9 @@ public class CartController {
 
     @PostMapping("/{cartId}/promo-code")
     public CartResponse applyPromoCode(@PathVariable UUID cartId, @Valid @RequestBody ApplyPromoCodeRequest request) {
+        if (!rateLimiter.tryAcquire("promo", accessGuard.currentUserId().toString(), promoPerMinute)) {
+            throw new TooManyRequestsException("Too many promo-code attempts. Try again in a minute.");
+        }
         return cartService.applyPromoCode(cartId, request.code());
     }
 

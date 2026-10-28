@@ -53,10 +53,22 @@ class CartCheckoutControllerTest {
     private com.junaldadlawan.event_ticketing_api.paymentmethod.service.PaymentMethodService paymentMethodService;
 
     @MockitoBean
+    private com.junaldadlawan.event_ticketing_api.common.ratelimit.RateLimiter rateLimiter;
+
+    @MockitoBean
+    private com.junaldadlawan.event_ticketing_api.organization.security.OrganizationAccessGuard accessGuard;
+
+    @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @MockitoBean
     private DeviceAuthenticationFilter deviceAuthenticationFilter;
+
+    @org.junit.jupiter.api.BeforeEach
+    void allowRateLimit() {
+        when(rateLimiter.tryAcquire(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(true);
+        when(accessGuard.currentUserId()).thenReturn(UUID.randomUUID());
+    }
 
     private OrderResponse orderResponse(UUID orderId) {
         return new OrderResponse(orderId, UUID.randomUUID(), PayeeType.ORGANIZATION, UUID.randomUUID(),
